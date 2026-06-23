@@ -1,0 +1,16 @@
+{
+  "name": "Estrela Gestão",
+  "short_name": "Estrela",
+  "description": "Sistema de Estoque e Pedidos — Estrela América do Sul",
+  "lang": "pt-BR",
+  "display": "standalone",
+  "orientation": "any",
+  "scope": "/",
+  "start_url": "/",
+  "theme_color": "#B98A19",
+  "background_color": "#211B0F",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

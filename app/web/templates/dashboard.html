@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Painel{% endblock %}
+{% block cabecalho %}Painel{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  <div class="card">
+    <div class="text-sm text-gray-500">Produtos cadastrados</div>
+    <div class="mt-1 text-3xl font-bold text-gold-600">{{ kpis.total_produtos }}</div>
+  </div>
+  <div class="card">
+    <div class="text-sm text-gray-500">Alertas de estoque</div>
+    <div class="mt-1 text-3xl font-bold {{ 'text-critico' if kpis.alertas_estoque else 'text-ok' }}">
+      {{ kpis.alertas_estoque }}
+    </div>
+    <div class="mt-1 text-xs text-gray-400">no/abaixo do mínimo ou pouco/acabou</div>
+  </div>
+</div>
+
+<div class="card mt-6">
+  <p class="text-gray-600">
+    Bem-vindo(a), <strong>{{ user.nome }}</strong>. Use o menu à esquerda para navegar pelos módulos
+    disponíveis ao seu perfil (<strong>{{ user.perfil }}</strong>).
+  </p>
+</div>
+{% endblock %}

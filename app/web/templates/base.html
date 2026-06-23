@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block titulo %}{{ titulo or "Estrela Gestão" }}{% endblock %} · Estrela Gestão</title>
+  <link rel="stylesheet" href="/static/css/output.css" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+  <meta name="theme-color" content="#B98A19" />
+  <script defer src="/static/js/alpine.min.js"></script>
+  <script src="/static/js/htmx.min.js"></script>
+</head>
+<body class="min-h-screen bg-marca-fundo text-sidebar">
+  <div class="flex min-h-screen">
+    {# ---------- Sidebar ---------- #}
+    <aside class="flex w-60 flex-col bg-sidebar text-sidebar-texto">
+      <div class="flex items-center gap-2 px-5 py-4 text-xl font-bold text-gold-400">
+        <span>★</span><span>Estrela Gestão</span>
+      </div>
+      <nav class="flex-1 space-y-1 px-3 py-2 text-sm">
+        {% set p = user.perfil if user else "" %}
+        {% macro item(rota, rotulo, perfis) %}
+          {% if p in perfis %}
+            <a href="{{ rota }}"
+               class="block rounded-md px-3 py-2 hover:bg-sidebar-hover
+                      {{ 'bg-sidebar-hover text-gold-300' if request.url.path == rota else '' }}">
+              {{ rotulo }}
+            </a>
+          {% endif %}
+        {% endmacro %}
+        {{ item("/", "Painel", ["admin","vendedor","financeiro","funcionario"]) }}
+        {{ item("/estoque", "Estoque", ["admin","vendedor","financeiro","funcionario"]) }}
+        {{ item("/estoque/localizacao", "Localização", ["admin","vendedor","financeiro","funcionario"]) }}
+        {{ item("/produtos", "Produtos", ["admin","vendedor","financeiro","funcionario"]) }}
+        {{ item("/pedidos", "Pedidos", ["admin","vendedor"]) }}
+        {{ item("/separacao", "Separação", ["admin","funcionario"]) }}
+        {{ item("/financeiro", "Financeiro", ["admin","financeiro"]) }}
+        {{ item("/clientes", "Clientes", ["admin","vendedor"]) }}
+        {{ item("/relatorios", "Relatórios", ["admin","vendedor","financeiro"]) }}
+        {{ item("/importacao", "Importação", ["admin"]) }}
+        {{ item("/usuarios", "Usuários", ["admin"]) }}
+      </nav>
+    </aside>
+
+    {# ---------- Conteúdo ---------- #}
+    <div class="flex flex-1 flex-col">
+      <header class="flex items-center justify-between border-b border-marca-borda bg-white px-6 py-3">
+        <h1 class="text-lg font-semibold">{% block cabecalho %}{{ titulo or "" }}{% endblock %}</h1>
+        {% if user %}
+        <div class="flex items-center gap-4 text-sm">
+          <span class="text-gold-700">{{ user.nome }} <span class="text-gray-400">({{ user.perfil }})</span></span>
+          <a href="/logout" class="btn-secundario">Sair</a>
+        </div>
+        {% endif %}
+      </header>
+
+      <main class="flex-1 p-6">
+        <div id="flash">{% include "_flash.html" ignore missing %}</div>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js").catch(function () {});
+    }
+  </script>
+</body>
+</html>

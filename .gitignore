@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env / segredos
+.env
+.env.prod
+
+# Dados (planilhas reais do cliente — não versionar)
+data/*.xlsx
+data/*.xls
+
+# Build do Tailwind (gerado) e binário standalone
+app/static/css/output.css
+/tailwindcss
+
+# Artefatos de importação
+relatorio_inconsistencias*.xlsx
+
+# SO
+.DS_Store

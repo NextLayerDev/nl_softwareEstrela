@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Componentes reutilizáveis em português, sobre a paleta da marca. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
+           transition-colors focus:outline-none focus:ring-2 focus:ring-gold-400;
+  }
+  .btn-primario {
+    @apply btn bg-gold-500 text-white hover:bg-gold-600;
+  }
+  .btn-secundario {
+    @apply btn border border-marca-borda bg-white text-sidebar hover:bg-gold-100;
+  }
+  .btn-perigo {
+    @apply btn bg-critico text-white hover:opacity-90;
+  }
+  .card {
+    @apply rounded-lg border border-marca-borda bg-white p-4 shadow-sm;
+  }
+  .input {
+    @apply w-full rounded-md border border-marca-borda bg-white px-3 py-2 text-sm
+           focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-200;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-sidebar;
+  }
+  .tabela {
+    @apply w-full border-collapse text-sm;
+  }
+  .tabela th {
+    @apply sticky top-0 z-10 border-b border-marca-borda bg-gold-100 px-3 py-2 text-left
+           font-semibold text-sidebar;
+  }
+  .tabela td {
+    @apply border-b border-marca-borda px-3 py-2;
+  }
+  .tabela tr:hover td {
+    @apply bg-gold-50;
+  }
+  .selo {
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
+  }
+  .selo-muito {
+    @apply selo bg-ok-bg text-ok;
+  }
+  .selo-pouco {
+    @apply selo bg-aviso-bg text-aviso;
+  }
+  .selo-tem {
+    @apply selo bg-gold-100 text-gold-700;
+  }
+  .selo-acabou {
+    @apply selo bg-critico-bg text-critico;
+  }
+  .alerta {
+    @apply rounded-md border px-4 py-3 text-sm;
+  }
+  .alerta-erro {
+    @apply alerta border-critico/30 bg-critico-bg text-critico;
+  }
+  .alerta-ok {
+    @apply alerta border-ok/30 bg-ok-bg text-ok;
+  }
+}

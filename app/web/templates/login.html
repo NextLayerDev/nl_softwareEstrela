@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Entrar · Estrela Gestão</title>
+  <link rel="stylesheet" href="/static/css/output.css" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
+  <meta name="theme-color" content="#B98A19" />
+</head>
+<body class="flex min-h-screen items-center justify-center bg-sidebar">
+  <div class="w-full max-w-sm">
+    <div class="mb-6 text-center text-3xl font-bold text-gold-400">★ Estrela Gestão</div>
+    <form method="post" action="/login" class="card space-y-4">
+      {% if erro %}<div class="alerta-erro">{{ erro }}</div>{% endif %}
+      <div>
+        <label class="label" for="email">E-mail</label>
+        <input class="input" type="email" id="email" name="email" value="{{ email or '' }}"
+               autocomplete="username" required autofocus />
+      </div>
+      <div>
+        <label class="label" for="senha">Senha</label>
+        <input class="input" type="password" id="senha" name="senha"
+               autocomplete="current-password" required />
+      </div>
+      <button type="submit" class="btn-primario w-full">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>
