@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block titulo %}Pedido #{{ pedido.numero or pedido.id }}{% endblock %}
+{% block cabecalho %}Pedido #{{ pedido.numero or pedido.id }}{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+  <div>
+    <p class="text-sm text-gray-500">Cliente</p>
+    <p class="font-semibold">{{ pedido.cliente.nome }}</p>
+    <p class="text-xs text-gray-400">
+      Vendedor: {{ pedido.vendedor.nome }} ·
+      Pagamento: {{ pedido.cliente.condicao_pagto_padrao or "à vista" }} ·
+      Status: <strong>{{ pedido.status }}</strong>
+    </p>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    {% if pedido.status == "rascunho" %}
+      <form method="post" action="/pedidos/{{ pedido.id }}/confirmar">
+        <button class="btn-primario" {% if not pedido.itens %}disabled{% endif %}>Confirmar</button>
+      </form>
+    {% endif %}
+    {% if pedido.status in ("confirmado", "separacao") %}
+      {% if user.perfil in ("admin", "financeiro") %}
+      <form method="post" action="/pedidos/{{ pedido.id }}/faturar">
+        <button class="btn-primario">Faturar</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/pedidos/{{ pedido.id }}/cancelar"
+            onsubmit="return confirm('Cancelar este pedido e estornar reservas?')">
+        <button class="btn-perigo">Cancelar pedido</button>
+      </form>
+    {% endif %}
+    <a href="/pedidos/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">Imprimir</a>
+    <a href="/pedidos" class="btn-secundario">Voltar</a>
+  </div>
+</div>
+
+{% if editavel %}
+{# ----------------------- Adicionar item (busca + saldo + preço sugerido) ----------------------- #}
+<div class="card mb-4" x-data="{ variacaoId: null, qtd: 1, caixas: false }">
+  <h3 class="mb-3 text-sm font-semibold">Adicionar item</h3>
+
+  <div class="mb-3">
+    <label class="label">Buscar produto/variação</label>
+    <input type="search" name="q" class="input w-full" autocomplete="off"
+           placeholder="Código, descrição, cor ou localização…"
+           hx-get="/estoque/busca" hx-trigger="keyup changed delay:250ms, search"
+           hx-target="#resultado-busca" />
+    <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto"></div>
+    <p class="mt-1 text-xs text-gray-400">
+      Clique numa linha (use o botão "Selecionar" do estoque) ou informe o ID da variação abaixo.
+    </p>
+  </div>
+
+  <form method="post" action="/pedidos/{{ pedido.id }}/itens"
+        hx-post="/pedidos/{{ pedido.id }}/itens" hx-target="#bloco-itens" hx-swap="outerHTML">
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div>
+        <label class="label">Variação (ID)</label>
+        <input type="number" name="variacao_id" x-model="variacaoId" required class="input w-full"
+               @change="htmx.ajax('GET', '/pedidos/saldo/' + variacaoId + '?qtd=' + qtd, {target:'#saldo-box'})" />
+      </div>
+      <div x-show="!caixas">
+        <label class="label">Qtd (un)</label>
+        <input type="number" name="qtd" min="1" x-model.number="qtd" class="input w-full"
+               @input.debounce.300ms="if(variacaoId) htmx.ajax('GET', '/pedidos/saldo/' + variacaoId + '?qtd=' + qtd, {target:'#saldo-box'})" />
+      </div>
+      <div x-show="caixas">
+        <label class="label">Qtd (caixas)</label>
+        <input type="number" name="qtd_caixas" min="1" x-bind:disabled="!caixas" class="input w-full" />
+      </div>
+      <div>
+        <label class="label">Preço unit.</label>
+        <input type="text" name="preco_unit" class="input w-full" placeholder="auto" />
+      </div>
+      <div>
+        <label class="label">Desconto (R$)</label>
+        <input type="text" name="desconto" value="0" class="input w-full" />
+      </div>
+      <div class="flex items-end">
+        <button type="submit" class="btn-primario w-full">Adicionar</button>
+      </div>
+    </div>
+    <label class="mt-2 inline-flex items-center gap-2 text-sm">
+      <input type="checkbox" x-model="caixas" /> Vender por caixa
+    </label>
+  </form>
+
+  <div id="saldo-box" class="mt-3"></div>
+</div>
+{% endif %}
+
+{# ----------------------- Itens do pedido ----------------------- #}
+{% include "pedidos/_itens.html" %}
+
+{% if pedido.observacao %}
+<div class="card mt-4">
+  <p class="text-sm text-gray-500">Observação</p>
+  <p>{{ pedido.observacao }}</p>
+</div>
+{% endif %}
+{% endblock %}

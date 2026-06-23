@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Separação · Pedido #{{ pedido.numero or pedido.id }}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #211B0F; margin: 0; padding: 24px; }
+    .topo { border-bottom: 2px solid #B98A19; padding-bottom: 10px; margin-bottom: 14px; }
+    .marca { font-size: 20px; font-weight: bold; color: #B98A19; }
+    h1 { font-size: 17px; margin: 4px 0; }
+    .meta { font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; vertical-align: middle; }
+    th { background: #F6F2E8; }
+    .local { font-size: 16px; font-weight: bold; color: #8a6a13; }
+    .qtd { text-align: right; font-weight: bold; }
+    .check { width: 36px; text-align: center; }
+    .box { display: inline-block; width: 18px; height: 18px; border: 2px solid #333; }
+    .btn-print { margin-bottom: 16px; }
+    @media print { .btn-print { display: none; } body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <button class="btn-print" onclick="window.print()">Imprimir</button>
+
+  <div class="topo">
+    <div class="marca">★ Estrela Gestão</div>
+    <h1>Lista de separação — Pedido nº {{ pedido.numero or pedido.id }}</h1>
+    <div class="meta">
+      Cliente: <strong>{{ pedido.cliente.nome }}</strong> ·
+      Recebido: {{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "" }} ·
+      Itens: {{ pedido.itens | length }}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="check">✓</th>
+        <th>Localização</th>
+        <th>Produto</th>
+        <th>Cor</th>
+        <th style="text-align:right">Qtd</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pedido.itens %}
+      {% set v = item.variacao %}
+      <tr>
+        <td class="check"><span class="box"></span></td>
+        <td class="local">{{ v.produto.localizacao or "—" }}</td>
+        <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
+        <td>{{ v.cor or "—" }}</td>
+        <td class="qtd">
+          {{ item.qtd }} un{% if item.qtd_caixas %}<br /><small>{{ item.qtd_caixas }} cx</small>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{# Fragmento HTMX: disponível/selo da variação + sugestão de preço por faixa. #}
+<div class="rounded-md border border-marca-borda bg-marca-fundo p-3 text-sm">
+  <p class="font-semibold">{{ produto.codigo }} — {{ produto.descricao }} {% if variacao.cor %}({{ variacao.cor }}){% endif %}</p>
+  <div class="mt-1 flex flex-wrap items-center gap-3">
+    {% if variacao.estoque_modo == "EXATO" %}
+      <span>Disponível: <strong>{{ variacao.disponivel }}</strong> un</span>
+      {% if variacao.disponivel <= 0 %}
+        <span class="selo-acabou">Sem saldo</span>
+      {% elif variacao.disponivel < variacao.estoque_minimo %}
+        <span class="selo-pouco">Estoque baixo</span>
+      {% else %}
+        <span class="selo-tem">Em estoque</span>
+      {% endif %}
+    {% else %}
+      <span class="selo-{{ (variacao.rotulo_aprox or 'TEM') | lower }}">
+        {{ variacao.rotulo_aprox or "TEM" }} (aproximado)
+      </span>
+    {% endif %}
+    {% if produto.localizacao %}<span class="text-gray-500">Local: {{ produto.localizacao }}</span>{% endif %}
+  </div>
+
+  <div class="mt-2">
+    <p>
+      Sugestão ({{ sugestao.faixa }}): <strong>{{ sugestao.preco_sugerido | moeda }}</strong>
+      <span class="text-gray-500">
+        — varejo {{ sugestao.preco_pouca_qtd | moeda }} / atacado {{ sugestao.preco_muita_qtd | moeda }}
+        {% if sugestao.qtd_corte_atacado %}(corte ≥ {{ sugestao.qtd_corte_atacado }}){% endif %}
+      </span>
+    </p>
+    {% if sugestao.preco_promocional %}
+    <p class="text-gold-700">Promoção disponível: {{ sugestao.preco_promocional | moeda }}</p>
+    {% endif %}
+    {% if produto.unidades_por_caixa %}
+    <p class="text-gray-500">Caixa: {{ produto.unidades_por_caixa }} un</p>
+    {% endif %}
+  </div>
+</div>

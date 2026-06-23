@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block titulo %}Separação{% endblock %}
+{% block cabecalho %}Fila de separação{% endblock %}
+
+{% block content %}
+<div class="card">
+  <p class="mb-3 text-sm text-gray-500">Pedidos confirmados, em ordem de chegada.</p>
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Nº</th>
+          <th class="text-left">Cliente</th>
+          <th class="text-left">Itens</th>
+          <th class="text-left">Status</th>
+          <th class="text-left">Recebido</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pedidos %}
+        <tr>
+          <td>{{ p.numero or p.id }}</td>
+          <td>{{ p.cliente.nome }}</td>
+          <td>{{ p.itens | length }}</td>
+          <td><span class="rounded px-2 py-0.5 text-xs bg-marca-fundo">{{ p.status }}</span></td>
+          <td>{{ p.criado_em.strftime("%d/%m %H:%M") if p.criado_em else "" }}</td>
+          <td class="text-right"><a href="/separacao/{{ p.id }}" class="btn-primario">Separar</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="py-6 text-center text-gray-400">Fila vazia.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

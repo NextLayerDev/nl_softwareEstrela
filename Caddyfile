@@ -1,0 +1,6 @@
+# Caddy — proxy reverso com HTTPS interno automático para a rede local.
+# Gera e gerencia um certificado interno (CA local do Caddy) para sistema.local.
+sistema.local {
+    reverse_proxy app:8000
+    tls internal
+}

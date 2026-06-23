@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Pedido #{{ pedido.numero or pedido.id }} · Estrela Gestão</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #211B0F; margin: 0; padding: 24px; }
+    .topo { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #B98A19; padding-bottom: 12px; margin-bottom: 16px; }
+    .marca { font-size: 22px; font-weight: bold; color: #B98A19; }
+    h1 { font-size: 18px; margin: 0; }
+    .meta { font-size: 13px; line-height: 1.5; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+    th { background: #F6F2E8; }
+    .num { text-align: right; }
+    .total { margin-top: 16px; text-align: right; font-size: 16px; font-weight: bold; }
+    .rodape { margin-top: 32px; font-size: 12px; color: #555; }
+    .assinatura { margin-top: 48px; display: flex; justify-content: space-between; }
+    .linha-assina { border-top: 1px solid #333; width: 220px; text-align: center; padding-top: 4px; font-size: 12px; }
+    .btn-print { margin-bottom: 16px; }
+    @media print { .btn-print { display: none; } body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <button class="btn-print" onclick="window.print()">Imprimir</button>
+
+  <div class="topo">
+    <div>
+      <div class="marca">★ Estrela Gestão</div>
+      <h1>Pedido nº {{ pedido.numero or pedido.id }}</h1>
+    </div>
+    <div class="meta" style="text-align:right">
+      Status: {{ pedido.status }}<br />
+      Emissão: {{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "" }}<br />
+      Vendedor: {{ pedido.vendedor.nome }}
+    </div>
+  </div>
+
+  <div class="meta">
+    <strong>Cliente:</strong> {{ pedido.cliente.nome }}
+    {% if pedido.cliente.cnpj_cpf %}— {{ pedido.cliente.cnpj_cpf }}{% endif %}<br />
+    {% if pedido.cliente.telefone %}<strong>Telefone:</strong> {{ pedido.cliente.telefone }}<br />{% endif %}
+    {% if pedido.cliente.endereco %}<strong>Endereço:</strong> {{ pedido.cliente.endereco }}<br />{% endif %}
+    <strong>Pagamento:</strong> {{ pedido.cliente.condicao_pagto_padrao or "à vista" }}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Código</th><th>Descrição</th><th>Cor</th>
+        <th class="num">Qtd</th><th class="num">Preço un.</th>
+        <th class="num">Desc.</th><th class="num">Subtotal</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pedido.itens %}
+      {% set v = item.variacao %}
+      <tr>
+        <td>{{ v.produto.codigo }}</td>
+        <td>{{ v.produto.descricao }}</td>
+        <td>{{ v.cor or "—" }}</td>
+        <td class="num">
+          {{ item.qtd }}{% if item.qtd_caixas %} <small>({{ item.qtd_caixas }} cx)</small>{% endif %}
+        </td>
+        <td class="num">{{ item.preco_unit | moeda }}</td>
+        <td class="num">{{ item.desconto | moeda }}</td>
+        <td class="num">{{ item.subtotal | moeda }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if pedido.desconto_total and pedido.desconto_total > 0 %}
+  <p class="total" style="font-size:13px">Desconto total: {{ pedido.desconto_total | moeda }}</p>
+  {% endif %}
+  <div class="total">Total: {{ pedido.total | moeda }}</div>
+
+  {% if pedido.observacao %}<p class="rodape"><strong>Observação:</strong> {{ pedido.observacao }}</p>{% endif %}
+
+  <div class="assinatura">
+    <div class="linha-assina">Conferente</div>
+    <div class="linha-assina">Cliente</div>
+  </div>
+</body>
+</html>

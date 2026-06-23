@@ -1,0 +1,64 @@
+# Stack de PRODUÇÃO do Estrela Gestão (mini PC no cliente).
+# Sobe: PostgreSQL 16 + App (FastAPI/Gunicorn) + Caddy (HTTPS interno).
+# Variáveis sensíveis vêm de .env.prod (NÃO versionado).
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: estrela
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: estrela_gestao
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - estrela_net
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U estrela -d estrela_gestao"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://estrela:${DB_PASSWORD}@db:5432/estrela_gestao
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_MIN: ${JWT_EXPIRES_MIN:-480}
+      ENV: prod
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - estrela_net
+    restart: always
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - estrela_net
+    restart: always
+
+networks:
+  estrela_net:
+    driver: bridge
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}

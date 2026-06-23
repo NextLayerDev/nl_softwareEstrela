@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}Novo pedido{% endblock %}
+{% block cabecalho %}Novo pedido{% endblock %}
+
+{% block content %}
+<div class="card max-w-xl">
+  <form method="post" action="/pedidos">
+    <div class="mb-4">
+      <label class="label">Cliente</label>
+      <select name="cliente_id" required class="input w-full">
+        <option value="">Selecione…</option>
+        {% for c in clientes %}
+        <option value="{{ c.id }}">{{ c.nome }}{% if c.condicao_pagto_padrao %} — {{ c.condicao_pagto_padrao }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-4">
+      <label class="label">Observação</label>
+      <textarea name="observacao" rows="2" class="input w-full" placeholder="Opcional"></textarea>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit" class="btn-primario">Criar rascunho</button>
+      <a href="/pedidos" class="btn-secundario">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

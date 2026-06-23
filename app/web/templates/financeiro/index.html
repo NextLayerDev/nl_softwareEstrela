@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block titulo %}Financeiro{% endblock %}
+{% block cabecalho %}Financeiro — Contas a receber{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  {# Resumo do dia #}
+  <div class="card">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <div class="text-sm text-gray-500">Recebimentos de hoje</div>
+        <div class="text-2xl font-bold text-ok">
+          {{ (recebidas_hoje | map(attribute="valor") | sum) | moeda }}
+        </div>
+        <div class="text-xs text-gray-400">{{ recebidas_hoje | length }} baixa(s) hoje</div>
+      </div>
+      {% if user.perfil == "admin" %}
+      <form method="post" action="/financeiro/marcar-atrasados">
+        <button type="submit" class="btn-secundario">Marcar vencidas como atrasadas</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <form
+      class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-5"
+      hx-get="/financeiro/contas"
+      hx-trigger="change, submit"
+      hx-target="#tbody-contas"
+    >
+      <div>
+        <label class="label">Status</label>
+        <select name="status" class="input">
+          <option value="">Todos</option>
+          {% for s in status_opcoes %}
+          <option value="{{ s }}" {{ "selected" if filtros.status == s else "" }}>{{ s | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="label">Cliente</label>
+        <select name="cliente_id" class="input">
+          <option value="">Todos</option>
+          {% for c in clientes %}
+          <option value="{{ c.id }}" {{ "selected" if filtros.cliente_id == c.id|string else "" }}>{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="label">Venc. de</label>
+        <input type="date" name="venc_de" value="{{ filtros.venc_de }}" class="input" />
+      </div>
+      <div>
+        <label class="label">Venc. até</label>
+        <input type="date" name="venc_ate" value="{{ filtros.venc_ate }}" class="input" />
+      </div>
+      <div class="flex items-end">
+        <button type="submit" class="btn-primario w-full">Filtrar</button>
+      </div>
+    </form>
+
+    <div class="overflow-x-auto">
+      <table class="tabela w-full">
+        <thead>
+          <tr>
+            <th class="text-left">Pedido</th>
+            <th class="text-left">Cliente</th>
+            <th class="text-center">Parcela</th>
+            <th class="text-right">Valor</th>
+            <th class="text-center">Vencimento</th>
+            <th class="text-center">Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-contas">
+          {% include "financeiro/_linhas.html" %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

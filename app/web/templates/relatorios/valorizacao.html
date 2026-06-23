@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Valorização{% endblock %}
+{% block cabecalho %}Valorização de estoque{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="mb-4 flex items-center justify-between">
+    <div><span class="text-sm text-gray-500">Valor total em estoque (custo):</span>
+      <b class="text-ok">{{ dados.total | moeda }}</b></div>
+    <a href="/relatorios/valorizacao/export" class="btn-secundario">Exportar XLSX</a>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Código</th>
+          <th class="text-left">Descrição</th>
+          <th class="text-right">Estoque físico</th>
+          <th class="text-right">Custo unit.</th>
+          <th class="text-right">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in dados.linhas %}
+        <tr>
+          <td>{{ l.codigo }}</td>
+          <td>{{ l.descricao }}</td>
+          <td class="text-right">{{ l.fisico }}</td>
+          <td class="text-right">{{ l.preco_custo | moeda }}</td>
+          <td class="text-right">{{ l.valor | moeda }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="py-6 text-center text-gray-400">Sem produtos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

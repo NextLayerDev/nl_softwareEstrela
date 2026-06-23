@@ -1,0 +1,65 @@
+{# Fragmento: tabela de itens + totais. Trocado via HTMX ao adicionar/remover/descontar. #}
+<div id="bloco-itens" class="card">
+  <h3 class="mb-3 text-sm font-semibold">Itens</h3>
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Produto</th>
+          <th class="text-left">Cor</th>
+          <th class="text-right">Qtd</th>
+          <th class="text-right">Preço un.</th>
+          <th class="text-right">Desc.</th>
+          <th class="text-right">Subtotal</th>
+          {% if editavel %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pedido.itens %}
+        {% set v = item.variacao %}
+        <tr>
+          <td>
+            {{ v.produto.codigo }} — {{ v.produto.descricao }}
+            {% if item.qtd_caixas %}
+            <span class="block text-xs text-gray-400">
+              {{ item.qtd_caixas }} cx × {{ v.produto.unidades_por_caixa }} = {{ item.qtd }} un
+            </span>
+            {% endif %}
+          </td>
+          <td>{{ v.cor or "—" }}</td>
+          <td class="text-right">{{ item.qtd }}</td>
+          <td class="text-right">{{ item.preco_unit | moeda }}</td>
+          <td class="text-right">{{ item.desconto | moeda }}</td>
+          <td class="text-right">{{ item.subtotal | moeda }}</td>
+          {% if editavel %}
+          <td class="text-right">
+            <button class="btn-perigo text-xs"
+                    hx-delete="/pedidos/{{ pedido.id }}/itens/{{ item.id }}"
+                    hx-target="#bloco-itens" hx-swap="outerHTML"
+                    hx-confirm="Remover este item?">Remover</button>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 7 if editavel else 6 }}" class="py-6 text-center text-gray-400">
+          Nenhum item.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-4 flex flex-col items-end gap-2">
+    {% if editavel %}
+    <form class="flex items-end gap-2" method="post" action="/pedidos/{{ pedido.id }}/desconto"
+          hx-post="/pedidos/{{ pedido.id }}/desconto" hx-target="#bloco-itens" hx-swap="outerHTML">
+      <div>
+        <label class="label">Desconto total (R$)</label>
+        <input type="text" name="desconto" value="{{ pedido.desconto_total }}" class="input w-32" />
+      </div>
+      <button class="btn-secundario">Aplicar</button>
+    </form>
+    {% endif %}
+    <p class="text-lg font-bold">Total: {{ pedido.total | moeda }}</p>
+  </div>
+</div>

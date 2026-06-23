@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block titulo %}Separação #{{ pedido.numero or pedido.id }}{% endblock %}
+{% block cabecalho %}Separação do pedido #{{ pedido.numero or pedido.id }}{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+  <div>
+    <p class="font-semibold">{{ pedido.cliente.nome }}</p>
+    <p class="text-xs text-gray-400">Vendedor: {{ pedido.vendedor.nome }}</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/separacao/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">Imprimir lista</a>
+    <a href="/separacao" class="btn-secundario">Voltar</a>
+  </div>
+</div>
+
+{% include "separacao/_progresso.html" %}
+
+<div class="card mt-4">
+  <table class="tabela w-full">
+    <thead>
+      <tr>
+        <th class="text-center">OK</th>
+        <th class="text-left">Produto</th>
+        <th class="text-left">Cor</th>
+        <th class="text-left">Localização</th>
+        <th class="text-right">Qtd</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pedido.itens %}
+      {% set v = item.variacao %}
+      <tr>
+        <td class="text-center">
+          <input type="checkbox" {% if item.separado %}checked{% endif %}
+                 hx-post="/separacao/{{ pedido.id }}/itens/{{ item.id }}"
+                 hx-target="#progresso" hx-swap="outerHTML"
+                 hx-vals='js:{separado: event.target.checked}'
+                 name="separado" />
+        </td>
+        <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
+        <td>{{ v.cor or "—" }}</td>
+        <td><strong class="text-gold-700">{{ v.produto.localizacao or "—" }}</strong></td>
+        <td class="text-right">
+          {{ item.qtd }}{% if item.qtd_caixas %} <span class="text-xs text-gray-400">({{ item.qtd_caixas }} cx)</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

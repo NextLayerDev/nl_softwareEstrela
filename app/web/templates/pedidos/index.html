@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titulo %}Pedidos{% endblock %}
+{% block cabecalho %}Pedidos{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="mb-4 flex items-center justify-between">
+    <h2 class="text-base font-semibold">Pedidos</h2>
+    <a href="/pedidos/novo" class="btn-primario">Novo pedido</a>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Nº</th>
+          <th class="text-left">Cliente</th>
+          <th class="text-left">Vendedor</th>
+          <th class="text-left">Status</th>
+          <th class="text-right">Total</th>
+          <th class="text-left">Criado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pedidos %}
+        <tr>
+          <td>{{ p.numero or "—" }}</td>
+          <td>{{ p.cliente.nome }}</td>
+          <td>{{ p.vendedor.nome }}</td>
+          <td><span class="rounded px-2 py-0.5 text-xs bg-marca-fundo">{{ p.status }}</span></td>
+          <td class="text-right">{{ p.total | moeda }}</td>
+          <td>{{ p.criado_em.strftime("%d/%m/%Y %H:%M") if p.criado_em else "" }}</td>
+          <td class="text-right"><a href="/pedidos/{{ p.id }}" class="btn-secundario">Abrir</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="py-6 text-center text-gray-400">Nenhum pedido.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

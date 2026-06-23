@@ -1,0 +1,31 @@
+{% set selo = {"pago": "selo-muito", "atrasado": "selo-acabou", "pendente": "selo-tem"} %}
+{% for conta in contas %}
+<tr>
+  <td>#{{ conta.pedido.numero or conta.pedido_id }}</td>
+  <td>{{ conta.pedido.cliente.nome if conta.pedido and conta.pedido.cliente else "—" }}</td>
+  <td class="text-center">{{ conta.parcela }}</td>
+  <td class="text-right">{{ conta.valor | moeda }}</td>
+  <td class="text-center">{{ conta.vencimento.strftime("%d/%m/%Y") }}</td>
+  <td class="text-center">
+    <span class="{{ selo.get(conta.status.value, 'selo-tem') }}">{{ conta.status.value | capitalize }}</span>
+  </td>
+  <td class="whitespace-nowrap text-right">
+    {% if conta.status.value != "pago" %}
+    <form method="post" action="/financeiro/contas/{{ conta.id }}/baixar" class="inline-flex items-center gap-2">
+      <select name="forma_pagamento" class="input py-1" required>
+        <option value="">Forma…</option>
+        {% for f in formas %}<option value="{{ f }}">{{ f | capitalize }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn-primario">Baixar</button>
+    </form>
+    {% else %}
+    <span class="text-xs text-gray-400">
+      {{ conta.forma_pagamento | capitalize if conta.forma_pagamento else "" }}
+      {% if conta.baixado_em %}· {{ conta.baixado_em.strftime("%d/%m/%Y") }}{% endif %}
+    </span>
+    {% endif %}
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="7" class="py-6 text-center text-gray-400">Nenhuma conta encontrada.</td></tr>
+{% endfor %}
