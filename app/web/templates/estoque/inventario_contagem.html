@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block titulo %}Inventário #{{ inventario.id }}{% endblock %}
+{% block cabecalho %}Inventário #{{ inventario.id }}{% endblock %}
+
+{% block content %}
+{% set aberto = inventario.status.value == "aberto" %}
+<div class="card mb-4 flex items-center justify-between">
+  <div>
+    <div class="text-lg font-bold">{{ inventario.descricao or "Inventário #" ~ inventario.id }}</div>
+    <div class="text-sm text-gray-500">
+      Status:
+      {% if aberto %}<span class="selo-tem">aberto</span>{% else %}<span class="selo-muito">aplicado</span>{% endif %}
+    </div>
+  </div>
+  <div class="flex gap-2">
+    <a href="/inventario" class="btn-secundario">Voltar</a>
+    {% if aberto and pode_aplicar %}
+    <form method="post" action="/inventario/{{ inventario.id }}/aplicar"
+          onsubmit="return confirm('Aplicar o inventário? Isso gera ajustes definitivos.');">
+      <button type="submit" class="btn-primario">Aplicar inventário</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <table class="tabela w-full">
+    <thead>
+      <tr>
+        <th class="text-left">Código</th>
+        <th class="text-left">Descrição</th>
+        <th class="text-left">Cor</th>
+        <th class="text-right">Sistema</th>
+        <th class="text-right">Contado</th>
+        {% if aberto %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in inventario.itens %}
+      {% set p = item.variacao.produto %}
+      <tr>
+        <td class="font-mono">{{ p.codigo }}</td>
+        <td>{{ p.descricao }}</td>
+        <td>{{ item.variacao.cor or "padrão" }}</td>
+        <td class="text-right">{{ item.qtd_sistema }}</td>
+        <td class="text-right">{{ item.qtd_contada if item.qtd_contada is not none else "—" }}</td>
+        {% if aberto %}
+        <td class="text-right">
+          <form method="post" action="/inventario/{{ inventario.id }}/contagem" class="flex items-center justify-end gap-1">
+            <input type="hidden" name="item_id" value="{{ item.id }}" />
+            <input type="number" name="qtd_contada" min="0"
+                   value="{{ item.qtd_contada if item.qtd_contada is not none else '' }}"
+                   class="input w-24" required />
+            <button type="submit" class="btn-secundario">Salvar</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="py-6 text-center text-gray-400">Inventário sem itens.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

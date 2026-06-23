@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block cabecalho %}{{ titulo }}{% endblock %}
+
+{% block content %}
+{% set acao = "/produtos/" ~ produto.id if produto else "/produtos" %}
+<form method="post" action="{{ acao }}" class="card max-w-3xl"
+      x-data="{ variacoes: [], codigos: [] }">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div>
+      <label class="label">Código *</label>
+      {% if produto %}
+        <input class="input bg-gray-100" value="{{ produto.codigo }}" readonly />
+        <input type="hidden" name="codigo" value="{{ produto.codigo }}" />
+      {% else %}
+        <input class="input" name="codigo" required />
+      {% endif %}
+    </div>
+    <div>
+      <label class="label">Categoria</label>
+      <select class="input" name="categoria_id">
+        <option value="">—</option>
+        {% for c in categorias %}
+          <option value="{{ c.id }}" {{ 'selected' if produto and produto.categoria_id == c.id else '' }}>{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label">Descrição *</label>
+      <input class="input" name="descricao" required value="{{ produto.descricao if produto else '' }}" />
+    </div>
+    <div>
+      <label class="label">Unidades por caixa</label>
+      <input class="input" type="number" name="unidades_por_caixa" value="{{ produto.unidades_por_caixa if produto and produto.unidades_por_caixa is not none else '' }}" />
+    </div>
+    <div>
+      <label class="label">Localização</label>
+      <input class="input" name="localizacao" value="{{ produto.localizacao if produto and produto.localizacao else '' }}" />
+    </div>
+    <div>
+      <label class="label">Preço varejo (pouca qtd)</label>
+      <input class="input" name="preco_pouca_qtd" value="{{ produto.preco_pouca_qtd if produto else '0' }}" />
+    </div>
+    <div>
+      <label class="label">Preço atacado (muita qtd)</label>
+      <input class="input" name="preco_muita_qtd" value="{{ produto.preco_muita_qtd if produto else '0' }}" />
+    </div>
+    <div>
+      <label class="label">Preço promocional</label>
+      <input class="input" name="preco_promocional" value="{{ produto.preco_promocional if produto and produto.preco_promocional is not none else '' }}" />
+    </div>
+    <div>
+      <label class="label">Qtd corte atacado</label>
+      <input class="input" type="number" name="qtd_corte_atacado" value="{{ produto.qtd_corte_atacado if produto and produto.qtd_corte_atacado is not none else '' }}" />
+    </div>
+    <div>
+      <label class="label">Preço de custo</label>
+      <input class="input" name="preco_custo" value="{{ produto.preco_custo if produto else '0' }}" />
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label">Observação</label>
+      <textarea class="input" name="observacao" rows="2">{{ produto.observacao if produto and produto.observacao else '' }}</textarea>
+    </div>
+    <div class="flex items-center gap-4">
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="ativo" {{ 'checked' if (not produto) or produto.ativo else '' }} /> Ativo
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="publicar_catalogo" {{ 'checked' if produto and produto.publicar_catalogo else '' }} /> Publicar no catálogo
+      </label>
+    </div>
+  </div>
+
+  {% if not produto %}
+  {# Variações (cores) só na criação; edição de saldo é via módulo de Estoque. #}
+  <div class="mt-6">
+    <h3 class="mb-2 font-semibold">Variações (cores)</h3>
+    <template x-for="(v, i) in variacoes" :key="i">
+      <div class="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-6 items-end">
+        <input class="input" name="var_cor" placeholder="Cor" x-model="v.cor" />
+        <select class="input" name="var_modo" x-model="v.modo">
+          <option value="APROXIMADO">Aproximado</option>
+          <option value="EXATO">Exato</option>
+        </select>
+        <input class="input" name="var_estoque" type="number" placeholder="Estoque" x-model="v.estoque" />
+        <input class="input" name="var_minimo" type="number" placeholder="Mínimo" x-model="v.minimo" />
+        <select class="input" name="var_rotulo" x-model="v.rotulo">
+          <option value="">—</option>
+          <option value="MUITO">Muito</option>
+          <option value="POUCO">Pouco</option>
+          <option value="TEM">Tem</option>
+          <option value="ACABOU">Acabou</option>
+        </select>
+        <button type="button" class="btn-perigo" @click="variacoes.splice(i,1)">Remover</button>
+      </div>
+    </template>
+    <button type="button" class="btn-secundario" @click="variacoes.push({cor:'',modo:'APROXIMADO',estoque:0,minimo:0,rotulo:''})">+ Adicionar variação</button>
+  </div>
+
+  <div class="mt-6">
+    <h3 class="mb-2 font-semibold">Códigos alternativos</h3>
+    <template x-for="(c, i) in codigos" :key="i">
+      <div class="mb-2 flex gap-2">
+        <input class="input" name="cod_alt" placeholder="Código alternativo" x-model="codigos[i]" />
+        <button type="button" class="btn-perigo" @click="codigos.splice(i,1)">Remover</button>
+      </div>
+    </template>
+    <button type="button" class="btn-secundario" @click="codigos.push('')">+ Adicionar código</button>
+  </div>
+  {% endif %}
+
+  <div class="mt-6 flex gap-2">
+    <button type="submit" class="btn-primario">Salvar</button>
+    <a href="/produtos" class="btn-secundario">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

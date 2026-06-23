@@ -1,7 +1,7 @@
-"""Fixtures de teste: banco isolado por teste (transação com rollback), client e usuários por perfil.
+"""Fixtures de teste: banco isolado por teste (transação revertida), e usuários por perfil.
 
-Estratégia: cada teste roda dentro de uma transação SAVEPOINT que é revertida ao final,
-deixando o banco limpo sem recriar schema. Requer o banco de dev já migrado (alembic upgrade head).
+Cada teste roda dentro de uma transação SAVEPOINT revertida ao final, deixando o banco
+limpo sem recriar schema. Requer o banco de dev já migrado (alembic upgrade head).
 """
 
 from __future__ import annotations

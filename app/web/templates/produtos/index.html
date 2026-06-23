@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block titulo %}Produtos{% endblock %}
+{% block cabecalho %}Produtos{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="mb-4 flex items-center justify-between gap-3">
+    <input
+      type="search"
+      name="q"
+      value="{{ q }}"
+      placeholder="Buscar por código ou descrição…"
+      class="input w-full max-w-md"
+      autocomplete="off"
+      hx-get="/produtos/busca"
+      hx-trigger="keyup changed delay:250ms, search"
+      hx-target="#tbody-produtos"
+      hx-indicator="#busca-load"
+    />
+    <span id="busca-load" class="htmx-indicator text-sm text-gray-400">buscando…</span>
+    {% if pode_editar %}
+      <a href="/produtos/novo" class="btn-primario whitespace-nowrap">Novo produto</a>
+    {% endif %}
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Código</th>
+          <th class="text-left">Descrição</th>
+          <th class="text-left">Categoria</th>
+          <th class="text-right">Preço varejo</th>
+          <th class="text-right">Preço atacado</th>
+          {% if ver_custo %}<th class="text-right">Custo</th>{% endif %}
+          <th class="text-left">Variações</th>
+          {% if pode_editar %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody id="tbody-produtos">
+        {% include "produtos/_linhas.html" %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

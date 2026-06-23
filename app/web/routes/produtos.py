@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.controllers.produto_controller import produto_controller
+from app.core.templates import templates
+from app.deps.auth import get_current_user, require_role
+from app.deps.db import get_db
+from app.models.categoria import Categoria
+from app.models.usuario import Usuario
+from app.schemas.produto import pode_ver_custo
+
+router = APIRouter()
+
+
+def _categorias(db: Session) -> list[Categoria]:
+    return list(db.scalars(select(Categoria).order_by(Categoria.nome)))
+
+
+@router.get("/produtos", response_class=HTMLResponse)
+def listar_produtos(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_current_user),
+):
+    produtos = produto_controller.listar(db, q or None)
+    contexto = {
+        "user": usuario,
+        "titulo": "Produtos",
+        "produtos": produtos,
+        "q": q,
+        "pode_editar": usuario.perfil == "admin",
+        "ver_custo": pode_ver_custo(usuario.perfil),
+    }
+    return templates.TemplateResponse(request, "produtos/index.html", contexto)
+
+
+@router.get("/produtos/busca", response_class=HTMLResponse)
+def busca_produtos(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_current_user),
+):
+    produtos = produto_controller.listar(db, q or None)
+    contexto = {
+        "user": usuario,
+        "produtos": produtos,
+        "pode_editar": usuario.perfil == "admin",
+        "ver_custo": pode_ver_custo(usuario.perfil),
+    }
+    return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
+
+
+@router.get("/produtos/novo", response_class=HTMLResponse)
+def form_novo_produto(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    contexto = {
+        "user": usuario,
+        "titulo": "Novo produto",
+        "produto": None,
+        "categorias": _categorias(db),
+    }
+    return templates.TemplateResponse(request, "produtos/form.html", contexto)
+
+
+@router.get("/produtos/{produto_id}/editar", response_class=HTMLResponse)
+def form_editar_produto(
+    request: Request,
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    produto = produto_controller.obter(db, produto_id)
+    contexto = {
+        "user": usuario,
+        "titulo": f"Editar {produto.codigo}",
+        "produto": produto,
+        "categorias": _categorias(db),
+    }
+    return templates.TemplateResponse(request, "produtos/form.html", contexto)
+
+
+@router.post("/produtos", response_class=HTMLResponse)
+async def criar_produto(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    raw = await request.form()
+    form = dict(raw)
+    # listas paralelas para variações/códigos
+    form["var_cor"] = raw.getlist("var_cor")
+    form["var_modo"] = raw.getlist("var_modo")
+    form["var_estoque"] = raw.getlist("var_estoque")
+    form["var_minimo"] = raw.getlist("var_minimo")
+    form["var_rotulo"] = raw.getlist("var_rotulo")
+    form["cod_alt"] = raw.getlist("cod_alt")
+    produto_controller.criar(db, form)
+    return RedirectResponse(url="/produtos", status_code=303)
+
+
+@router.post("/produtos/{produto_id}", response_class=HTMLResponse)
+async def atualizar_produto(
+    request: Request,
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    form = dict(await request.form())
+    produto_controller.atualizar(db, produto_id, form)
+    return RedirectResponse(url="/produtos", status_code=303)
+
+
+@router.post("/produtos/{produto_id}/inativar", response_class=HTMLResponse)
+async def inativar_produto(
+    request: Request,
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    produto_controller.inativar(db, produto_id)
+    return RedirectResponse(url="/produtos", status_code=303)

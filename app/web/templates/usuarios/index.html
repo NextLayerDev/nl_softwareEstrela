@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários{% endblock %}
+{% block cabecalho %}Usuários{% endblock %}
+
+{% block content %}
+<div class="card" x-data="{ resetId: null }">
+  <div class="mb-4 flex items-center justify-end">
+    <a href="/usuarios/novo" class="btn-primario">Novo usuário</a>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Nome</th>
+          <th class="text-left">E-mail</th>
+          <th class="text-left">Perfil</th>
+          <th class="text-left">Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+        <tr class="{{ '' if u.ativo else 'opacity-50' }}">
+          <td>{{ u.nome }}</td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.perfil }}</td>
+          <td>{{ "Ativo" if u.ativo else "Inativo" }}</td>
+          <td class="whitespace-nowrap text-right">
+            <a href="/usuarios/{{ u.id }}/editar" class="btn-secundario">Editar</a>
+            <button type="button" class="btn-secundario" @click="resetId = {{ u.id }}">Resetar senha</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="py-6 text-center text-gray-400">Nenhum usuário.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Modal de reset de senha #}
+  <div x-show="resetId !== null" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="card w-full max-w-sm bg-white" @click.outside="resetId = null">
+      <h3 class="mb-3 font-semibold">Resetar senha</h3>
+      <form method="post" :action="'/usuarios/' + resetId + '/reset-senha'">
+        <label class="label">Nova senha</label>
+        <input class="input" type="password" name="nova_senha" minlength="6" required />
+        <div class="mt-4 flex gap-2">
+          <button type="submit" class="btn-primario">Salvar</button>
+          <button type="button" class="btn-secundario" @click="resetId = null">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

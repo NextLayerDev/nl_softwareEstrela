@@ -1,0 +1,20 @@
+{% for c in clientes %}
+<tr>
+  <td>{{ c.nome }}</td>
+  <td>{{ c.cnpj_cpf or "—" }}</td>
+  <td>{{ c.telefone or "—" }}</td>
+  <td>{{ c.condicao_pagto_padrao or "—" }}</td>
+  <td class="text-right">{{ c.limite_credito | moeda if c.limite_credito is not none else "—" }}</td>
+  {% if pode_editar %}
+  <td class="whitespace-nowrap text-right">
+    <a href="/clientes/{{ c.id }}/editar" class="btn-secundario">Editar</a>
+    <form method="post" action="/clientes/{{ c.id }}/inativar" class="inline"
+          onsubmit="return confirm('Inativar este cliente?');">
+      <button type="submit" class="btn-perigo">Inativar</button>
+    </form>
+  </td>
+  {% endif %}
+</tr>
+{% else %}
+<tr><td colspan="6" class="py-6 text-center text-gray-400">Nenhum cliente encontrado.</td></tr>
+{% endfor %}

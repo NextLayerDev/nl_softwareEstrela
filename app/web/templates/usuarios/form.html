@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block cabecalho %}{{ titulo }}{% endblock %}
+
+{% block content %}
+{% set acao = "/usuarios/" ~ usuario_edit.id if usuario_edit else "/usuarios" %}
+<form method="post" action="{{ acao }}" class="card max-w-xl">
+  <div class="grid grid-cols-1 gap-4">
+    <div>
+      <label class="label">Nome *</label>
+      <input class="input" name="nome" required value="{{ usuario_edit.nome if usuario_edit else '' }}" />
+    </div>
+    <div>
+      <label class="label">E-mail *</label>
+      <input class="input" type="email" name="email" required value="{{ usuario_edit.email if usuario_edit else '' }}" />
+    </div>
+    {% if not usuario_edit %}
+    <div>
+      <label class="label">Senha *</label>
+      <input class="input" type="password" name="senha" minlength="6" required />
+    </div>
+    {% endif %}
+    <div>
+      <label class="label">Perfil *</label>
+      <select class="input" name="perfil" required>
+        {% for perfil in perfis %}
+          <option value="{{ perfil }}" {{ 'selected' if usuario_edit and usuario_edit.perfil == perfil else '' }}>{{ perfil }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="ativo" {{ 'checked' if (not usuario_edit) or usuario_edit.ativo else '' }} /> Ativo
+      </label>
+    </div>
+  </div>
+  <div class="mt-6 flex gap-2">
+    <button type="submit" class="btn-primario">Salvar</button>
+    <a href="/usuarios" class="btn-secundario">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

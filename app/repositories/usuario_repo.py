@@ -24,5 +24,9 @@ class UsuarioRepository:
         db.flush()
         return usuario
 
+    def flush(self, db: Session) -> None:
+        """Materializa alterações pendentes na sessão (sem commit)."""
+        db.flush()
+
 
 usuario_repo = UsuarioRepository()

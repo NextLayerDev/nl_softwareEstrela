@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block titulo %}Clientes{% endblock %}
+{% block cabecalho %}Clientes{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="mb-4 flex items-center justify-between gap-3">
+    <input
+      type="search"
+      name="q"
+      value="{{ q }}"
+      placeholder="Buscar por nome, CNPJ/CPF ou telefone…"
+      class="input w-full max-w-md"
+      autocomplete="off"
+      hx-get="/clientes/busca"
+      hx-trigger="keyup changed delay:250ms, search"
+      hx-target="#tbody-clientes"
+    />
+    {% if pode_editar %}
+      <a href="/clientes/novo" class="btn-primario whitespace-nowrap">Novo cliente</a>
+    {% endif %}
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Nome</th>
+          <th class="text-left">CNPJ/CPF</th>
+          <th class="text-left">Telefone</th>
+          <th class="text-left">Cond. pagto</th>
+          <th class="text-right">Limite crédito</th>
+          {% if pode_editar %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody id="tbody-clientes">
+        {% include "clientes/_linhas.html" %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

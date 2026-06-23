@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block cabecalho %}{{ titulo }}{% endblock %}
+
+{% block content %}
+{% set acao = "/clientes/" ~ cliente.id if cliente else "/clientes" %}
+<form method="post" action="{{ acao }}" class="card max-w-2xl">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="sm:col-span-2">
+      <label class="label">Nome *</label>
+      <input class="input" name="nome" required value="{{ cliente.nome if cliente else '' }}" />
+    </div>
+    <div>
+      <label class="label">CNPJ/CPF</label>
+      <input class="input" name="cnpj_cpf" value="{{ cliente.cnpj_cpf if cliente and cliente.cnpj_cpf else '' }}" />
+    </div>
+    <div>
+      <label class="label">Telefone</label>
+      <input class="input" name="telefone" value="{{ cliente.telefone if cliente and cliente.telefone else '' }}" />
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label">Endereço</label>
+      <textarea class="input" name="endereco" rows="2">{{ cliente.endereco if cliente and cliente.endereco else '' }}</textarea>
+    </div>
+    <div>
+      <label class="label">Condição de pagamento padrão</label>
+      <input class="input" name="condicao_pagto_padrao" placeholder="à vista, 30 dias, 2x…" value="{{ cliente.condicao_pagto_padrao if cliente and cliente.condicao_pagto_padrao else '' }}" />
+    </div>
+    <div>
+      <label class="label">Limite de crédito</label>
+      <input class="input" name="limite_credito" value="{{ cliente.limite_credito if cliente and cliente.limite_credito is not none else '' }}" />
+    </div>
+    <div>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="ativo" {{ 'checked' if (not cliente) or cliente.ativo else '' }} /> Ativo
+      </label>
+    </div>
+  </div>
+  <div class="mt-6 flex gap-2">
+    <button type="submit" class="btn-primario">Salvar</button>
+    <a href="/clientes" class="btn-secundario">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

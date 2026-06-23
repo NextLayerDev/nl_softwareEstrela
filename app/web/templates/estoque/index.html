@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block titulo %}Estoque{% endblock %}
+{% block cabecalho %}Estoque{% endblock %}
+
+{% block content %}
+<div class="card" x-data="{ entrada: null, ajuste: null }"
+     @abrir-entrada.window="entrada = $event.detail; ajuste = null"
+     @abrir-ajuste.window="ajuste = $event.detail; entrada = null">
+
+  <div class="mb-4 flex items-center justify-between gap-3">
+    <input
+      type="search"
+      name="q"
+      value="{{ q }}"
+      placeholder="Buscar por código, descrição, cor ou localização…"
+      class="input w-full max-w-md"
+      autocomplete="off"
+      hx-get="/estoque/busca"
+      hx-trigger="keyup changed delay:250ms, search"
+      hx-target="#tbody-estoque"
+      hx-indicator="#busca-load"
+    />
+    <span id="busca-load" class="htmx-indicator text-sm text-gray-400">buscando…</span>
+    <a href="/inventario" class="btn-secundario whitespace-nowrap">Inventário</a>
+  </div>
+
+  {# ---- Painel de entrada (HTMX) ---- #}
+  {% if pode_entrada %}
+  <div x-show="entrada" x-cloak class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
+    <form method="post" action="/estoque/entrada"
+          hx-post="/estoque/entrada" hx-target="#tbody-estoque" hx-swap="afterbegin"
+          @htmx:after-request="entrada = null">
+      <p class="mb-2 text-sm">Entrada de mercadoria — <strong x-text="entrada?.rotulo"></strong></p>
+      <input type="hidden" name="variacao_id" :value="entrada?.id" />
+      <div class="flex items-end gap-2">
+        <div>
+          <label class="label">Quantidade</label>
+          <input type="number" name="qtd" min="1" required class="input w-32" />
+        </div>
+        <button type="submit" class="btn-primario">Registrar entrada</button>
+        <button type="button" class="btn-secundario" @click="entrada = null">Cancelar</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {# ---- Painel de ajuste (HTMX) ---- #}
+  {% if pode_ajuste %}
+  <div x-show="ajuste" x-cloak class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
+    <form method="post" action="/estoque/ajuste"
+          hx-post="/estoque/ajuste" hx-target="#tbody-estoque" hx-swap="afterbegin"
+          @htmx:after-request="ajuste = null">
+      <p class="mb-2 text-sm">Ajuste manual — <strong x-text="ajuste?.rotulo"></strong></p>
+      <input type="hidden" name="variacao_id" :value="ajuste?.id" />
+      <div class="flex items-end gap-2">
+        <div>
+          <label class="label">Novo saldo</label>
+          <input type="number" name="novo_saldo" min="0" :value="ajuste?.saldo" required class="input w-32" />
+        </div>
+        <div class="flex-1">
+          <label class="label">Motivo (obrigatório)</label>
+          <input type="text" name="motivo" required class="input w-full" placeholder="Ex.: avaria, recontagem…" />
+        </div>
+        <button type="submit" class="btn-primario">Ajustar</button>
+        <button type="button" class="btn-secundario" @click="ajuste = null">Cancelar</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Código</th>
+          <th class="text-left">Descrição</th>
+          <th class="text-left">Cor</th>
+          <th class="text-left">Localização</th>
+          <th class="text-center">Saldo</th>
+          <th class="text-center">Modo</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-estoque">
+        {% include "estoque/_linhas.html" %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

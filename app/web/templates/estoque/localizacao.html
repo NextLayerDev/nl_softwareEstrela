@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block titulo %}Localização{% endblock %}
+{% block cabecalho %}Consulta de Localização{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-4xl">
+  <div class="card mb-6">
+    <input
+      type="search"
+      name="q"
+      value="{{ q }}"
+      placeholder="Buscar produto por código, descrição ou cor…"
+      class="input w-full text-2xl"
+      style="padding: 1rem 1.25rem;"
+      autocomplete="off"
+      autofocus
+      hx-get="/estoque/localizacao"
+      hx-trigger="keyup changed delay:200ms, search"
+      hx-target="#cartoes-local"
+      hx-indicator="#local-load"
+    />
+    <span id="local-load" class="htmx-indicator mt-2 block text-center text-gray-400">buscando…</span>
+  </div>
+
+  <div id="cartoes-local" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    {% include "estoque/_cartoes_local.html" %}
+  </div>
+</div>
+{% endblock %}

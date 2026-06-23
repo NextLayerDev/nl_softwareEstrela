@@ -1,0 +1,31 @@
+{% for p in produtos %}
+<tr class="{{ '' if p.ativo else 'opacity-50' }}">
+  <td class="font-mono">{{ p.codigo }}</td>
+  <td>{{ p.descricao }}</td>
+  <td>{{ p.categoria.nome if p.categoria else "—" }}</td>
+  <td class="text-right">{{ p.preco_pouca_qtd | moeda }}</td>
+  <td class="text-right">{{ p.preco_muita_qtd | moeda }}</td>
+  {% if ver_custo %}<td class="text-right">{{ p.preco_custo | moeda }}</td>{% endif %}
+  <td>
+    {% for v in p.variacoes %}
+      <span class="inline-block rounded bg-marca-fundo px-2 py-0.5 text-xs">
+        {{ v.cor or "padrão" }}
+        {% if v.estoque_modo.value == "EXATO" %}({{ v.estoque_fisico }}){% elif v.rotulo_aprox %}({{ v.rotulo_aprox.value | lower }}){% endif %}
+      </span>
+    {% else %}—{% endfor %}
+  </td>
+  {% if pode_editar %}
+  <td class="whitespace-nowrap text-right">
+    <a href="/produtos/{{ p.id }}/editar" class="btn-secundario">Editar</a>
+    {% if p.ativo %}
+    <form method="post" action="/produtos/{{ p.id }}/inativar" class="inline"
+          onsubmit="return confirm('Inativar este produto?');">
+      <button type="submit" class="btn-perigo">Inativar</button>
+    </form>
+    {% endif %}
+  </td>
+  {% endif %}
+</tr>
+{% else %}
+<tr><td colspan="8" class="py-6 text-center text-gray-400">Nenhum produto encontrado.</td></tr>
+{% endfor %}

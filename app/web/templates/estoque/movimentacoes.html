@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block titulo %}Movimentações{% endblock %}
+{% block cabecalho %}Movimentações{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="font-mono text-gray-500">{{ variacao.produto.codigo }}</div>
+      <div class="text-xl font-bold">{{ variacao.produto.descricao }} — {{ variacao.cor or "padrão" }}</div>
+      <div class="mt-1 text-sm text-gray-500">
+        Modo: <strong>{{ "exato" if variacao.estoque_modo.value == "EXATO" else "aproximado" }}</strong>
+        · Físico: {{ variacao.estoque_fisico }}
+        · Reservado: {{ variacao.estoque_reservado }}
+        · Disponível: {{ variacao.disponivel }}
+      </div>
+    </div>
+    <a href="/estoque" class="btn-secundario">Voltar</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="overflow-x-auto">
+    <table class="tabela w-full">
+      <thead>
+        <tr>
+          <th class="text-left">Data/hora</th>
+          <th class="text-left">Tipo</th>
+          <th class="text-right">Qtd</th>
+          <th class="text-right">Saldo após</th>
+          <th class="text-left">Origem</th>
+          <th class="text-left">Motivo / Ref.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in movimentacoes %}
+        <tr>
+          <td>{{ m.criado_em.strftime("%d/%m/%Y %H:%M") if m.criado_em else "—" }}</td>
+          <td>{{ m.tipo.value }}</td>
+          <td class="text-right">{{ m.qtd }}</td>
+          <td class="text-right font-semibold">{{ m.saldo_apos }}</td>
+          <td>{{ m.origem.value }}</td>
+          <td>{{ m.motivo or ("ref #" ~ m.ref_id if m.ref_id else "—") }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="py-6 text-center text-gray-400">Sem movimentações.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
