@@ -5,8 +5,12 @@
 {% block content %}
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
   <div class="card">
-    <div class="text-sm text-gray-500">Produtos cadastrados</div>
-    <div class="mt-1 text-3xl font-bold text-gold-600">{{ kpis.total_produtos }}</div>
+    <div class="text-sm text-gray-500">Vendas faturadas hoje</div>
+    <div class="mt-1 text-3xl font-bold text-gold-600">{{ kpis.vendas_hoje | moeda }}</div>
+  </div>
+  <div class="card">
+    <div class="text-sm text-gray-500">Pedidos hoje</div>
+    <div class="mt-1 text-3xl font-bold">{{ kpis.pedidos_hoje }}</div>
   </div>
   <div class="card">
     <div class="text-sm text-gray-500">Alertas de estoque</div>
@@ -15,12 +19,57 @@
     </div>
     <div class="mt-1 text-xs text-gray-400">no/abaixo do mínimo ou pouco/acabou</div>
   </div>
+  {% if mostra_financeiro %}
+  <div class="card">
+    <div class="text-sm text-gray-500">Contas a receber</div>
+    <div class="mt-1 text-3xl font-bold">{{ kpis.contas_pendentes }}
+      <span class="text-base font-normal text-gray-400">pendentes</span></div>
+    {% if kpis.contas_atrasadas %}
+      <div class="mt-1 text-xs text-critico">{{ kpis.contas_atrasadas }} atrasada(s)</div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="text-sm text-gray-500">Produtos cadastrados</div>
+    <div class="mt-1 text-3xl font-bold">{{ kpis.total_produtos }}</div>
+  </div>
+  {% endif %}
 </div>
 
-<div class="card mt-6">
-  <p class="text-gray-600">
-    Bem-vindo(a), <strong>{{ user.nome }}</strong>. Use o menu à esquerda para navegar pelos módulos
-    disponíveis ao seu perfil (<strong>{{ user.perfil }}</strong>).
-  </p>
+<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+  {# Gráfico simples de 7 dias (barras CSS, sem JS externo) #}
+  <div class="card">
+    <h2 class="mb-3 text-base font-semibold">Vendas — últimos 7 dias</h2>
+    <div class="flex h-40 items-end gap-2">
+      {% for s in serie %}
+      <div class="flex flex-1 flex-col items-center justify-end">
+        <div class="w-full rounded-t bg-gold-500"
+             style="height: {{ (s.valor / max_serie * 100) | round(1) }}%; min-height: 2px;"
+             title="{{ s.valor | moeda }}"></div>
+        <div class="mt-1 text-[10px] text-gray-500">{{ s.dia }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="mb-3 text-base font-semibold">Últimos pedidos</h2>
+    {% if ultimos %}
+    <table class="tabela">
+      <thead><tr><th>Nº</th><th>Status</th><th class="text-right">Total</th></tr></thead>
+      <tbody>
+        {% for p in ultimos %}
+        <tr>
+          <td>{{ p.numero or "rascunho" }}</td>
+          <td>{{ p.status.value if p.status else "" }}</td>
+          <td class="text-right">{{ p.total | moeda }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-gray-500">Nenhum pedido ainda.</p>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

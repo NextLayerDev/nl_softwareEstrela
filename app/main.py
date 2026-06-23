@@ -1,18 +1,38 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from app.core.config import settings
 from app.core.errors import DominioError, NaoAutenticadoError
 from app.core.templates import templates
 
 logger = logging.getLogger("estrela")
 
-app = FastAPI(title="Estrela Gestão", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Em produção, sobe o agendador de jobs (ex.: marcar contas a receber atrasadas).
+    scheduler = None
+    if settings.ENV == "prod":
+        from app.jobs import iniciar_scheduler
+
+        scheduler = iniciar_scheduler()
+        logger.info("Agendador de jobs iniciado.")
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+
+
+app = FastAPI(title="Estrela Gestão", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")

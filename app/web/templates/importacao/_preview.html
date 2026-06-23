@@ -1,0 +1,40 @@
+{% if erro %}
+  <div class="alerta-erro">{{ erro }}</div>
+{% else %}
+<div class="card">
+  <h2 class="mb-3 text-base font-semibold">Prévia — {{ nome_arquivo }}</h2>
+  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div><div class="text-xs text-gray-500">Produtos</div><div class="text-2xl font-bold text-gold-600">{{ total_produtos }}</div></div>
+    <div><div class="text-xs text-gray-500">Variações</div><div class="text-2xl font-bold">{{ total_variacoes }}</div></div>
+    <div><div class="text-xs text-gray-500">Exatas</div><div class="text-2xl font-bold text-ok">{{ exatas }}</div></div>
+    <div><div class="text-xs text-gray-500">Aproximadas</div><div class="text-2xl font-bold text-aviso">{{ aproximadas }}</div></div>
+  </div>
+  <p class="mt-3 text-sm text-gray-600">
+    Ao confirmar: <strong>{{ resultado.produtos_criados }}</strong> novos produtos,
+    <strong>{{ resultado.produtos_atualizados }}</strong> atualizados,
+    <strong>{{ resultado.variacoes_criadas }}</strong> variações novas.
+  </p>
+
+  {% if inconsistencias %}
+  <div class="alerta-erro mt-4">
+    {{ inconsistencias | length }} inconsistência(s) detectada(s) — revise antes de confirmar.
+  </div>
+  <div class="mt-3 max-h-72 overflow-auto">
+    <table class="tabela">
+      <thead><tr><th>Aba</th><th>Linha</th><th>Código</th><th>Problema</th></tr></thead>
+      <tbody>
+        {% for inc in inconsistencias[:200] %}
+        <tr><td>{{ inc.aba }}</td><td>{{ inc.linha }}</td><td>{{ inc.codigo or "—" }}</td><td>{{ inc.problema }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alerta-ok mt-4">Nenhuma inconsistência detectada.</div>
+  {% endif %}
+
+  <form hx-post="/importacao/confirmar" hx-target="#resultado" class="mt-4">
+    <button type="submit" class="btn-primario">Confirmar carga</button>
+  </form>
+</div>
+{% endif %}

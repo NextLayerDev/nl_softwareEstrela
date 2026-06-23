@@ -1,0 +1,12 @@
+<div class="card">
+  <div class="alerta-ok mb-3">Importação concluída com sucesso.</div>
+  <ul class="space-y-1 text-sm text-gray-700">
+    <li>Produtos criados: <strong>{{ resultado.produtos_criados }}</strong></li>
+    <li>Produtos atualizados: <strong>{{ resultado.produtos_atualizados }}</strong></li>
+    <li>Variações criadas: <strong>{{ resultado.variacoes_criadas }}</strong></li>
+    <li>Códigos alternativos criados: <strong>{{ resultado.codigos_alt_criados }}</strong></li>
+    <li>Movimentações de saldo inicial: <strong>{{ resultado.movimentacoes_criadas }}</strong></li>
+    <li>Blocos ignorados (sem código): <strong>{{ resultado.ignorados_sem_codigo }}</strong></li>
+  </ul>
+  <a href="/estoque" class="btn-primario mt-4">Ver estoque</a>
+</div>

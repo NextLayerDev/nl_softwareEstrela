@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Importação{% endblock %}
+{% block cabecalho %}Importação de Planilha{% endblock %}
+
+{% block content %}
+<div class="card max-w-2xl">
+  <p class="mb-4 text-sm text-gray-600">
+    Envie a planilha <strong>CONTROLE.xlsx</strong> (ou planilha de entrada recorrente). O sistema valida
+    e mostra uma <strong>prévia</strong> sem gravar nada. A carga só acontece quando você confirmar.
+  </p>
+  <form hx-post="/importacao/preview" hx-target="#resultado" hx-encoding="multipart/form-data"
+        hx-indicator="#carregando" class="space-y-4">
+    <div>
+      <label class="label" for="arquivo">Arquivo .xlsx</label>
+      <input class="input" type="file" id="arquivo" name="arquivo" accept=".xlsx" required />
+    </div>
+    <button type="submit" class="btn-primario">Validar e pré-visualizar</button>
+    <span id="carregando" class="htmx-indicator text-sm text-gold-700">Processando…</span>
+  </form>
+</div>
+
+<div id="resultado" class="mt-6"></div>
+{% endblock %}
