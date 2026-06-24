@@ -23,6 +23,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "markdown>=3.10.2",
     "playwright>=1.60.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
@@ -40,6 +41,7 @@ ignore = ["B008"]  # FastAPI usa Depends() em defaults de argumento
 [tool.ruff.lint.per-file-ignores]
 "alembic/*" = ["E501"]
 "scripts/gerar_pdf.py" = ["E501"]  # HTML/CSS embutido para o PDF de demonstração
+"scripts/gerar_doc_tecnica.py" = ["E501"]  # HTML/CSS embutido para o PDF de documentação
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

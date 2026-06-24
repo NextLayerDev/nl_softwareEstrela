@@ -10,6 +10,65 @@ localização/tablet) · ETL da planilha `CONTROLE.xlsx` · pedidos (reserva→b
 impressão) · financeiro (contas a receber, baixas, relatórios + export XLSX) · dashboard · PWA · infra de
 produção (Docker/Caddy/backup/runbooks).
 
+## Documentação
+
+- **`docs/fluxo-sistema-estrela-gestao.pdf`** — demonstração visual do fluxo real (telas + como funciona).
+- **`docs/documentacao-tecnica-estrela-gestao.pdf`** — documentação técnica completa (regras, modelo de
+  dados, ETL, módulos, infra) consolidada em um único PDF.
+- **`docs/*.md`** — os mesmos documentos técnicos em Markdown, por frente.
+
+## Infraestrutura (produção no cliente)
+
+100% local: um mini PC roda toda a stack em Docker; até 10 terminais acessam pela rede interna em modo
+aplicativo (PWA) via HTTPS interno do Caddy. Sem exposição à internet — manutenção remota só por Tailscale.
+
+```mermaid
+flowchart TB
+    subgraph Loja["Rede interna da loja (sem internet de produção)"]
+        T1["Terminal 1<br/>(PWA modo app)"]
+        T2["Terminal 2…10<br/>(PWA modo app)"]
+        TB["Tablet do estoque<br/>(/estoque/localizacao, quiosque)"]
+        SW{{"Switch gigabit"}}
+        T1 --- SW
+        T2 --- SW
+        TB --- SW
+
+        subgraph Mini["Mini PC / Servidor (Docker Compose)"]
+            CADDY["Caddy 2<br/>HTTPS interno · sistema.local"]
+            APP["App FastAPI<br/>Gunicorn + UvicornWorker"]
+            DB[("PostgreSQL 16<br/>pg_trgm")]
+            CADDY -->|reverse_proxy :8000| APP
+            APP -->|psycopg 3| DB
+        end
+        SW -->|"https://sistema.local"| CADDY
+
+        UPS["Nobreak 1500 VA<br/>+ NUT (shutdown gracioso)"]
+        UPS -. alimenta + USB .- Mini
+        BKP["Backup diário<br/>pg_dump → HD externo"]
+        DB -. dump .-> BKP
+    end
+
+    MANUT["Manutenção remota<br/>NextLayer"] -. Tailscale VPN .-> Mini
+    OFF["Backup offsite<br/>rclone cripto (B2/S3)"]
+    BKP -. quando há internet .-> OFF
+```
+
+## Arquitetura da aplicação (4 camadas)
+
+Toda feature segue **Rota → Controller → Service → Repository → Model**. A camada de _services_ concentra a
+regra de negócio e já nasce pronta para expor JSON na Fase 2 (catálogo/WhatsApp).
+
+```mermaid
+flowchart LR
+    Nav["Navegador<br/>HTMX + Alpine"] -->|HTTP| Rota["Rota<br/>app/web/routes/*"]
+    Rota --> Ctrl["Controller<br/>valida + monta resposta"]
+    Ctrl --> Svc["Service<br/>regra de negócio"]
+    Svc --> Repo["Repository<br/>queries SQLAlchemy"]
+    Repo --> DB[("PostgreSQL")]
+    Rota -->|render| Tpl["Jinja2<br/>templates + fragmentos HTMX"]
+    Svc -. RBAC/erros .-> Deps["deps/auth · core/errors"]
+```
+
 ## Setup de desenvolvimento
 
 Pré-requisitos: **Python 3.12** (via `uv`), **PostgreSQL** e o binário **Tailwind standalone**.
