@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.controllers.produto_controller import produto_controller
+from app.core.errors import NaoEncontradoError
+from app.core.imagens import remover_imagem, salvar_imagem_variacao
 from app.core.templates import templates
 from app.deps.auth import get_current_user, require_role
 from app.deps.db import get_db
 from app.models.categoria import Categoria
+from app.models.produto import ProdutoVariacao
 from app.models.usuario import Usuario
 from app.schemas.produto import pode_ver_custo
 
@@ -18,6 +21,13 @@ router = APIRouter()
 
 def _categorias(db: Session) -> list[Categoria]:
     return list(db.scalars(select(Categoria).order_by(Categoria.nome)))
+
+
+def _get_variacao(db: Session, variacao_id: int) -> ProdutoVariacao:
+    variacao = db.get(ProdutoVariacao, variacao_id)
+    if variacao is None:
+        raise NaoEncontradoError("Variação não encontrada.")
+    return variacao
 
 
 @router.get("/produtos", response_class=HTMLResponse)
@@ -128,3 +138,38 @@ async def inativar_produto(
 ):
     produto_controller.inativar(db, produto_id)
     return RedirectResponse(url="/produtos", status_code=303)
+
+
+@router.post("/produtos/variacao/{variacao_id}/imagem", response_class=HTMLResponse)
+async def enviar_imagem_variacao(
+    request: Request,
+    variacao_id: int,
+    imagem: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    variacao = _get_variacao(db, variacao_id)
+    conteudo = await imagem.read()
+    variacao.imagem_filename = salvar_imagem_variacao(
+        variacao.id, conteudo, anterior=variacao.imagem_filename
+    )
+    db.flush()
+    return templates.TemplateResponse(
+        request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )
+
+
+@router.post("/produtos/variacao/{variacao_id}/imagem/remover", response_class=HTMLResponse)
+async def remover_imagem_variacao(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    variacao = _get_variacao(db, variacao_id)
+    remover_imagem(variacao.imagem_filename)
+    variacao.imagem_filename = None
+    db.flush()
+    return templates.TemplateResponse(
+        request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )

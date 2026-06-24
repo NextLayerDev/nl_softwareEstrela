@@ -1,5 +1,13 @@
 {% for p in produtos %}
+{% set vimg = (p.variacoes | selectattr("imagem_filename") | list | first) %}
 <tr class="{{ '' if p.ativo else 'opacity-50' }}">
+  <td>
+    {% if vimg %}
+      <img src="{{ vimg.imagem_url }}" alt="{{ p.codigo }}" class="h-10 w-10 rounded object-cover" />
+    {% else %}
+      <span class="text-xs text-gray-300">—</span>
+    {% endif %}
+  </td>
   <td class="font-mono">{{ p.codigo }}</td>
   <td>{{ p.descricao }}</td>
   <td>{{ p.categoria.nome if p.categoria else "—" }}</td>
@@ -27,5 +35,5 @@
   {% endif %}
 </tr>
 {% else %}
-<tr><td colspan="8" class="py-6 text-center text-gray-400">Nenhum produto encontrado.</td></tr>
+<tr><td colspan="9" class="py-6 text-center text-gray-400">Nenhum produto encontrado.</td></tr>
 {% endfor %}

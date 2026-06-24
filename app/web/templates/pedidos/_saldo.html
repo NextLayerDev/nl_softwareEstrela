@@ -1,5 +1,10 @@
 {# Fragmento HTMX: disponível/selo da variação + sugestão de preço por faixa. #}
-<div class="rounded-md border border-marca-borda bg-marca-fundo p-3 text-sm">
+<div class="flex gap-3 rounded-md border border-marca-borda bg-marca-fundo p-3 text-sm">
+  {% if variacao.imagem_url %}
+  <img src="{{ variacao.imagem_url }}" alt="{{ variacao.cor }}"
+       class="h-20 w-20 flex-shrink-0 rounded border border-marca-borda object-cover" />
+  {% endif %}
+  <div class="flex-1">
   <p class="font-semibold">{{ produto.codigo }} — {{ produto.descricao }} {% if variacao.cor %}({{ variacao.cor }}){% endif %}</p>
   <div class="mt-1 flex flex-wrap items-center gap-3">
     {% if variacao.estoque_modo == "EXATO" %}
@@ -33,5 +38,6 @@
     {% if produto.unidades_por_caixa %}
     <p class="text-gray-500">Caixa: {{ produto.unidades_por_caixa }} un</p>
     {% endif %}
+  </div>
   </div>
 </div>

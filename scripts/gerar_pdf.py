@@ -42,16 +42,18 @@ SECOES = [
         "Estoque",
         ["todos"],
         "Posição de estoque com busca instantânea (HTMX + índice trigram do PostgreSQL) por código, "
-        "descrição ou cor. Cada cor é uma variação com saldo próprio. O saldo aparece como número quando "
-        "é EXATO ou como selo visual (muito / pouco / tem / acabou) quando ainda é APROXIMADO.",
+        "descrição ou cor, agora com a foto de cada cor na primeira coluna. Cada cor é uma variação com saldo "
+        "próprio. O saldo aparece como número quando é EXATO ou como selo visual (muito / pouco / tem / "
+        "acabou) quando ainda é APROXIMADO.",
     ),
     (
         "04-localizacao-tablet",
         "Localização (tablet do estoque)",
         ["todos"],
-        "Tela pensada para um tablet no estoque: busca dominante e cartões grandes com a LOCALIZAÇÃO em "
-        "destaque (andar / lado / sala), ajudando o funcionário a achar o produto entre os 10 andares. "
-        "É consulta pura, em alto contraste e legível em pé.",
+        "Tela pensada para um tablet no estoque: busca dominante e cartões grandes com a FOTO da cor e a "
+        "LOCALIZAÇÃO em destaque (andar / lado / sala). Com a imagem, o funcionário reconhece o modelo certo "
+        "(ex.: entre vários modelos de caneta plástica) e o acha entre os 10 andares — atendendo ao pedido do "
+        "cliente. É consulta pura, em alto contraste e legível em pé.",
     ),
     (
         "05-produtos",
@@ -68,6 +70,14 @@ SECOES = [
         "Formulário de criação/edição com gestão de variações (cores) e de códigos alternativos na mesma "
         "tela. A faixa de atacado (a partir de qual quantidade aplicar o preço de volume) é configurável "
         "por produto.",
+    ),
+    (
+        "06b-produto-imagens",
+        "Imagens por cor (cadastro)",
+        ["admin"],
+        "Na edição do produto, o admin envia uma foto para cada cor (variação). É daqui que vêm as imagens "
+        "exibidas no estoque, na tela de Localização (tablet), no pedido e na separação — o cliente sobe as "
+        "fotos reais dos seus modelos por aqui.",
     ),
     (
         "07-clientes",

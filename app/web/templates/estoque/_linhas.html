@@ -1,9 +1,16 @@
 {% if msg_ok %}
-<tr><td colspan="7" class="bg-marca-fundo py-2 text-center text-sm text-ok">{{ msg_ok }}</td></tr>
+<tr><td colspan="8" class="bg-marca-fundo py-2 text-center text-sm text-ok">{{ msg_ok }}</td></tr>
 {% endif %}
 {% for v in variacoes %}
 {% set p = v.produto %}
 <tr class="{{ '' if v.ativo else 'opacity-50' }}">
+  <td>
+    {% if v.imagem_url %}
+      <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-10 w-10 rounded object-cover" />
+    {% else %}
+      <span class="text-xs text-gray-300">—</span>
+    {% endif %}
+  </td>
   <td class="font-mono">{{ p.codigo }}</td>
   <td>{{ p.descricao }}</td>
   <td>{{ v.cor or "padrão" }}</td>
@@ -43,5 +50,5 @@
   </td>
 </tr>
 {% else %}
-<tr><td colspan="7" class="py-6 text-center text-gray-400">Nenhuma variação encontrada.</td></tr>
+<tr><td colspan="8" class="py-6 text-center text-gray-400">Nenhuma variação encontrada.</td></tr>
 {% endfor %}

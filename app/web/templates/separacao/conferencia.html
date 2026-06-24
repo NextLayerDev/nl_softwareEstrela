@@ -21,6 +21,7 @@
     <thead>
       <tr>
         <th class="text-center">OK</th>
+        <th class="text-left">Foto</th>
         <th class="text-left">Produto</th>
         <th class="text-left">Cor</th>
         <th class="text-left">Localização</th>
@@ -37,6 +38,13 @@
                  hx-target="#progresso" hx-swap="outerHTML"
                  hx-vals='js:{separado: event.target.checked}'
                  name="separado" />
+        </td>
+        <td>
+          {% if v.imagem_url %}
+            <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-12 w-12 rounded object-cover" />
+          {% else %}
+            <span class="text-xs text-gray-300">—</span>
+          {% endif %}
         </td>
         <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
         <td>{{ v.cor or "—" }}</td>

@@ -81,6 +81,8 @@ class ProdutoVariacao(Base):
     rotulo_aprox: Mapped[RotuloAprox | None] = mapped_column(_enum(RotuloAprox, "rotulo_aprox"))
     estoque_minimo: Mapped[int] = mapped_column(Integer, default=0)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Foto da variação (cor): o funcionário identifica o modelo visualmente. Upload em /produtos.
+    imagem_filename: Mapped[str | None] = mapped_column(String(255))
 
     produto: Mapped[Produto] = relationship(back_populates="variacoes")
 
@@ -88,6 +90,13 @@ class ProdutoVariacao(Base):
     def disponivel(self) -> int:
         """Saldo disponível em modo EXATO (físico - reservado)."""
         return self.estoque_fisico - self.estoque_reservado
+
+    @property
+    def imagem_url(self) -> str | None:
+        """URL local da imagem (servida por /uploads), ou None se não houver foto."""
+        if self.imagem_filename:
+            return f"/uploads/variacoes/{self.imagem_filename}"
+        return None
 
 
 class ProdutoCodigoAlt(Base):

@@ -30,11 +30,20 @@ TABLET = {"width": 1024, "height": 1366}
 
 
 def _ids():
+    from app.models.produto import Produto, ProdutoVariacao
+
     db = SessionLocal()
     try:
         fat = db.scalar(select(Pedido).where(Pedido.observacao == "DEMO faturado"))
         sep = db.scalar(select(Pedido).where(Pedido.observacao == "DEMO separacao"))
-        return (fat.id if fat else None), (sep.id if sep else None)
+        # produto (caneta) com variações que já têm imagem, para a tela de "Imagens por cor"
+        prod = db.scalar(
+            select(Produto.id)
+            .join(Produto.variacoes)
+            .where(Produto.descricao.ilike("%CANETA%"), ProdutoVariacao.imagem_filename.isnot(None))
+            .limit(1)
+        )
+        return (fat.id if fat else None), (sep.id if sep else None), prod
     finally:
         db.close()
 
@@ -55,7 +64,7 @@ def shot(page, slug: str, url: str, full: bool = True) -> None:
 
 
 def main() -> None:
-    fat_id, sep_id = _ids()
+    fat_id, sep_id, prod_id = _ids()
     with sync_playwright() as p:
         navegador = p.chromium.launch()
 
@@ -90,6 +99,8 @@ def main() -> None:
         for slug, url, full in capturas:
             shot(page, slug, url, full)
 
+        if prod_id:
+            shot(page, "06b-produto-imagens", f"/produtos/{prod_id}/editar", True)
         if fat_id:
             shot(page, "11-pedido-detalhe", f"/pedidos/{fat_id}", True)
         if sep_id:

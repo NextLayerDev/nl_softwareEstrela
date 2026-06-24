@@ -28,6 +28,7 @@ class VariacaoRead(BaseModel):
     rotulo_aprox: RotuloAprox | None
     estoque_minimo: int
     ativo: bool
+    imagem_url: str | None = None
 
 
 class CodigoAltCreate(BaseModel):

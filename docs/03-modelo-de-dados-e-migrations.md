@@ -59,6 +59,7 @@ O produto guarda os dados comerciais (preços, caixa, localização, códigos); 
 | **rotulo_aprox** | enum null `MUITO`/`POUCO`/`TEM`/`ACABOU` | usado quando `APROXIMADO` |
 | estoque_minimo | int default 0 | alerta de reposição (quando exato) |
 | ativo | bool | |
+| **imagem_filename** | str null | foto da cor (upload em `/produtos`); servida em `/uploads/variacoes/`. A property `imagem_url` monta a URL. Exibida no estoque, na Localização (tablet), no pedido e na separação para o funcionário reconhecer o modelo. |
 
 > Saldo disponível (modo exato) = `estoque_fisico - estoque_reservado`.
 > Toda mudança de `estoque_fisico`/`estoque_reservado` gera `movimentacoes_estoque` (append-only).

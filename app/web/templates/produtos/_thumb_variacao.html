@@ -1,0 +1,27 @@
+<div id="var-thumb-{{ variacao.id }}" class="flex items-center gap-3 rounded-md border border-marca-borda p-2">
+  <div class="h-16 w-16 flex-shrink-0 overflow-hidden rounded bg-marca-fundo">
+    {% if variacao.imagem_url %}
+      <img src="{{ variacao.imagem_url }}" alt="{{ variacao.cor or 'padrão' }}"
+           class="h-16 w-16 object-cover" />
+    {% else %}
+      <div class="flex h-16 w-16 items-center justify-center text-[10px] text-gray-400">sem foto</div>
+    {% endif %}
+  </div>
+  <div class="min-w-0 flex-1">
+    <div class="text-sm font-medium">{{ variacao.cor or "padrão" }}</div>
+    <form hx-post="/produtos/variacao/{{ variacao.id }}/imagem"
+          hx-encoding="multipart/form-data"
+          hx-target="#var-thumb-{{ variacao.id }}"
+          hx-swap="outerHTML"
+          class="mt-1 flex items-center gap-2">
+      <input type="file" name="imagem" accept="image/*" required
+             class="text-xs file:mr-2 file:rounded file:border-0 file:bg-gold-100 file:px-2 file:py-1" />
+      <button type="submit" class="btn-secundario px-2 py-1 text-xs">Enviar</button>
+    </form>
+  </div>
+  {% if variacao.imagem_url %}
+  <button hx-post="/produtos/variacao/{{ variacao.id }}/imagem/remover"
+          hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
+          class="btn-perigo px-2 py-1 text-xs">Remover</button>
+  {% endif %}
+</div>
