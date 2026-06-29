@@ -41,6 +41,7 @@ class StatusPedido(enum.StrEnum):
     RASCUNHO = "rascunho"
     CONFIRMADO = "confirmado"
     SEPARACAO = "separacao"
+    SEPARADO = "separado"  # separação concluída, aguardando faturamento
     FATURADO = "faturado"
     ENTREGUE = "entregue"
     CANCELADO = "cancelado"

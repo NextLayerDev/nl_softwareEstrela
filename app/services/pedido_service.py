@@ -239,7 +239,7 @@ class PedidoService:
             raise RegraNegocioError("Pedido não está em separação.")
         if not all(item.separado for item in pedido.itens):
             raise RegraNegocioError("Há itens ainda não conferidos na separação.")
-        pedido.status = StatusPedido.SEPARACAO
+        pedido.status = StatusPedido.SEPARADO
         db.flush()
         return pedido
 
@@ -247,7 +247,11 @@ class PedidoService:
         pedido = pedido_repo.get_completo(db, pedido_id)
         if pedido is None:
             raise NaoEncontradoError("Pedido não encontrado.")
-        if pedido.status not in (StatusPedido.CONFIRMADO, StatusPedido.SEPARACAO):
+        if pedido.status not in (
+            StatusPedido.CONFIRMADO,
+            StatusPedido.SEPARACAO,
+            StatusPedido.SEPARADO,
+        ):
             raise RegraNegocioError(
                 "Apenas pedidos confirmados ou em separação podem ser faturados."
             )
@@ -270,8 +274,12 @@ class PedidoService:
             raise RegraNegocioError("Não é possível cancelar um pedido já faturado/entregue.")
         if pedido.status == StatusPedido.CANCELADO:
             raise RegraNegocioError("Pedido já está cancelado.")
-        # Estorna reservas se havia (confirmado/separação).
-        if pedido.status in (StatusPedido.CONFIRMADO, StatusPedido.SEPARACAO):
+        # Estorna reservas se havia (confirmado/separação/separado).
+        if pedido.status in (
+            StatusPedido.CONFIRMADO,
+            StatusPedido.SEPARACAO,
+            StatusPedido.SEPARADO,
+        ):
             for item in pedido.itens:
                 variacao = self._get_variacao(db, item.produto_variacao_id)
                 estoque_service.estornar(db, variacao, item.qtd, usuario_id, pedido.id)

@@ -9,7 +9,7 @@
       </button>
     </form>
   {% endif %}
-  {% if pedido.status in ("confirmado", "separacao") %}
+  {% if pedido.status in ("confirmado", "separacao", "separado") %}
     {% if user.perfil in ("admin", "financeiro") %}
     <form method="post" action="/pedidos/{{ pedido.id }}/faturar">
       <button class="btn-primario">
