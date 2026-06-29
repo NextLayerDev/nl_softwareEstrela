@@ -1,8 +1,11 @@
 # Relatório de QA — Varredura completa (navegação real)
 
 Ambiente: instância local (`localhost:8011`, banco de teste). Percorridos os 4 perfis
-(admin, vendedor, financeiro, funcionário) e todos os módulos. Nada foi corrigido —
-este é o diagnóstico para você priorizar.
+(admin, vendedor, financeiro, funcionário) e todos os módulos.
+
+> **STATUS: todos os achados (F1–F10) foram corrigidos e reverificados no navegador,
+> e publicados na `main`** (4 fases de commits). Extra: cache-busting de assets
+> (`?v=mtime`) para terminais não ficarem presos em CSS antigo. Detalhe por item abaixo.
 
 ## Resumo
 
