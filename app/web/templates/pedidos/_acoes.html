@@ -1,0 +1,27 @@
+{# Ações do pedido (Confirmar/Faturar/Cancelar). Re-renderizado via OOB quando os
+   itens mudam, para o "Confirmar" habilitar sem recarregar a página. #}
+{% from "_icones.html" import icone %}
+<div id="acoes-pedido" {% if oob %}hx-swap-oob="true"{% endif %} class="flex flex-wrap gap-2">
+  {% if pedido.status == "rascunho" %}
+    <form method="post" action="/pedidos/{{ pedido.id }}/confirmar">
+      <button class="btn-primario" {% if not pedido.itens %}aria-disabled="true" disabled title="Adicione itens para confirmar"{% endif %}>
+        <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Confirmar
+      </button>
+    </form>
+  {% endif %}
+  {% if pedido.status in ("confirmado", "separacao") %}
+    {% if user.perfil in ("admin", "financeiro") %}
+    <form method="post" action="/pedidos/{{ pedido.id }}/faturar">
+      <button class="btn-primario">
+        <span class="nav-icone" aria-hidden="true">{{ icone("dinheiro") }}</span> Faturar
+      </button>
+    </form>
+    {% endif %}
+    <form method="post" action="/pedidos/{{ pedido.id }}/cancelar"
+          onsubmit="return confirm('Cancelar este pedido e estornar reservas?')">
+      <button class="btn-perigo">
+        <span class="nav-icone" aria-hidden="true">{{ icone("fechar") }}</span> Cancelar pedido
+      </button>
+    </form>
+  {% endif %}
+</div>

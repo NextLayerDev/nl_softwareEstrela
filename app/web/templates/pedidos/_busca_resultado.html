@@ -1,0 +1,28 @@
+{# Resultado da busca de produto DENTRO do pedido: cada linha é um botão "Selecionar"
+   que preenche a variação (Alpine) e dispara o cálculo de saldo/preço. #}
+{% for v in variacoes %}
+{% set p = v.produto %}
+<button type="button"
+        class="flex w-full items-center gap-3 border-b border-marca-borda px-2 py-2 text-left text-sm
+               hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
+        @click="variacaoId = {{ v.id }};
+                htmx.ajax('GET', '/pedidos/saldo/{{ v.id }}?qtd=' + (qtd || 1), {target: '#saldo-box'});
+                document.getElementById('resultado-busca').innerHTML = ''">
+  {% if v.imagem_url %}
+    <img src="{{ v.imagem_url }}" alt="" class="h-8 w-8 shrink-0 rounded object-cover" />
+  {% else %}
+    <span class="h-8 w-8 shrink-0 rounded bg-gold-50"></span>
+  {% endif %}
+  <span class="font-mono">{{ p.codigo }}</span>
+  <span class="min-w-0 flex-1 truncate">{{ p.descricao }}</span>
+  <span class="text-gray-500">{{ v.cor or "padrão" }}</span>
+  <span class="font-semibold">
+    {% if v.estoque_modo.value == "EXATO" %}{{ v.estoque_fisico - v.estoque_reservado }}
+    {%- elif v.rotulo_aprox %}{{ v.rotulo_aprox.value | lower }}
+    {%- else %}aprox.{% endif %}
+  </span>
+  <span class="selo-tem shrink-0">Selecionar</span>
+</button>
+{% else %}
+<p class="px-2 py-3 text-sm text-gray-400">Nenhum produto encontrado.</p>
+{% endfor %}

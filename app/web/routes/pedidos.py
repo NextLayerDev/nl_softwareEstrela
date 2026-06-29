@@ -68,6 +68,20 @@ def criar_pedido(
     return RedirectResponse(url=f"/pedidos/{pedido.id}", status_code=303)
 
 
+# ===================================================================== BUSCA ITEM (HTMX)
+@router.get("/pedidos/busca-item", response_class=HTMLResponse)
+def busca_item(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Busca de produto no contexto do pedido: cada resultado é um botão 'Selecionar'."""
+    variacoes = estoque_repo.busca_localizacao(db, q) if q else []
+    contexto = {"user": usuario, "variacoes": variacoes}
+    return templates.TemplateResponse(request, "pedidos/_busca_resultado.html", contexto)
+
+
 # ===================================================================== DETALHE
 @router.get("/pedidos/{pedido_id}", response_class=HTMLResponse)
 def detalhe_pedido(
@@ -132,7 +146,7 @@ def adicionar_item(
     )
     pedido_controller.adicionar_item(db, pedido_id, dados, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True}
+    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
     return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
 
 
@@ -146,7 +160,7 @@ def remover_item(
 ):
     pedido_controller.remover_item(db, pedido_id, item_id, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True}
+    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
     return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
 
 
@@ -160,7 +174,7 @@ def aplicar_desconto(
 ):
     pedido_controller.aplicar_desconto_total(db, pedido_id, _to_decimal(desconto), usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True}
+    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
     return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
 
 

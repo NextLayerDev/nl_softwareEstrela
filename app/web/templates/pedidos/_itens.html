@@ -63,3 +63,5 @@
     <p class="text-lg font-bold">Total: {{ pedido.total | moeda }}</p>
   </div>
 </div>
+{# Atualiza as ações do pedido (habilita/desabilita Confirmar) sem recarregar. #}
+{% if oob %}{% include "pedidos/_acoes.html" %}{% endif %}

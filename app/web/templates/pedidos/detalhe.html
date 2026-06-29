@@ -24,30 +24,7 @@
       Status: <span class="selo-neutro align-middle">{{ pedido.status.value if pedido.status.value is defined else pedido.status }}</span>
     </p>
   </div>
-  <div class="flex flex-wrap gap-2">
-    {% if pedido.status == "rascunho" %}
-      <form method="post" action="/pedidos/{{ pedido.id }}/confirmar">
-        <button class="btn-primario" {% if not pedido.itens %}aria-disabled="true" disabled title="Adicione itens para confirmar"{% endif %}>
-          <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Confirmar
-        </button>
-      </form>
-    {% endif %}
-    {% if pedido.status in ("confirmado", "separacao") %}
-      {% if user.perfil in ("admin", "financeiro") %}
-      <form method="post" action="/pedidos/{{ pedido.id }}/faturar">
-        <button class="btn-primario">
-          <span class="nav-icone" aria-hidden="true">{{ icone("dinheiro") }}</span> Faturar
-        </button>
-      </form>
-      {% endif %}
-      <form method="post" action="/pedidos/{{ pedido.id }}/cancelar"
-            onsubmit="return confirm('Cancelar este pedido e estornar reservas?')">
-        <button class="btn-perigo">
-          <span class="nav-icone" aria-hidden="true">{{ icone("fechar") }}</span> Cancelar pedido
-        </button>
-      </form>
-    {% endif %}
-  </div>
+  {% include "pedidos/_acoes.html" %}
 </div>
 
 {% if editavel %}
@@ -56,14 +33,14 @@
   <h3 class="mb-3 text-sm font-semibold">Adicionar item</h3>
 
   <div class="mb-3">
-    <label class="label">Buscar produto/variação</label>
-    <input type="search" name="q" class="input w-full" autocomplete="off"
+    <label class="label" for="busca-item">Buscar produto/variação</label>
+    <input type="search" id="busca-item" name="q" class="input w-full" autocomplete="off"
            placeholder="Código, descrição, cor ou localização…"
-           hx-get="/estoque/busca" hx-trigger="keyup changed delay:250ms, search"
+           hx-get="/pedidos/busca-item" hx-trigger="keyup changed delay:250ms, search"
            hx-target="#resultado-busca" />
-    <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto"></div>
+    <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto rounded-md border border-marca-borda empty:border-0"></div>
     <p class="mt-1 text-xs text-gray-400">
-      Clique numa linha (use o botão "Selecionar" do estoque) ou informe o ID da variação abaixo.
+      Clique no resultado para <strong>selecionar</strong> o produto.
     </p>
   </div>
 
