@@ -69,6 +69,10 @@ class PedidoController:
         # Faturamento é de admin/financeiro — sem filtro de propriedade.
         return pedido_service.faturar(db, pedido_id, usuario.id)
 
+    def entregar(self, db: Session, pedido_id: int, usuario: Usuario) -> Pedido:
+        self._carregar_para_usuario(db, pedido_id, usuario)
+        return pedido_service.entregar(db, pedido_id)
+
     # ----------------------------------------------------------- separação
     def fila_separacao(self, db: Session) -> list[Pedido]:
         return pedido_repo.fila_separacao(db)

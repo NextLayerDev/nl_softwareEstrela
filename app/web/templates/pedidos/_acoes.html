@@ -24,4 +24,11 @@
       </button>
     </form>
   {% endif %}
+  {% if pedido.status == "faturado" %}
+    <form method="post" action="/pedidos/{{ pedido.id }}/entregar">
+      <button class="btn-primario">
+        <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Marcar entregue
+      </button>
+    </form>
+  {% endif %}
 </div>

@@ -209,6 +209,16 @@ def faturar_pedido(
     return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
 
+@router.post("/pedidos/{pedido_id}/entregar")
+def entregar_pedido(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    pedido_controller.entregar(db, pedido_id, usuario)
+    return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+
+
 # ===================================================================== IMPRESSÃO
 @router.get("/pedidos/{pedido_id}/imprimir", response_class=HTMLResponse)
 def imprimir_pedido(

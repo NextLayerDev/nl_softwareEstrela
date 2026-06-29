@@ -5,11 +5,14 @@
 {% block cabecalho %}Inventário #{{ inventario.id }}{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Estoque","/estoque"), ("Inventário","/inventario"), ("Contagem", none)]) }}{% endblock %}
 {% set aberto = inventario.status.value == "aberto" %}
+{% set _total = inventario.itens | length %}
+{% set _faltam = inventario.itens | selectattr("qtd_contada", "none") | list | length %}
+{% set _contados = _total - _faltam %}
 {% block acoes %}
 <a href="/inventario" class="btn-secundario"><span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar</a>
 {% if aberto and pode_aplicar %}
 <form method="post" action="/inventario/{{ inventario.id }}/aplicar"
-      onsubmit="return confirm('Aplicar o inventário? Isso gera ajustes definitivos.');">
+      onsubmit="return confirm('Aplicar o inventário?{% if _faltam %} {{ _faltam }} item(ns) sem contagem ficarão inalterados.{% endif %} Isso gera ajustes definitivos.');">
   <button type="submit" class="btn-primario"><span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Aplicar inventário</button>
 </form>
 {% endif %}
@@ -18,9 +21,12 @@
 {% block content %}
 <div class="card mb-4">
   <div class="text-lg font-bold">{{ inventario.descricao or "Inventário #" ~ inventario.id }}</div>
-  <div class="text-sm text-gray-500">
-    Status:
+  <div class="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+    <span>Status:</span>
     {% if aberto %}<span class="selo-tem">aberto</span>{% else %}<span class="selo-muito">aplicado</span>{% endif %}
+    <span class="text-gray-300" aria-hidden="true">·</span>
+    <span>Contados: <strong>{{ _contados }}</strong> de {{ _total }}</span>
+    {% if aberto and _faltam %}<span class="selo-pouco">{{ _faltam }} sem contagem</span>{% endif %}
   </div>
 </div>
 

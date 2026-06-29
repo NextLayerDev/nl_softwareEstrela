@@ -34,6 +34,16 @@ def dashboard(
 
     total_produtos = db.scalar(select(func.count(Produto.id))) or 0
 
+    # Fila de separação (KPI relevante para o funcionário, no lugar da receita).
+    pedidos_separar = (
+        db.scalar(
+            select(func.count(Pedido.id)).where(
+                Pedido.status.in_([StatusPedido.CONFIRMADO, StatusPedido.SEPARACAO])
+            )
+        )
+        or 0
+    )
+
     alertas = (
         db.scalar(
             select(func.count(ProdutoVariacao.id)).where(
@@ -116,10 +126,13 @@ def dashboard(
             "vendas_hoje": vendas_hoje,
             "contas_pendentes": contas_pendentes,
             "contas_atrasadas": contas_atrasadas,
+            "pedidos_separar": pedidos_separar,
         },
         "ultimos": ultimos,
         "serie": serie,
         "max_serie": max_serie,
         "mostra_financeiro": usuario.perfil in ("admin", "financeiro"),
+        # Funcionário (estoque) não vê receita — mostra a fila de separação no lugar.
+        "mostra_vendas": usuario.perfil != "funcionario",
     }
     return templates.TemplateResponse(request, "dashboard.html", contexto)
