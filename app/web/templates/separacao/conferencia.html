@@ -1,60 +1,78 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Separação #{{ pedido.numero or pedido.id }}{% endblock %}
 {% block cabecalho %}Separação do pedido #{{ pedido.numero or pedido.id }}{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Separação","/separacao"), ("Conferência", none)]) }}{% endblock %}
+
+{% block acoes %}
+  <a href="/separacao/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("imprimir") }}</span> Imprimir lista
+  </a>
+  <a href="/separacao" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
 
 {% block content %}
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-  <div>
-    <p class="font-semibold">{{ pedido.cliente.nome }}</p>
-    <p class="text-xs text-gray-400">Vendedor: {{ pedido.vendedor.nome }}</p>
-  </div>
-  <div class="flex gap-2">
-    <a href="/separacao/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">Imprimir lista</a>
-    <a href="/separacao" class="btn-secundario">Voltar</a>
-  </div>
+<div class="card mb-4">
+  <p class="font-semibold">{{ pedido.cliente.nome }}</p>
+  <p class="text-xs text-gray-400">Vendedor: {{ pedido.vendedor.nome }}</p>
 </div>
 
 {% include "separacao/_progresso.html" %}
 
 <div class="card mt-4">
-  <table class="tabela w-full">
-    <thead>
-      <tr>
-        <th class="text-center">OK</th>
-        <th class="text-left">Foto</th>
-        <th class="text-left">Produto</th>
-        <th class="text-left">Cor</th>
-        <th class="text-left">Localização</th>
-        <th class="text-right">Qtd</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in pedido.itens %}
-      {% set v = item.variacao %}
-      <tr>
-        <td class="text-center">
-          <input type="checkbox" {% if item.separado %}checked{% endif %}
-                 hx-post="/separacao/{{ pedido.id }}/itens/{{ item.id }}"
-                 hx-target="#progresso" hx-swap="outerHTML"
-                 hx-vals='js:{separado: event.target.checked}'
-                 name="separado" />
-        </td>
-        <td>
-          {% if v.imagem_url %}
-            <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-12 w-12 rounded object-cover" />
-          {% else %}
-            <span class="text-xs text-gray-300">—</span>
-          {% endif %}
-        </td>
-        <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
-        <td>{{ v.cor or "—" }}</td>
-        <td><strong class="text-gold-700">{{ v.produto.localizacao or "—" }}</strong></td>
-        <td class="text-right">
-          {{ item.qtd }}{% if item.qtd_caixas %} <span class="text-xs text-gray-400">({{ item.qtd_caixas }} cx)</span>{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="overflow-x-auto">
+    <table class="tabela tabela-densa w-full">
+      <thead>
+        <tr>
+          <th class="text-center">OK</th>
+          <th class="text-left">Foto</th>
+          <th class="text-left">Produto</th>
+          <th class="text-left">Cor</th>
+          <th class="text-left">Localização</th>
+          <th class="text-right">Qtd</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in pedido.itens %}
+        {% set v = item.variacao %}
+        <tr>
+          <td class="text-center">
+            <input type="checkbox" {% if item.separado %}checked{% endif %}
+                   hx-post="/separacao/{{ pedido.id }}/itens/{{ item.id }}"
+                   hx-target="#progresso" hx-swap="outerHTML"
+                   hx-vals='js:{separado: event.target.checked}'
+                   name="separado"
+                   aria-label="Conferir item" />
+          </td>
+          <td>
+            {% if v.imagem_url %}
+              <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-12 w-12 rounded-lg object-cover" />
+            {% else %}
+              <span class="text-xs text-gray-300">—</span>
+            {% endif %}
+          </td>
+          <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
+          <td>{{ v.cor or "—" }}</td>
+          <td><strong class="text-gold-700">{{ v.produto.localizacao or "—" }}</strong></td>
+          <td class="text-right">
+            {{ item.qtd }}{% if item.qtd_caixas %} <span class="text-xs text-gray-400">({{ item.qtd_caixas }} cx)</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="vazio">
+              <span class="vazio-icone" aria-hidden="true">{{ icone("lista") }}</span>
+              <p>Pedido sem itens.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

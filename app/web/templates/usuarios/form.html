@@ -1,34 +1,43 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}{{ titulo }}{% endblock %}
 {% block cabecalho %}{{ titulo }}{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Usuários","/usuarios"), ("Usuário", none)]) }}{% endblock %}
+
+{% block acoes %}
+  <a href="/usuarios" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
 
 {% block content %}
 {% set acao = "/usuarios/" ~ usuario_edit.id if usuario_edit else "/usuarios" %}
 <form method="post" action="{{ acao }}" class="card max-w-xl">
-  <div class="grid grid-cols-1 gap-4">
-    <div>
-      <label class="label">Nome *</label>
-      <input class="input" name="nome" required value="{{ usuario_edit.nome if usuario_edit else '' }}" />
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="sm:col-span-2">
+      <label class="label" for="nome">Nome *</label>
+      <input class="input" id="nome" name="nome" required value="{{ usuario_edit.nome if usuario_edit else '' }}" />
     </div>
-    <div>
-      <label class="label">E-mail *</label>
-      <input class="input" type="email" name="email" required value="{{ usuario_edit.email if usuario_edit else '' }}" />
+    <div class="sm:col-span-2">
+      <label class="label" for="email">E-mail *</label>
+      <input class="input" type="email" id="email" name="email" required value="{{ usuario_edit.email if usuario_edit else '' }}" />
     </div>
     {% if not usuario_edit %}
     <div>
-      <label class="label">Senha *</label>
-      <input class="input" type="password" name="senha" minlength="6" required />
+      <label class="label" for="senha">Senha *</label>
+      <input class="input" type="password" id="senha" name="senha" minlength="6" required />
     </div>
     {% endif %}
     <div>
-      <label class="label">Perfil *</label>
-      <select class="input" name="perfil" required>
+      <label class="label" for="perfil">Perfil *</label>
+      <select class="input" id="perfil" name="perfil" required>
         {% for perfil in perfis %}
           <option value="{{ perfil }}" {{ 'selected' if usuario_edit and usuario_edit.perfil == perfil else '' }}>{{ perfil }}</option>
         {% endfor %}
       </select>
     </div>
-    <div>
+    <div class="sm:col-span-2">
       <label class="flex items-center gap-2">
         <input type="checkbox" name="ativo" {{ 'checked' if (not usuario_edit) or usuario_edit.ativo else '' }} /> Ativo
       </label>

@@ -1,37 +1,52 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Pedido #{{ pedido.numero or pedido.id }}{% endblock %}
 {% block cabecalho %}Pedido #{{ pedido.numero or pedido.id }}{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Pedidos","/pedidos"), ("#" ~ (pedido.numero or pedido.id), none)]) }}{% endblock %}
+{% block acoes %}
+  <a href="/pedidos/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("imprimir") }}</span> Imprimir
+  </a>
+  <a href="/pedidos" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
 
 {% block content %}
-<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+<div class="card mb-4 flex flex-wrap items-center justify-between gap-3">
   <div>
     <p class="text-sm text-gray-500">Cliente</p>
     <p class="font-semibold">{{ pedido.cliente.nome }}</p>
-    <p class="text-xs text-gray-400">
+    <p class="mt-0.5 text-xs text-gray-400">
       Vendedor: {{ pedido.vendedor.nome }} ·
       Pagamento: {{ pedido.cliente.condicao_pagto_padrao or "à vista" }} ·
-      Status: <strong>{{ pedido.status }}</strong>
+      Status: <span class="selo-neutro align-middle">{{ pedido.status.value if pedido.status.value is defined else pedido.status }}</span>
     </p>
   </div>
   <div class="flex flex-wrap gap-2">
     {% if pedido.status == "rascunho" %}
       <form method="post" action="/pedidos/{{ pedido.id }}/confirmar">
-        <button class="btn-primario" {% if not pedido.itens %}disabled{% endif %}>Confirmar</button>
+        <button class="btn-primario" {% if not pedido.itens %}aria-disabled="true" disabled title="Adicione itens para confirmar"{% endif %}>
+          <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Confirmar
+        </button>
       </form>
     {% endif %}
     {% if pedido.status in ("confirmado", "separacao") %}
       {% if user.perfil in ("admin", "financeiro") %}
       <form method="post" action="/pedidos/{{ pedido.id }}/faturar">
-        <button class="btn-primario">Faturar</button>
+        <button class="btn-primario">
+          <span class="nav-icone" aria-hidden="true">{{ icone("dinheiro") }}</span> Faturar
+        </button>
       </form>
       {% endif %}
       <form method="post" action="/pedidos/{{ pedido.id }}/cancelar"
             onsubmit="return confirm('Cancelar este pedido e estornar reservas?')">
-        <button class="btn-perigo">Cancelar pedido</button>
+        <button class="btn-perigo">
+          <span class="nav-icone" aria-hidden="true">{{ icone("fechar") }}</span> Cancelar pedido
+        </button>
       </form>
     {% endif %}
-    <a href="/pedidos/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">Imprimir</a>
-    <a href="/pedidos" class="btn-secundario">Voltar</a>
   </div>
 </div>
 

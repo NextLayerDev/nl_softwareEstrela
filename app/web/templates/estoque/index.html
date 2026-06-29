@@ -1,32 +1,41 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Estoque{% endblock %}
 {% block cabecalho %}Estoque{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Estoque", none)]) }}{% endblock %}
 
 {% block content %}
+{% include "estoque/_tabs_nav.html" %}
 <div class="card" x-data="{ entrada: null, ajuste: null }"
-     @abrir-entrada.window="entrada = $event.detail; ajuste = null"
-     @abrir-ajuste.window="ajuste = $event.detail; entrada = null">
+     @abrir-entrada.window="entrada = $event.detail; ajuste = null; $nextTick(() => $refs.qtdEntrada?.focus())"
+     @abrir-ajuste.window="ajuste = $event.detail; entrada = null; $nextTick(() => $refs.saldoAjuste?.focus())">
 
-  <div class="mb-4 flex items-center justify-between gap-3">
-    <input
-      type="search"
-      name="q"
-      value="{{ q }}"
-      placeholder="Buscar por código, descrição, cor ou localização…"
-      class="input w-full max-w-md"
-      autocomplete="off"
-      hx-get="/estoque/busca"
-      hx-trigger="keyup changed delay:250ms, search"
-      hx-target="#tbody-estoque"
-      hx-indicator="#busca-load"
-    />
-    <span id="busca-load" class="htmx-indicator text-sm text-gray-400">buscando…</span>
-    <a href="/inventario" class="btn-secundario whitespace-nowrap">Inventário</a>
+  <div class="mb-4 flex items-center gap-3">
+    <div class="relative w-full max-w-md">
+      <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
+      <label for="busca-estoque" class="sr-only">Buscar no estoque</label>
+      <input
+        type="search"
+        id="busca-estoque"
+        name="q"
+        value="{{ q }}"
+        placeholder="Buscar por código, descrição, cor ou localização…"
+        class="input w-full pl-9"
+        autocomplete="off"
+        hx-get="/estoque/busca"
+        hx-trigger="keyup changed delay:250ms, search"
+        hx-target="#tbody-estoque"
+        hx-indicator="#busca-load"
+      />
+    </div>
+    <span id="busca-load" class="carregando" role="status">buscando…</span>
   </div>
 
   {# ---- Painel de entrada (HTMX) ---- #}
   {% if pode_entrada %}
-  <div x-show="entrada" x-cloak class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
+  <div x-show="entrada" x-cloak role="region" aria-label="Entrada de mercadoria"
+       class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
     <form method="post" action="/estoque/entrada"
           hx-post="/estoque/entrada" hx-target="#tbody-estoque" hx-swap="afterbegin"
           @htmx:after-request="entrada = null">
@@ -34,8 +43,8 @@
       <input type="hidden" name="variacao_id" :value="entrada?.id" />
       <div class="flex items-end gap-2">
         <div>
-          <label class="label">Quantidade</label>
-          <input type="number" name="qtd" min="1" required class="input w-32" />
+          <label class="label" for="qtd-entrada">Quantidade</label>
+          <input type="number" id="qtd-entrada" x-ref="qtdEntrada" name="qtd" min="1" required class="input w-32" />
         </div>
         <button type="submit" class="btn-primario">Registrar entrada</button>
         <button type="button" class="btn-secundario" @click="entrada = null">Cancelar</button>
@@ -46,7 +55,8 @@
 
   {# ---- Painel de ajuste (HTMX) ---- #}
   {% if pode_ajuste %}
-  <div x-show="ajuste" x-cloak class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
+  <div x-show="ajuste" x-cloak role="region" aria-label="Ajuste manual de estoque"
+       class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
     <form method="post" action="/estoque/ajuste"
           hx-post="/estoque/ajuste" hx-target="#tbody-estoque" hx-swap="afterbegin"
           @htmx:after-request="ajuste = null">
@@ -54,12 +64,12 @@
       <input type="hidden" name="variacao_id" :value="ajuste?.id" />
       <div class="flex items-end gap-2">
         <div>
-          <label class="label">Novo saldo</label>
-          <input type="number" name="novo_saldo" min="0" :value="ajuste?.saldo" required class="input w-32" />
+          <label class="label" for="novo-saldo">Novo saldo</label>
+          <input type="number" id="novo-saldo" x-ref="saldoAjuste" name="novo_saldo" min="0" :value="ajuste?.saldo" required class="input w-32" />
         </div>
         <div class="flex-1">
-          <label class="label">Motivo (obrigatório)</label>
-          <input type="text" name="motivo" required class="input w-full" placeholder="Ex.: avaria, recontagem…" />
+          <label class="label" for="motivo-ajuste">Motivo (obrigatório)</label>
+          <input type="text" id="motivo-ajuste" name="motivo" required class="input w-full" placeholder="Ex.: avaria, recontagem…" />
         </div>
         <button type="submit" class="btn-primario">Ajustar</button>
         <button type="button" class="btn-secundario" @click="ajuste = null">Cancelar</button>
@@ -69,7 +79,7 @@
   {% endif %}
 
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Foto</th>

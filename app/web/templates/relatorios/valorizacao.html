@@ -1,17 +1,25 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Valorização{% endblock %}
 {% block cabecalho %}Valorização de estoque{% endblock %}
 
+{% block acoes %}
+<a href="/relatorios/valorizacao/export" class="btn-secundario">
+  <span class="nav-icone" aria-hidden="true">{{ icone("upload") }}</span>
+  Exportar XLSX
+</a>
+{% endblock %}
+
 {% block content %}
+{{ trilha([("Painel","/"), ("Relatórios","/relatorios"), ("Valorização", none)]) }}
+{% include "relatorios/_tabs_nav.html" %}
 <div class="card">
-  <div class="mb-4 flex items-center justify-between">
-    <div><span class="text-sm text-gray-500">Valor total em estoque (custo):</span>
-      <b class="text-ok">{{ dados.total | moeda }}</b></div>
-    <a href="/relatorios/valorizacao/export" class="btn-secundario">Exportar XLSX</a>
-  </div>
+  <div class="mb-4"><span class="text-sm text-gray-500">Valor total em estoque (custo):</span>
+    <b class="text-ok">{{ dados.total | moeda }}</b></div>
 
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Código</th>
@@ -31,7 +39,7 @@
           <td class="text-right">{{ l.valor | moeda }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="py-6 text-center text-gray-400">Sem produtos.</td></tr>
+        <tr><td colspan="5"><div class="vazio"><span class="vazio-icone" aria-hidden="true">{{ icone("grafico") }}</span><p>Sem produtos.</p></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

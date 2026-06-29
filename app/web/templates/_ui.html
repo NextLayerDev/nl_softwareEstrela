@@ -1,0 +1,42 @@
+{# Macros de UI reutilizáveis: breadcrumbs e abas acessíveis. #}
+
+{# trilha(itens) — itens = [("Painel","/"), ("Pedidos", none)] ; href none = página atual #}
+{% macro trilha(itens) -%}
+<nav class="trilha" aria-label="Você está em">
+  {%- for rotulo, href in itens %}
+    {%- if href %}<a href="{{ href }}">{{ rotulo }}</a>
+    {%- else %}<span aria-current="page">{{ rotulo }}</span>{% endif -%}
+    {%- if not loop.last %}<span class="trilha-sep" aria-hidden="true">/</span>{% endif -%}
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
+{#
+  tabs(abas, ativa, label) — abas com painéis x-show já presentes na página.
+  abas = [{"id":"itens","rotulo":"Itens"}, ...] ; ativa = id inicial.
+  O conteúdo de cada painel vem via {% call(aba_id) tabs(...) %}...{% endcall %}.
+  Acessível: role=tablist/tab/tabpanel, aria-selected, roving tabindex, setas/Home/End (manual, sem plugin).
+#}
+{% macro tabs(abas, ativa, label="Seções") -%}
+<div x-data="{ atual: '{{ ativa }}' }">
+  <div class="tabs" role="tablist" aria-label="{{ label }}"
+       @keydown.arrow-right.prevent="$event.target.nextElementSibling?.focus()"
+       @keydown.arrow-left.prevent="$event.target.previousElementSibling?.focus()"
+       @keydown.home.prevent="$el.firstElementChild?.focus()"
+       @keydown.end.prevent="$el.lastElementChild?.focus()">
+    {%- for a in abas %}
+    <button type="button" id="tab-{{ a.id }}" class="tab" role="tab"
+            :aria-selected="atual === '{{ a.id }}' ? 'true' : 'false'"
+            :tabindex="atual === '{{ a.id }}' ? 0 : -1"
+            aria-controls="painel-{{ a.id }}"
+            @click="atual = '{{ a.id }}'">{{ a.rotulo }}</button>
+    {%- endfor %}
+  </div>
+  {%- for a in abas %}
+  <div id="painel-{{ a.id }}" role="tabpanel" aria-labelledby="tab-{{ a.id }}" tabindex="0"
+       x-show="atual === '{{ a.id }}'" x-cloak class="pt-4 focus-visible:outline-none">
+    {{ caller(a.id) }}
+  </div>
+  {%- endfor %}
+</div>
+{%- endmacro %}

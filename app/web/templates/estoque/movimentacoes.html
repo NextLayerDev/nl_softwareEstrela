@@ -1,27 +1,27 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Movimentações{% endblock %}
 {% block cabecalho %}Movimentações{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Estoque","/estoque"), ("Movimentações", none)]) }}{% endblock %}
+{% block acoes %}<a href="/estoque" class="btn-secundario"><span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar</a>{% endblock %}
 
 {% block content %}
+{% include "estoque/_tabs_nav.html" %}
 <div class="card mb-4">
-  <div class="flex items-center justify-between">
-    <div>
-      <div class="font-mono text-gray-500">{{ variacao.produto.codigo }}</div>
-      <div class="text-xl font-bold">{{ variacao.produto.descricao }} — {{ variacao.cor or "padrão" }}</div>
-      <div class="mt-1 text-sm text-gray-500">
-        Modo: <strong>{{ "exato" if variacao.estoque_modo.value == "EXATO" else "aproximado" }}</strong>
-        · Físico: {{ variacao.estoque_fisico }}
-        · Reservado: {{ variacao.estoque_reservado }}
-        · Disponível: {{ variacao.disponivel }}
-      </div>
-    </div>
-    <a href="/estoque" class="btn-secundario">Voltar</a>
+  <div class="font-mono text-gray-500">{{ variacao.produto.codigo }}</div>
+  <div class="text-xl font-bold">{{ variacao.produto.descricao }} — {{ variacao.cor or "padrão" }}</div>
+  <div class="mt-1 text-sm text-gray-500">
+    Modo: <strong>{{ "exato" if variacao.estoque_modo.value == "EXATO" else "aproximado" }}</strong>
+    · Físico: {{ variacao.estoque_fisico }}
+    · Reservado: {{ variacao.estoque_reservado }}
+    · Disponível: {{ variacao.disponivel }}
   </div>
 </div>
 
 <div class="card">
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Data/hora</th>
@@ -43,7 +43,7 @@
           <td>{{ m.motivo or ("ref #" ~ m.ref_id if m.ref_id else "—") }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="py-6 text-center text-gray-400">Sem movimentações.</td></tr>
+        <tr><td colspan="6"><div class="vazio"><span class="vazio-icone" aria-hidden="true">{{ icone("caixa") }}</span><p>Sem movimentações.</p></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

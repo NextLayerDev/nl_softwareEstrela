@@ -5,58 +5,103 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block titulo %}{{ titulo or "Estrela Gestão" }}{% endblock %} · Estrela Gestão</title>
   <link rel="stylesheet" href="/static/css/output.css" />
+  <link rel="preload" href="/static/fonts/Inter-Regular.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/static/fonts/Inter-SemiBold.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
   <meta name="theme-color" content="#B98A19" />
+  <script src="/static/js/ui.js"></script>
   <script defer src="/static/js/alpine.min.js"></script>
   <script src="/static/js/htmx.min.js"></script>
 </head>
-<body class="min-h-screen bg-marca-fundo text-sidebar">
+{% from "_icones.html" import icone %}
+<body x-data="{ sidebarAberta: false }" class="min-h-screen bg-marca-fundo font-sans text-sidebar">
+  <a href="#conteudo" class="skip-link">Pular para o conteúdo</a>
+
+  {# Overlay escuro — só no mobile, quando o drawer está aberto #}
+  <div x-show="sidebarAberta" x-cloak @click="sidebarAberta = false"
+       class="fixed inset-0 z-30 bg-black/40 md:hidden"></div>
+
   <div class="flex min-h-screen">
-    {# ---------- Sidebar ---------- #}
-    <aside class="flex w-60 flex-col bg-sidebar text-sidebar-texto">
-      <div class="flex items-center gap-2 px-5 py-4 text-xl font-bold text-gold-400">
-        <span>★</span><span>Estrela Gestão</span>
+    {# ---------- Sidebar / Drawer ---------- #}
+    <aside :class="sidebarAberta ? 'translate-x-0' : '-translate-x-full'"
+           @keydown.escape.window="sidebarAberta = false"
+           class="fixed inset-y-0 left-0 z-40 flex w-60 flex-col bg-sidebar text-sidebar-texto
+                  shadow-drawer transition-transform duration-200 ease-suave
+                  md:static md:translate-x-0 md:shadow-none">
+      <div class="flex items-center justify-between px-5 py-4">
+        <span class="flex items-center gap-2 text-xl font-bold text-gold-400">
+          <span aria-hidden="true">★</span><span>Estrela Gestão</span>
+        </span>
+        <button type="button" class="text-sidebar-texto/70 hover:text-white md:hidden"
+                aria-label="Fechar menu" @click="sidebarAberta = false">
+          <span class="nav-icone" aria-hidden="true">{{ icone("fechar") }}</span>
+        </button>
       </div>
-      <nav class="flex-1 space-y-1 px-3 py-2 text-sm">
+
+      <nav aria-label="Navegação principal" class="flex-1 overflow-y-auto px-3 py-2 text-sm">
         {% set p = user.perfil if user else "" %}
-        {% macro item(rota, rotulo, perfis) %}
+        {% macro item(rota, rotulo, perfis, nome_icone) %}
           {% if p in perfis %}
-            <a href="{{ rota }}"
-               class="block rounded-md px-3 py-2 hover:bg-sidebar-hover
-                      {{ 'bg-sidebar-hover text-gold-300' if request.url.path == rota else '' }}">
-              {{ rotulo }}
+            {% set ativo = request.url.path == rota %}
+            <a href="{{ rota }}" {% if ativo %}aria-current="page"{% endif %}
+               class="nav-link {{ 'nav-link-ativo' if ativo else '' }}">
+              <span class="nav-icone" aria-hidden="true">{{ icone(nome_icone) }}</span>
+              <span>{{ rotulo }}</span>
             </a>
           {% endif %}
         {% endmacro %}
-        {{ item("/", "Painel", ["admin","vendedor","financeiro","funcionario"]) }}
-        {{ item("/estoque", "Estoque", ["admin","vendedor","financeiro","funcionario"]) }}
-        {{ item("/estoque/localizacao", "Localização", ["admin","vendedor","financeiro","funcionario"]) }}
-        {{ item("/produtos", "Produtos", ["admin","vendedor","financeiro","funcionario"]) }}
-        {{ item("/pedidos", "Pedidos", ["admin","vendedor"]) }}
-        {{ item("/separacao", "Separação", ["admin","funcionario"]) }}
-        {{ item("/financeiro", "Financeiro", ["admin","financeiro"]) }}
-        {{ item("/clientes", "Clientes", ["admin","vendedor"]) }}
-        {{ item("/relatorios", "Relatórios", ["admin","vendedor","financeiro"]) }}
-        {{ item("/importacao", "Importação", ["admin"]) }}
-        {{ item("/usuarios", "Usuários", ["admin"]) }}
+
+        {{ item("/", "Painel", ["admin","vendedor","financeiro","funcionario"], "painel") }}
+
+        {% if p in ["admin","vendedor","financeiro","funcionario"] %}
+        <p class="nav-grupo-titulo">Estoque</p>
+        {% endif %}
+        {{ item("/estoque", "Estoque", ["admin","vendedor","financeiro","funcionario"], "caixa") }}
+        {{ item("/estoque/localizacao", "Localização", ["admin","vendedor","financeiro","funcionario"], "mapa") }}
+        {{ item("/produtos", "Produtos", ["admin","vendedor","financeiro","funcionario"], "etiqueta") }}
+
+        {% if p in ["admin","vendedor","financeiro","funcionario"] %}
+        <p class="nav-grupo-titulo">Vendas</p>
+        {% endif %}
+        {{ item("/pedidos", "Pedidos", ["admin","vendedor"], "carrinho") }}
+        {{ item("/separacao", "Separação", ["admin","funcionario"], "lista") }}
+        {{ item("/clientes", "Clientes", ["admin","vendedor"], "usuarios") }}
+
+        {% if p in ["admin","vendedor","financeiro"] %}
+        <p class="nav-grupo-titulo">Gestão</p>
+        {% endif %}
+        {{ item("/financeiro", "Financeiro", ["admin","financeiro"], "dinheiro") }}
+        {{ item("/relatorios", "Relatórios", ["admin","vendedor","financeiro"], "grafico") }}
+        {{ item("/importacao", "Importação", ["admin"], "upload") }}
+        {{ item("/usuarios", "Usuários", ["admin"], "engrenagem") }}
       </nav>
     </aside>
 
     {# ---------- Conteúdo ---------- #}
-    <div class="flex flex-1 flex-col">
-      <header class="flex items-center justify-between border-b border-marca-borda bg-white px-6 py-3">
-        <h1 class="text-lg font-semibold">{% block cabecalho %}{{ titulo or "" }}{% endblock %}</h1>
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="flex items-center gap-3 border-b border-marca-borda bg-white px-4 py-3 md:px-6">
+        <button type="button" class="btn-secundario !p-2 md:hidden" aria-label="Abrir menu"
+                @click="sidebarAberta = true">
+          <span class="nav-icone" aria-hidden="true">{{ icone("menu") }}</span>
+        </button>
+        <div class="min-w-0 flex-1">
+          {% block breadcrumbs %}{% endblock %}
+          <h1 class="truncate text-lg font-semibold">{% block cabecalho %}{{ titulo or "" }}{% endblock %}</h1>
+        </div>
+        <div class="flex items-center gap-2">{% block acoes %}{% endblock %}</div>
         {% if user %}
-        <div class="flex items-center gap-4 text-sm">
+        <div class="ml-1 hidden items-center gap-3 border-l border-marca-borda pl-3 text-sm sm:flex">
           <span class="text-gold-700">{{ user.nome }} <span class="text-gray-400">({{ user.perfil }})</span></span>
-          <a href="/logout" class="btn-secundario">Sair</a>
+          <a href="/logout" class="btn-secundario !py-1.5">
+            <span class="nav-icone" aria-hidden="true">{{ icone("sair") }}</span> Sair
+          </a>
         </div>
         {% endif %}
       </header>
 
-      <main class="flex-1 p-6">
-        <div id="flash">{% include "_flash.html" ignore missing %}</div>
+      <main id="conteudo" tabindex="-1" class="flex-1 p-4 focus-visible:outline-none md:p-6">
+        <div id="flash" aria-live="polite" role="status">{% include "_flash.html" ignore missing %}</div>
         {% block content %}{% endblock %}
       </main>
     </div>

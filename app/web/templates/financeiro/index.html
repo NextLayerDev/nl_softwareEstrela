@@ -1,8 +1,11 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Financeiro{% endblock %}
 {% block cabecalho %}Financeiro — Contas a receber{% endblock %}
 
 {% block content %}
+{{ trilha([("Painel","/"), ("Financeiro", none)]) }}
 <div class="space-y-4">
   {# Resumo do dia #}
   <div class="card">
@@ -16,7 +19,10 @@
       </div>
       {% if user.perfil == "admin" %}
       <form method="post" action="/financeiro/marcar-atrasados">
-        <button type="submit" class="btn-secundario">Marcar vencidas como atrasadas</button>
+        <button type="submit" class="btn-secundario">
+          <span class="nav-icone" aria-hidden="true">{{ icone("alerta") }}</span>
+          Marcar vencidas como atrasadas
+        </button>
       </form>
       {% endif %}
     </div>
@@ -30,8 +36,8 @@
       hx-target="#tbody-contas"
     >
       <div>
-        <label class="label">Status</label>
-        <select name="status" class="input">
+        <label class="label" for="f-status">Status</label>
+        <select id="f-status" name="status" class="input">
           <option value="">Todos</option>
           {% for s in status_opcoes %}
           <option value="{{ s }}" {{ "selected" if filtros.status == s else "" }}>{{ s | capitalize }}</option>
@@ -39,8 +45,8 @@
         </select>
       </div>
       <div>
-        <label class="label">Cliente</label>
-        <select name="cliente_id" class="input">
+        <label class="label" for="f-cliente">Cliente</label>
+        <select id="f-cliente" name="cliente_id" class="input">
           <option value="">Todos</option>
           {% for c in clientes %}
           <option value="{{ c.id }}" {{ "selected" if filtros.cliente_id == c.id|string else "" }}>{{ c.nome }}</option>
@@ -48,20 +54,23 @@
         </select>
       </div>
       <div>
-        <label class="label">Venc. de</label>
-        <input type="date" name="venc_de" value="{{ filtros.venc_de }}" class="input" />
+        <label class="label" for="f-venc-de">Venc. de</label>
+        <input id="f-venc-de" type="date" name="venc_de" value="{{ filtros.venc_de }}" class="input" />
       </div>
       <div>
-        <label class="label">Venc. até</label>
-        <input type="date" name="venc_ate" value="{{ filtros.venc_ate }}" class="input" />
+        <label class="label" for="f-venc-ate">Venc. até</label>
+        <input id="f-venc-ate" type="date" name="venc_ate" value="{{ filtros.venc_ate }}" class="input" />
       </div>
       <div class="flex items-end">
-        <button type="submit" class="btn-primario w-full">Filtrar</button>
+        <button type="submit" class="btn-primario w-full">
+          <span class="nav-icone" aria-hidden="true">{{ icone("filtro") }}</span>
+          Filtrar
+        </button>
       </div>
     </form>
 
     <div class="overflow-x-auto">
-      <table class="tabela w-full">
+      <table class="tabela tabela-densa w-full">
         <thead>
           <tr>
             <th class="text-left">Pedido</th>

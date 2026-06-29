@@ -1,27 +1,36 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Novo pedido{% endblock %}
 {% block cabecalho %}Novo pedido{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Pedidos","/pedidos"), ("Novo pedido", none)]) }}{% endblock %}
+
+{% block acoes %}
+  <a href="/pedidos" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
 
 {% block content %}
-<div class="card max-w-xl">
-  <form method="post" action="/pedidos">
-    <div class="mb-4">
-      <label class="label">Cliente</label>
-      <select name="cliente_id" required class="input w-full">
+<form method="post" action="/pedidos" class="card max-w-xl">
+  <div class="grid grid-cols-1 gap-4">
+    <div>
+      <label class="label" for="cliente_id">Cliente *</label>
+      <select id="cliente_id" name="cliente_id" required class="input">
         <option value="">Selecione…</option>
         {% for c in clientes %}
         <option value="{{ c.id }}">{{ c.nome }}{% if c.condicao_pagto_padrao %} — {{ c.condicao_pagto_padrao }}{% endif %}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="mb-4">
-      <label class="label">Observação</label>
-      <textarea name="observacao" rows="2" class="input w-full" placeholder="Opcional"></textarea>
+    <div>
+      <label class="label" for="observacao">Observação</label>
+      <textarea id="observacao" name="observacao" rows="2" class="input" placeholder="Opcional"></textarea>
     </div>
-    <div class="flex gap-2">
-      <button type="submit" class="btn-primario">Criar rascunho</button>
-      <a href="/pedidos" class="btn-secundario">Cancelar</a>
-    </div>
-  </form>
-</div>
+  </div>
+  <div class="mt-6 flex gap-2">
+    <button type="submit" class="btn-primario">Criar rascunho</button>
+    <a href="/pedidos" class="btn-secundario">Cancelar</a>
+  </div>
+</form>
 {% endblock %}

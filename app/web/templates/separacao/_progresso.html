@@ -5,8 +5,10 @@
     <span>Conferidos: <strong>{{ feitos }}</strong> de {{ total }}</span>
     <span>{{ pct }}%</span>
   </div>
-  <div class="h-3 w-full overflow-hidden rounded bg-marca-fundo">
-    <div class="h-3 bg-gold-500" style="width: {{ pct }}%"></div>
+  <div class="h-3 w-full overflow-hidden rounded bg-marca-fundo"
+       role="progressbar" aria-valuenow="{{ feitos }}" aria-valuemin="0" aria-valuemax="{{ total }}"
+       aria-label="Itens conferidos">
+    <div class="h-3 bg-gold-500 transition-all" style="width: {{ pct }}%"></div>
   </div>
   <div class="mt-3 text-right">
     <form method="post" action="/separacao/{{ pedido.id }}/concluir">

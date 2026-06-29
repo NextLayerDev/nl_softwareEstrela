@@ -16,8 +16,8 @@ htmlcov/
 data/*.xlsx
 data/*.xls
 
-# Build do Tailwind (gerado) e binário standalone
-app/static/css/output.css
+# Binário standalone do Tailwind (não versionar). O output.css É versionado
+# porque a imagem Docker não compila o CSS no build.
 /tailwindcss
 
 # Artefatos de importação

@@ -1,15 +1,61 @@
+/* Fontes locais (offline) — Inter. Servidas de /static/fonts. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/static/fonts/Inter-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Bold.woff2") format("woff2");
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* Esconde elementos Alpine até a hidratação (sem depender de utility solta). */
+  [x-cloak] {
+    display: none !important;
+  }
+  body {
+    @apply font-sans antialiased;
+  }
+}
+
 @layer components {
   /* Componentes reutilizáveis em português, sobre a paleta da marca. */
+
+  /* ---------- Botões ---------- */
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
-           transition-colors focus:outline-none focus:ring-2 focus:ring-gold-400;
+           transition-colors duration-150 ease-suave
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2
+           active:translate-y-px
+           disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none
+           aria-disabled:cursor-not-allowed aria-disabled:opacity-50;
   }
   .btn-primario {
-    @apply btn bg-gold-500 text-white hover:bg-gold-600;
+    @apply btn bg-gold-500 text-white shadow-sm hover:bg-gold-600;
   }
   .btn-secundario {
     @apply btn border border-marca-borda bg-white text-sidebar hover:bg-gold-100;
@@ -17,16 +63,30 @@
   .btn-perigo {
     @apply btn bg-critico text-white hover:opacity-90;
   }
-  .card {
-    @apply rounded-lg border border-marca-borda bg-white p-4 shadow-sm;
+  .btn-fantasma {
+    @apply btn text-sidebar hover:bg-gold-100;
   }
+
+  /* ---------- Cartões ---------- */
+  .card {
+    @apply rounded-xl2 border border-marca-borda bg-white p-4 shadow-card;
+  }
+  .card-hover {
+    @apply card transition-shadow duration-150 ease-suave hover:shadow-card-hover;
+  }
+
+  /* ---------- Formulários ---------- */
   .input {
     @apply w-full rounded-md border border-marca-borda bg-white px-3 py-2 text-sm
-           focus:border-gold-400 focus:outline-none focus:ring-2 focus:ring-gold-200;
+           placeholder:text-gray-400
+           focus-visible:border-gold-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200
+           disabled:bg-gold-50 disabled:text-gray-400;
   }
   .label {
     @apply mb-1 block text-sm font-medium text-sidebar;
   }
+
+  /* ---------- Tabelas ---------- */
   .tabela {
     @apply w-full border-collapse text-sm;
   }
@@ -35,11 +95,23 @@
            font-semibold text-sidebar;
   }
   .tabela td {
-    @apply border-b border-marca-borda px-3 py-2;
+    @apply border-b border-marca-borda px-3 py-2 align-middle;
+  }
+  .tabela tbody tr {
+    @apply transition-colors;
   }
   .tabela tr:hover td {
     @apply bg-gold-50;
   }
+  /* Variante densa para telas com muitas linhas. */
+  .tabela-densa th {
+    @apply py-1.5;
+  }
+  .tabela-densa td {
+    @apply py-1.5;
+  }
+
+  /* ---------- Selos / badges ---------- */
   .selo {
     @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
   }
@@ -55,6 +127,14 @@
   .selo-acabou {
     @apply selo bg-critico-bg text-critico;
   }
+  .selo-neutro {
+    @apply selo bg-gold-50 text-gray-600 ring-1 ring-marca-borda;
+  }
+  .selo-info {
+    @apply selo bg-info-bg text-info;
+  }
+
+  /* ---------- Alertas ---------- */
   .alerta {
     @apply rounded-md border px-4 py-3 text-sm;
   }
@@ -63,5 +143,83 @@
   }
   .alerta-ok {
     @apply alerta border-ok/30 bg-ok-bg text-ok;
+  }
+
+  /* ---------- Skip link (acessibilidade) ---------- */
+  .skip-link {
+    @apply sr-only;
+  }
+  .skip-link:focus {
+    @apply not-sr-only fixed left-3 top-3 z-[100] rounded-md bg-sidebar px-4 py-2 text-sm
+           font-medium text-gold-300 ring-2 ring-gold-400;
+  }
+
+  /* ---------- Navegação (sidebar) ---------- */
+  .nav-grupo-titulo {
+    @apply px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-sidebar-texto/50;
+  }
+  .nav-link {
+    @apply flex items-center gap-3 rounded-md px-3 py-2 text-sidebar-texto
+           transition-colors hover:bg-sidebar-hover
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400;
+  }
+  .nav-link-ativo {
+    @apply bg-sidebar-hover font-medium text-gold-300;
+  }
+  .nav-icone {
+    @apply inline-flex h-5 w-5 shrink-0 items-center justify-center;
+  }
+
+  /* ---------- Breadcrumbs ---------- */
+  .trilha {
+    @apply flex items-center gap-1.5 text-xs text-gray-500;
+  }
+  .trilha a {
+    @apply hover:text-gold-700;
+  }
+  .trilha-sep {
+    @apply text-gray-300;
+  }
+
+  /* ---------- Abas (tabs) ---------- */
+  .tabs {
+    @apply flex flex-wrap gap-1 border-b border-marca-borda;
+  }
+  .tab {
+    @apply -mb-px inline-flex cursor-pointer items-center gap-2 rounded-t-md border-b-2 border-transparent
+           px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:text-gold-700
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400;
+  }
+  .tab[aria-selected="true"],
+  .tab[aria-current="page"] {
+    @apply border-gold-500 text-gold-700;
+  }
+
+  /* ---------- Estado vazio ---------- */
+  .vazio {
+    @apply flex flex-col items-center justify-center gap-2 py-12 text-center text-gray-400;
+  }
+  .vazio-icone {
+    @apply inline-flex h-10 w-10 items-center justify-center text-gold-300;
+  }
+
+  /* ---------- Indicador de carregamento HTMX ----------
+     Replica o comportamento da classe htmx-indicator (oculto até a requisição). */
+  .carregando {
+    @apply inline-flex items-center gap-2 text-sm text-gray-400;
+    opacity: 0;
+    transition: opacity 150ms ease-in;
+  }
+  .htmx-request .carregando,
+  .carregando.htmx-request {
+    opacity: 1;
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4;
+  }
+  .modal-painel {
+    @apply w-full max-w-md rounded-xl2 border border-marca-borda bg-white p-5 shadow-drawer;
   }
 }

@@ -1,27 +1,40 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
 {% block titulo %}Painel{% endblock %}
 {% block cabecalho %}Painel{% endblock %}
 
 {% block content %}
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-  <div class="card">
-    <div class="text-sm text-gray-500">Vendas faturadas hoje</div>
+  <div class="card-hover">
+    <div class="flex items-center justify-between">
+      <div class="text-sm text-gray-500">Vendas faturadas hoje</div>
+      <span class="h-5 w-5 text-gold-400" aria-hidden="true">{{ icone("dinheiro") }}</span>
+    </div>
     <div class="mt-1 text-3xl font-bold text-gold-600">{{ kpis.vendas_hoje | moeda }}</div>
   </div>
-  <div class="card">
-    <div class="text-sm text-gray-500">Pedidos hoje</div>
+  <div class="card-hover">
+    <div class="flex items-center justify-between">
+      <div class="text-sm text-gray-500">Pedidos hoje</div>
+      <span class="h-5 w-5 text-gold-400" aria-hidden="true">{{ icone("carrinho") }}</span>
+    </div>
     <div class="mt-1 text-3xl font-bold">{{ kpis.pedidos_hoje }}</div>
   </div>
-  <div class="card">
-    <div class="text-sm text-gray-500">Alertas de estoque</div>
+  <div class="card-hover">
+    <div class="flex items-center justify-between">
+      <div class="text-sm text-gray-500">Alertas de estoque</div>
+      <span class="h-5 w-5 {{ 'text-critico' if kpis.alertas_estoque else 'text-gold-400' }}" aria-hidden="true">{{ icone("alerta") }}</span>
+    </div>
     <div class="mt-1 text-3xl font-bold {{ 'text-critico' if kpis.alertas_estoque else 'text-ok' }}">
       {{ kpis.alertas_estoque }}
     </div>
     <div class="mt-1 text-xs text-gray-400">no/abaixo do mínimo ou pouco/acabou</div>
   </div>
   {% if mostra_financeiro %}
-  <div class="card">
-    <div class="text-sm text-gray-500">Contas a receber</div>
+  <div class="card-hover">
+    <div class="flex items-center justify-between">
+      <div class="text-sm text-gray-500">Contas a receber</div>
+      <span class="h-5 w-5 text-gold-400" aria-hidden="true">{{ icone("grafico") }}</span>
+    </div>
     <div class="mt-1 text-3xl font-bold">{{ kpis.contas_pendentes }}
       <span class="text-base font-normal text-gray-400">pendentes</span></div>
     {% if kpis.contas_atrasadas %}
@@ -29,8 +42,11 @@
     {% endif %}
   </div>
   {% else %}
-  <div class="card">
-    <div class="text-sm text-gray-500">Produtos cadastrados</div>
+  <div class="card-hover">
+    <div class="flex items-center justify-between">
+      <div class="text-sm text-gray-500">Produtos cadastrados</div>
+      <span class="h-5 w-5 text-gold-400" aria-hidden="true">{{ icone("etiqueta") }}</span>
+    </div>
     <div class="mt-1 text-3xl font-bold">{{ kpis.total_produtos }}</div>
   </div>
   {% endif %}

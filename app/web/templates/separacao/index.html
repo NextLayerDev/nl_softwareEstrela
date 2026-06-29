@@ -1,12 +1,15 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Separação{% endblock %}
 {% block cabecalho %}Fila de separação{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Separação", none)]) }}{% endblock %}
 
 {% block content %}
 <div class="card">
   <p class="mb-3 text-sm text-gray-500">Pedidos confirmados, em ordem de chegada.</p>
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Nº</th>
@@ -23,12 +26,23 @@
           <td>{{ p.numero or p.id }}</td>
           <td>{{ p.cliente.nome }}</td>
           <td>{{ p.itens | length }}</td>
-          <td><span class="rounded px-2 py-0.5 text-xs bg-marca-fundo">{{ p.status }}</span></td>
+          <td><span class="selo-info">{{ p.status }}</span></td>
           <td>{{ p.criado_em.strftime("%d/%m %H:%M") if p.criado_em else "" }}</td>
-          <td class="text-right"><a href="/separacao/{{ p.id }}" class="btn-primario">Separar</a></td>
+          <td class="text-right">
+            <a href="/separacao/{{ p.id }}" class="btn-primario">
+              <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Separar
+            </a>
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="py-6 text-center text-gray-400">Fila vazia.</td></tr>
+        <tr>
+          <td colspan="6">
+            <div class="vazio">
+              <span class="vazio-icone" aria-hidden="true">{{ icone("lista") }}</span>
+              <p>Fila vazia.</p>
+            </div>
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>

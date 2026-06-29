@@ -1,30 +1,41 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Produtos{% endblock %}
 {% block cabecalho %}Produtos{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Produtos", none)]) }}{% endblock %}
+
+{% if pode_editar %}
+{% block acoes %}
+  <a href="/produtos/novo" class="btn-primario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo produto
+  </a>
+{% endblock %}
+{% endif %}
 
 {% block content %}
 <div class="card">
-  <div class="mb-4 flex items-center justify-between gap-3">
-    <input
-      type="search"
-      name="q"
-      value="{{ q }}"
-      placeholder="Buscar por código ou descrição…"
-      class="input w-full max-w-md"
-      autocomplete="off"
-      hx-get="/produtos/busca"
-      hx-trigger="keyup changed delay:250ms, search"
-      hx-target="#tbody-produtos"
-      hx-indicator="#busca-load"
-    />
-    <span id="busca-load" class="htmx-indicator text-sm text-gray-400">buscando…</span>
-    {% if pode_editar %}
-      <a href="/produtos/novo" class="btn-primario whitespace-nowrap">Novo produto</a>
-    {% endif %}
+  <div class="mb-4 flex items-center gap-3">
+    <div class="relative w-full max-w-md">
+      <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
+      <input
+        type="search"
+        name="q"
+        value="{{ q }}"
+        placeholder="Buscar por código ou descrição…"
+        class="input w-full pl-9"
+        autocomplete="off"
+        hx-get="/produtos/busca"
+        hx-trigger="keyup changed delay:250ms, search"
+        hx-target="#tbody-produtos"
+        hx-indicator="#busca-load"
+      />
+    </div>
+    <span id="busca-load" class="carregando text-sm text-gray-400" role="status">buscando…</span>
   </div>
 
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Foto</th>

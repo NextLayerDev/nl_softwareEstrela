@@ -1,16 +1,19 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Pedidos{% endblock %}
 {% block cabecalho %}Pedidos{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Pedidos", none)]) }}{% endblock %}
+{% block acoes %}
+  <a href="/pedidos/novo" class="btn-primario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo pedido
+  </a>
+{% endblock %}
 
 {% block content %}
 <div class="card">
-  <div class="mb-4 flex items-center justify-between">
-    <h2 class="text-base font-semibold">Pedidos</h2>
-    <a href="/pedidos/novo" class="btn-primario">Novo pedido</a>
-  </div>
-
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Nº</th>
@@ -25,16 +28,24 @@
       <tbody>
         {% for p in pedidos %}
         <tr>
-          <td>{{ p.numero or "—" }}</td>
+          <td class="font-mono">{{ p.numero or "—" }}</td>
           <td>{{ p.cliente.nome }}</td>
           <td>{{ p.vendedor.nome }}</td>
-          <td><span class="rounded px-2 py-0.5 text-xs bg-marca-fundo">{{ p.status }}</span></td>
+          <td><span class="selo-neutro">{{ p.status.value if p.status.value is defined else p.status }}</span></td>
           <td class="text-right">{{ p.total | moeda }}</td>
           <td>{{ p.criado_em.strftime("%d/%m/%Y %H:%M") if p.criado_em else "" }}</td>
           <td class="text-right"><a href="/pedidos/{{ p.id }}" class="btn-secundario">Abrir</a></td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="py-6 text-center text-gray-400">Nenhum pedido.</td></tr>
+        <tr><td colspan="7">
+          <div class="vazio">
+            <span class="vazio-icone" aria-hidden="true">{{ icone("carrinho") }}</span>
+            <p>Nenhum pedido ainda.</p>
+            <a href="/pedidos/novo" class="btn-primario mt-1">
+              <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Criar primeiro pedido
+            </a>
+          </div>
+        </td></tr>
         {% endfor %}
       </tbody>
     </table>

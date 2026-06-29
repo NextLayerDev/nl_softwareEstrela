@@ -1,28 +1,41 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Clientes{% endblock %}
 {% block cabecalho %}Clientes{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Clientes", none)]) }}{% endblock %}
+
+{% if pode_editar %}
+{% block acoes %}
+  <a href="/clientes/novo" class="btn-primario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo cliente
+  </a>
+{% endblock %}
+{% endif %}
 
 {% block content %}
 <div class="card">
-  <div class="mb-4 flex items-center justify-between gap-3">
-    <input
-      type="search"
-      name="q"
-      value="{{ q }}"
-      placeholder="Buscar por nome, CNPJ/CPF ou telefone…"
-      class="input w-full max-w-md"
-      autocomplete="off"
-      hx-get="/clientes/busca"
-      hx-trigger="keyup changed delay:250ms, search"
-      hx-target="#tbody-clientes"
-    />
-    {% if pode_editar %}
-      <a href="/clientes/novo" class="btn-primario whitespace-nowrap">Novo cliente</a>
-    {% endif %}
+  <div class="mb-4 flex items-center gap-3">
+    <div class="relative w-full max-w-md">
+      <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
+      <input
+        type="search"
+        name="q"
+        value="{{ q }}"
+        placeholder="Buscar por nome, CNPJ/CPF ou telefone…"
+        class="input w-full pl-9"
+        autocomplete="off"
+        hx-get="/clientes/busca"
+        hx-trigger="keyup changed delay:250ms, search"
+        hx-target="#tbody-clientes"
+        hx-indicator="#busca-load"
+      />
+    </div>
+    <span id="busca-load" class="carregando text-sm text-gray-400" role="status">buscando…</span>
   </div>
 
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Nome</th>

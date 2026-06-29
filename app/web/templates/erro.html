@@ -6,11 +6,12 @@
   <title>Erro · Estrela Gestão</title>
   <link rel="stylesheet" href="/static/css/output.css" />
 </head>
-<body class="flex min-h-screen items-center justify-center bg-marca-fundo text-sidebar">
-  <div class="card max-w-md text-center">
-    <div class="mb-2 text-5xl font-bold text-gold-500">{{ status or 500 }}</div>
-    <p class="mb-4 text-gray-600">{{ mensagem or "Ocorreu um erro inesperado." }}</p>
-    <a href="/" class="btn-primario">Voltar ao início</a>
-  </div>
+<body class="flex min-h-screen items-center justify-center bg-marca-fundo p-4 text-sidebar">
+  <main class="card w-full max-w-md text-center">
+    <p class="text-6xl font-bold text-gold-500">{{ status or 500 }}</p>
+    <h1 class="mt-2 text-lg font-semibold">Algo deu errado</h1>
+    <p class="mt-1 mb-6 text-gray-600">{{ mensagem or "Ocorreu um erro inesperado." }}</p>
+    <a href="/" class="btn-primario inline-flex">Voltar ao início</a>
+  </main>
 </body>
 </html>

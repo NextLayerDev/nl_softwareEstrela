@@ -1,25 +1,34 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Localização{% endblock %}
 {% block cabecalho %}Consulta de Localização{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Estoque","/estoque"), ("Localização", none)]) }}{% endblock %}
 
 {% block content %}
+{% include "estoque/_tabs_nav.html" %}
 <div class="mx-auto max-w-4xl">
   <div class="card mb-6">
-    <input
-      type="search"
-      name="q"
-      value="{{ q }}"
-      placeholder="Buscar produto por código, descrição ou cor…"
-      class="input w-full text-2xl"
-      style="padding: 1rem 1.25rem;"
-      autocomplete="off"
-      autofocus
-      hx-get="/estoque/localizacao"
-      hx-trigger="keyup changed delay:200ms, search"
-      hx-target="#cartoes-local"
-      hx-indicator="#local-load"
-    />
-    <span id="local-load" class="htmx-indicator mt-2 block text-center text-gray-400">buscando…</span>
+    <div class="relative w-full">
+      <span class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
+      <label for="busca-local" class="sr-only">Buscar produto</label>
+      <input
+        type="search"
+        id="busca-local"
+        name="q"
+        value="{{ q }}"
+        placeholder="Buscar produto por código, descrição ou cor…"
+        class="input w-full pl-12 text-2xl"
+        style="padding-top: 1rem; padding-bottom: 1rem;"
+        autocomplete="off"
+        autofocus
+        hx-get="/estoque/localizacao"
+        hx-trigger="keyup changed delay:200ms, search"
+        hx-target="#cartoes-local"
+        hx-indicator="#local-load"
+      />
+    </div>
+    <span id="local-load" class="carregando mt-2 block text-center" role="status">buscando…</span>
   </div>
 
   <div id="cartoes-local" class="grid grid-cols-1 gap-4 sm:grid-cols-2">

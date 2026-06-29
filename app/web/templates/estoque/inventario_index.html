@@ -1,15 +1,21 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Inventário{% endblock %}
 {% block cabecalho %}Inventário{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Estoque","/estoque"), ("Inventário", none)]) }}{% endblock %}
 
 {% block content %}
+{% include "estoque/_tabs_nav.html" %}
 <div class="card mb-4">
   <form method="post" action="/inventario" class="flex items-end gap-2">
     <div class="flex-1">
-      <label class="label">Novo inventário (descrição opcional)</label>
-      <input type="text" name="descricao" class="input w-full" placeholder="Ex.: contagem geral junho" />
+      <label class="label" for="inv-descricao">Novo inventário (descrição opcional)</label>
+      <input type="text" id="inv-descricao" name="descricao" class="input w-full" placeholder="Ex.: contagem geral junho" />
     </div>
-    <button type="submit" class="btn-primario whitespace-nowrap">Abrir inventário</button>
+    <button type="submit" class="btn-primario whitespace-nowrap">
+      <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Abrir inventário
+    </button>
   </form>
   <p class="mt-2 text-xs text-gray-400">
     Abrir inclui todas as variações ativas para contagem.
@@ -17,7 +23,7 @@
 </div>
 
 <div class="card">
-  <table class="tabela w-full">
+  <table class="tabela tabela-densa w-full">
     <thead>
       <tr>
         <th class="text-left">#</th>
@@ -45,7 +51,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="py-6 text-center text-gray-400">Nenhum inventário.</td></tr>
+      <tr><td colspan="5"><div class="vazio"><span class="vazio-icone" aria-hidden="true">{{ icone("caixa") }}</span><p>Nenhum inventário.</p></div></td></tr>
       {% endfor %}
     </tbody>
   </table>

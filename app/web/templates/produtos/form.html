@@ -1,6 +1,15 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}{{ titulo }}{% endblock %}
 {% block cabecalho %}{{ titulo }}{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Produtos","/produtos"), (("Editar produto" if produto else "Novo produto"), none)]) }}{% endblock %}
+
+{% block acoes %}
+  <a href="/produtos" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
 
 {% block content %}
 {% set acao = "/produtos/" ~ produto.id if produto else "/produtos" %}
@@ -8,17 +17,17 @@
       x-data="{ variacoes: [], codigos: [] }">
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
-      <label class="label">Código *</label>
+      <label class="label" for="codigo">Código *</label>
       {% if produto %}
-        <input class="input bg-gray-100" value="{{ produto.codigo }}" readonly />
+        <input id="codigo" class="input bg-gray-100" value="{{ produto.codigo }}" readonly />
         <input type="hidden" name="codigo" value="{{ produto.codigo }}" />
       {% else %}
-        <input class="input" name="codigo" required />
+        <input id="codigo" class="input" name="codigo" required />
       {% endif %}
     </div>
     <div>
-      <label class="label">Categoria</label>
-      <select class="input" name="categoria_id">
+      <label class="label" for="categoria_id">Categoria</label>
+      <select id="categoria_id" class="input" name="categoria_id">
         <option value="">—</option>
         {% for c in categorias %}
           <option value="{{ c.id }}" {{ 'selected' if produto and produto.categoria_id == c.id else '' }}>{{ c.nome }}</option>
@@ -26,40 +35,40 @@
       </select>
     </div>
     <div class="sm:col-span-2">
-      <label class="label">Descrição *</label>
-      <input class="input" name="descricao" required value="{{ produto.descricao if produto else '' }}" />
+      <label class="label" for="descricao">Descrição *</label>
+      <input id="descricao" class="input" name="descricao" required value="{{ produto.descricao if produto else '' }}" />
     </div>
     <div>
-      <label class="label">Unidades por caixa</label>
-      <input class="input" type="number" name="unidades_por_caixa" value="{{ produto.unidades_por_caixa if produto and produto.unidades_por_caixa is not none else '' }}" />
+      <label class="label" for="unidades_por_caixa">Unidades por caixa</label>
+      <input id="unidades_por_caixa" class="input" type="number" name="unidades_por_caixa" value="{{ produto.unidades_por_caixa if produto and produto.unidades_por_caixa is not none else '' }}" />
     </div>
     <div>
-      <label class="label">Localização</label>
-      <input class="input" name="localizacao" value="{{ produto.localizacao if produto and produto.localizacao else '' }}" />
+      <label class="label" for="localizacao">Localização</label>
+      <input id="localizacao" class="input" name="localizacao" value="{{ produto.localizacao if produto and produto.localizacao else '' }}" />
     </div>
     <div>
-      <label class="label">Preço varejo (pouca qtd)</label>
-      <input class="input" name="preco_pouca_qtd" value="{{ produto.preco_pouca_qtd if produto else '0' }}" />
+      <label class="label" for="preco_pouca_qtd">Preço varejo (pouca qtd)</label>
+      <input id="preco_pouca_qtd" class="input" name="preco_pouca_qtd" value="{{ produto.preco_pouca_qtd if produto else '0' }}" />
     </div>
     <div>
-      <label class="label">Preço atacado (muita qtd)</label>
-      <input class="input" name="preco_muita_qtd" value="{{ produto.preco_muita_qtd if produto else '0' }}" />
+      <label class="label" for="preco_muita_qtd">Preço atacado (muita qtd)</label>
+      <input id="preco_muita_qtd" class="input" name="preco_muita_qtd" value="{{ produto.preco_muita_qtd if produto else '0' }}" />
     </div>
     <div>
-      <label class="label">Preço promocional</label>
-      <input class="input" name="preco_promocional" value="{{ produto.preco_promocional if produto and produto.preco_promocional is not none else '' }}" />
+      <label class="label" for="preco_promocional">Preço promocional</label>
+      <input id="preco_promocional" class="input" name="preco_promocional" value="{{ produto.preco_promocional if produto and produto.preco_promocional is not none else '' }}" />
     </div>
     <div>
-      <label class="label">Qtd corte atacado</label>
-      <input class="input" type="number" name="qtd_corte_atacado" value="{{ produto.qtd_corte_atacado if produto and produto.qtd_corte_atacado is not none else '' }}" />
+      <label class="label" for="qtd_corte_atacado">Qtd corte atacado</label>
+      <input id="qtd_corte_atacado" class="input" type="number" name="qtd_corte_atacado" value="{{ produto.qtd_corte_atacado if produto and produto.qtd_corte_atacado is not none else '' }}" />
     </div>
     <div>
-      <label class="label">Preço de custo</label>
-      <input class="input" name="preco_custo" value="{{ produto.preco_custo if produto else '0' }}" />
+      <label class="label" for="preco_custo">Preço de custo</label>
+      <input id="preco_custo" class="input" name="preco_custo" value="{{ produto.preco_custo if produto else '0' }}" />
     </div>
     <div class="sm:col-span-2">
-      <label class="label">Observação</label>
-      <textarea class="input" name="observacao" rows="2">{{ produto.observacao if produto and produto.observacao else '' }}</textarea>
+      <label class="label" for="observacao">Observação</label>
+      <textarea id="observacao" class="input" name="observacao" rows="2">{{ produto.observacao if produto and produto.observacao else '' }}</textarea>
     </div>
     <div class="flex items-center gap-4">
       <label class="flex items-center gap-2">
@@ -110,8 +119,12 @@
   {% endif %}
 
   <div class="mt-6 flex gap-2">
-    <button type="submit" class="btn-primario">Salvar</button>
-    <a href="/produtos" class="btn-secundario">Cancelar</a>
+    <button type="submit" class="btn-primario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Salvar
+    </button>
+    <a href="/produtos" class="btn-secundario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Cancelar
+    </a>
   </div>
 </form>
 

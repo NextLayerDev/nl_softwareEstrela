@@ -32,7 +32,18 @@ module.exports = {
         info: { DEFAULT: "#1D4ED8", bg: "#E5EDFB" },
       },
       fontFamily: {
-        sans: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+      },
+      boxShadow: {
+        card: "0 1px 2px 0 rgb(33 27 15 / 0.04), 0 1px 3px 0 rgb(33 27 15 / 0.08)",
+        "card-hover": "0 4px 12px -2px rgb(33 27 15 / 0.12)",
+        drawer: "0 0 24px -4px rgb(33 27 15 / 0.30)",
+      },
+      borderRadius: {
+        xl2: "0.875rem",
+      },
+      transitionTimingFunction: {
+        suave: "cubic-bezier(0.2, 0, 0, 1)",
       },
     },
   },

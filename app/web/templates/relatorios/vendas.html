@@ -1,24 +1,34 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Vendas{% endblock %}
 {% block cabecalho %}Relatório de vendas{% endblock %}
 
+{% block acoes %}
+<a href="/relatorios/vendas/export?de={{ filtros.de }}&ate={{ filtros.ate }}" class="btn-secundario">
+  <span class="nav-icone" aria-hidden="true">{{ icone("upload") }}</span>
+  Exportar XLSX
+</a>
+{% endblock %}
+
 {% block content %}
+{{ trilha([("Painel","/"), ("Relatórios","/relatorios"), ("Vendas", none)]) }}
+{% include "relatorios/_tabs_nav.html" %}
 <div class="card">
-  <form method="get" action="/relatorios/vendas" class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+  <form method="get" action="/relatorios/vendas" class="mb-4 flex flex-wrap items-end gap-3">
     <div>
-      <label class="label">De</label>
-      <input type="date" name="de" value="{{ filtros.de }}" class="input" />
+      <label class="label" for="f-de">De</label>
+      <input id="f-de" type="date" name="de" value="{{ filtros.de }}" class="input" />
     </div>
     <div>
-      <label class="label">Até</label>
-      <input type="date" name="ate" value="{{ filtros.ate }}" class="input" />
+      <label class="label" for="f-ate">Até</label>
+      <input id="f-ate" type="date" name="ate" value="{{ filtros.ate }}" class="input" />
     </div>
-    <div class="flex items-end">
-      <button type="submit" class="btn-primario w-full">Filtrar</button>
-    </div>
-    <div class="flex items-end">
-      <a href="/relatorios/vendas/export?de={{ filtros.de }}&ate={{ filtros.ate }}"
-         class="btn-secundario w-full text-center">Exportar XLSX</a>
+    <div>
+      <button type="submit" class="btn-primario">
+        <span class="nav-icone" aria-hidden="true">{{ icone("filtro") }}</span>
+        Filtrar
+      </button>
     </div>
   </form>
 
@@ -28,7 +38,7 @@
   </div>
 
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Pedido</th>
@@ -50,7 +60,7 @@
           <td class="text-right">{{ l.total | moeda }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="py-6 text-center text-gray-400">Nenhuma venda no período.</td></tr>
+        <tr><td colspan="6"><div class="vazio"><span class="vazio-icone" aria-hidden="true">{{ icone("grafico") }}</span><p>Nenhuma venda no período.</p></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

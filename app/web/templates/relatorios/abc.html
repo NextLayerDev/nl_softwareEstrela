@@ -1,25 +1,35 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Curva ABC{% endblock %}
 {% block cabecalho %}Curva ABC de produtos{% endblock %}
 
+{% block acoes %}
+<a href="/relatorios/abc/export?de={{ filtros.de }}&ate={{ filtros.ate }}" class="btn-secundario">
+  <span class="nav-icone" aria-hidden="true">{{ icone("upload") }}</span>
+  Exportar XLSX
+</a>
+{% endblock %}
+
 {% block content %}
+{{ trilha([("Painel","/"), ("Relatórios","/relatorios"), ("Curva ABC", none)]) }}
+{% include "relatorios/_tabs_nav.html" %}
 {% set classe_selo = {"A": "selo-muito", "B": "selo-tem", "C": "selo-acabou"} %}
 <div class="card">
-  <form method="get" action="/relatorios/abc" class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+  <form method="get" action="/relatorios/abc" class="mb-4 flex flex-wrap items-end gap-3">
     <div>
-      <label class="label">De</label>
-      <input type="date" name="de" value="{{ filtros.de }}" class="input" />
+      <label class="label" for="f-de">De</label>
+      <input id="f-de" type="date" name="de" value="{{ filtros.de }}" class="input" />
     </div>
     <div>
-      <label class="label">Até</label>
-      <input type="date" name="ate" value="{{ filtros.ate }}" class="input" />
+      <label class="label" for="f-ate">Até</label>
+      <input id="f-ate" type="date" name="ate" value="{{ filtros.ate }}" class="input" />
     </div>
-    <div class="flex items-end">
-      <button type="submit" class="btn-primario w-full">Filtrar</button>
-    </div>
-    <div class="flex items-end">
-      <a href="/relatorios/abc/export?de={{ filtros.de }}&ate={{ filtros.ate }}"
-         class="btn-secundario w-full text-center">Exportar XLSX</a>
+    <div>
+      <button type="submit" class="btn-primario">
+        <span class="nav-icone" aria-hidden="true">{{ icone("filtro") }}</span>
+        Filtrar
+      </button>
     </div>
   </form>
 
@@ -27,7 +37,7 @@
     <b class="text-ok">{{ dados.total | moeda }}</b></div>
 
   <div class="overflow-x-auto">
-    <table class="tabela w-full">
+    <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
           <th class="text-left">Código</th>
@@ -49,7 +59,7 @@
           <td class="text-center"><span class="{{ classe_selo.get(l.classe, 'selo-tem') }}">{{ l.classe }}</span></td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="py-6 text-center text-gray-400">Sem vendas para classificar.</td></tr>
+        <tr><td colspan="6"><div class="vazio"><span class="vazio-icone" aria-hidden="true">{{ icone("grafico") }}</span><p>Sem vendas para classificar.</p></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

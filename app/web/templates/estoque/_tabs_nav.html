@@ -1,0 +1,15 @@
+{# Abas de navegação do módulo Estoque (rotas distintas → abas-link, mantém deep-link/voltar). #}
+{% set _abas = [
+  ("Estoque", "/estoque"),
+  ("Inventário", "/inventario"),
+  ("Localização", "/estoque/localizacao"),
+] %}
+<div class="tabs mb-4" role="tablist" aria-label="Módulo de estoque">
+  {% for _rotulo, _url in _abas %}
+  {% set _ativa = request.url.path == _url or (request.url.path.startswith(_url + "/") if _url != "/estoque" else false) %}
+  <a href="{{ _url }}" role="tab"
+     aria-selected="{{ 'true' if _ativa else 'false' }}"
+     {% if _ativa %}aria-current="page"{% endif %}
+     class="tab">{{ _rotulo }}</a>
+  {% endfor %}
+</div>

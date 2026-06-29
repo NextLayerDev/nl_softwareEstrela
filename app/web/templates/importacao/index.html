@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Importação{% endblock %}
 {% block cabecalho %}Importação de Planilha{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Importação", none)]) }}{% endblock %}
 
 {% block content %}
 <div class="card max-w-2xl">
@@ -12,10 +15,19 @@
         hx-indicator="#carregando" class="space-y-4">
     <div>
       <label class="label" for="arquivo">Arquivo .xlsx</label>
-      <input class="input" type="file" id="arquivo" name="arquivo" accept=".xlsx" required />
+      <label for="arquivo"
+             class="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-marca-borda bg-marca-fundo/40 px-4 py-6 text-gray-500 transition hover:border-gold-500 hover:text-gold-700">
+        <span class="nav-icone h-6 w-6 shrink-0" aria-hidden="true">{{ icone("upload") }}</span>
+        <span class="text-sm">Clique para selecionar a planilha .xlsx</span>
+      </label>
+      <input class="input mt-2" type="file" id="arquivo" name="arquivo" accept=".xlsx" required />
     </div>
-    <button type="submit" class="btn-primario">Validar e pré-visualizar</button>
-    <span id="carregando" class="htmx-indicator text-sm text-gold-700">Processando…</span>
+    <div class="flex items-center gap-3">
+      <button type="submit" class="btn-primario">
+        <span class="nav-icone" aria-hidden="true">{{ icone("upload") }}</span> Validar e pré-visualizar
+      </button>
+      <span id="carregando" class="carregando text-sm" role="status">Processando…</span>
+    </div>
   </form>
 </div>
 

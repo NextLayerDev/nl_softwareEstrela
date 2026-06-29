@@ -1,21 +1,33 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}Relatórios{% endblock %}
 {% block cabecalho %}Relatórios{% endblock %}
 
 {% block content %}
+{{ trilha([("Painel","/"), ("Relatórios", none)]) }}
 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-  <a href="/relatorios/vendas" class="card hover:bg-gold-50">
-    <div class="text-lg font-semibold text-gold-700">Vendas</div>
-    <p class="mt-1 text-sm text-gray-500">Pedidos faturados por período, vendedor e cliente.</p>
+  <a href="/relatorios/vendas" class="card card-hover">
+    <div class="flex items-center gap-3">
+      <span class="nav-icone text-gold-700" aria-hidden="true">{{ icone("grafico") }}</span>
+      <div class="text-lg font-semibold text-gold-700">Vendas</div>
+    </div>
+    <p class="mt-2 text-sm text-gray-500">Pedidos faturados por período, vendedor e cliente.</p>
   </a>
-  <a href="/relatorios/abc" class="card hover:bg-gold-50">
-    <div class="text-lg font-semibold text-gold-700">Curva ABC</div>
-    <p class="mt-1 text-sm text-gray-500">Classificação de produtos por valor de venda (A/B/C).</p>
+  <a href="/relatorios/abc" class="card card-hover">
+    <div class="flex items-center gap-3">
+      <span class="nav-icone text-gold-700" aria-hidden="true">{{ icone("etiqueta") }}</span>
+      <div class="text-lg font-semibold text-gold-700">Curva ABC</div>
+    </div>
+    <p class="mt-2 text-sm text-gray-500">Classificação de produtos por valor de venda (A/B/C).</p>
   </a>
   {% if pode_financeiro %}
-  <a href="/relatorios/valorizacao" class="card hover:bg-gold-50">
-    <div class="text-lg font-semibold text-gold-700">Valorização de estoque</div>
-    <p class="mt-1 text-sm text-gray-500">Σ estoque físico × custo. Restrito a financeiro/admin.</p>
+  <a href="/relatorios/valorizacao" class="card card-hover">
+    <div class="flex items-center gap-3">
+      <span class="nav-icone text-gold-700" aria-hidden="true">{{ icone("dinheiro") }}</span>
+      <div class="text-lg font-semibold text-gold-700">Valorização de estoque</div>
+    </div>
+    <p class="mt-2 text-sm text-gray-500">Σ estoque físico × custo. Restrito a financeiro/admin.</p>
   </a>
   {% endif %}
 </div>

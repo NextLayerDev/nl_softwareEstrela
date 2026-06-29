@@ -1,0 +1,15 @@
+{# Abas de navegação do módulo Relatórios (rotas distintas → abas-link, mantém deep-link/voltar). #}
+{% set _abas = [
+  ("Vendas", "/relatorios/vendas"),
+  ("Curva ABC", "/relatorios/abc"),
+  ("Valorização", "/relatorios/valorizacao"),
+] %}
+<div class="tabs mb-4" role="tablist" aria-label="Módulo de relatórios">
+  {% for _rotulo, _url in _abas %}
+  {% set _ativa = request.url.path == _url %}
+  <a href="{{ _url }}" role="tab"
+     aria-selected="{{ 'true' if _ativa else 'false' }}"
+     {% if _ativa %}aria-current="page"{% endif %}
+     class="tab">{{ _rotulo }}</a>
+  {% endfor %}
+</div>

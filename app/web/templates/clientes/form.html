@@ -1,34 +1,43 @@
 {% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
 {% block titulo %}{{ titulo }}{% endblock %}
 {% block cabecalho %}{{ titulo }}{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Clientes","/clientes"), ("Cliente", none)]) }}{% endblock %}
+
+{% block acoes %}
+  <a href="/clientes" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
 
 {% block content %}
 {% set acao = "/clientes/" ~ cliente.id if cliente else "/clientes" %}
 <form method="post" action="{{ acao }}" class="card max-w-2xl">
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="sm:col-span-2">
-      <label class="label">Nome *</label>
-      <input class="input" name="nome" required value="{{ cliente.nome if cliente else '' }}" />
+      <label class="label" for="nome">Nome *</label>
+      <input id="nome" class="input" name="nome" required value="{{ cliente.nome if cliente else '' }}" />
     </div>
     <div>
-      <label class="label">CNPJ/CPF</label>
-      <input class="input" name="cnpj_cpf" value="{{ cliente.cnpj_cpf if cliente and cliente.cnpj_cpf else '' }}" />
+      <label class="label" for="cnpj_cpf">CNPJ/CPF</label>
+      <input id="cnpj_cpf" class="input" name="cnpj_cpf" value="{{ cliente.cnpj_cpf if cliente and cliente.cnpj_cpf else '' }}" />
     </div>
     <div>
-      <label class="label">Telefone</label>
-      <input class="input" name="telefone" value="{{ cliente.telefone if cliente and cliente.telefone else '' }}" />
+      <label class="label" for="telefone">Telefone</label>
+      <input id="telefone" class="input" name="telefone" value="{{ cliente.telefone if cliente and cliente.telefone else '' }}" />
     </div>
     <div class="sm:col-span-2">
-      <label class="label">Endereço</label>
-      <textarea class="input" name="endereco" rows="2">{{ cliente.endereco if cliente and cliente.endereco else '' }}</textarea>
+      <label class="label" for="endereco">Endereço</label>
+      <textarea id="endereco" class="input" name="endereco" rows="2">{{ cliente.endereco if cliente and cliente.endereco else '' }}</textarea>
     </div>
     <div>
-      <label class="label">Condição de pagamento padrão</label>
-      <input class="input" name="condicao_pagto_padrao" placeholder="à vista, 30 dias, 2x…" value="{{ cliente.condicao_pagto_padrao if cliente and cliente.condicao_pagto_padrao else '' }}" />
+      <label class="label" for="condicao_pagto_padrao">Condição de pagamento padrão</label>
+      <input id="condicao_pagto_padrao" class="input" name="condicao_pagto_padrao" placeholder="à vista, 30 dias, 2x…" value="{{ cliente.condicao_pagto_padrao if cliente and cliente.condicao_pagto_padrao else '' }}" />
     </div>
     <div>
-      <label class="label">Limite de crédito</label>
-      <input class="input" name="limite_credito" value="{{ cliente.limite_credito if cliente and cliente.limite_credito is not none else '' }}" />
+      <label class="label" for="limite_credito">Limite de crédito</label>
+      <input id="limite_credito" class="input" name="limite_credito" value="{{ cliente.limite_credito if cliente and cliente.limite_credito is not none else '' }}" />
     </div>
     <div>
       <label class="flex items-center gap-2">
@@ -37,8 +46,12 @@
     </div>
   </div>
   <div class="mt-6 flex gap-2">
-    <button type="submit" class="btn-primario">Salvar</button>
-    <a href="/clientes" class="btn-secundario">Cancelar</a>
+    <button type="submit" class="btn-primario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Salvar
+    </button>
+    <a href="/clientes" class="btn-secundario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Cancelar
+    </a>
   </div>
 </form>
 {% endblock %}

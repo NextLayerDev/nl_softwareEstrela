@@ -8,11 +8,18 @@
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <meta name="theme-color" content="#B98A19" />
 </head>
-<body class="flex min-h-screen items-center justify-center bg-sidebar">
-  <div class="w-full max-w-sm">
-    <div class="mb-6 text-center text-3xl font-bold text-gold-400">★ Estrela Gestão</div>
+<body class="flex min-h-screen items-center justify-center bg-sidebar p-4">
+  <main class="w-full max-w-sm">
+    <div class="mb-6 text-center">
+      <p class="text-3xl font-bold text-gold-400"><span aria-hidden="true">★</span> Estrela Gestão</p>
+      <p class="mt-1 text-sm text-sidebar-texto/70">Controle de estoque e pedidos</p>
+    </div>
     <form method="post" action="/login" class="card space-y-4">
-      {% if erro %}<div class="alerta-erro">{{ erro }}</div>{% endif %}
+      <div>
+        <h1 class="text-lg font-semibold">Entrar</h1>
+        <p class="text-sm text-gray-500">Use suas credenciais de acesso.</p>
+      </div>
+      {% if erro %}<div class="alerta-erro" role="alert">{{ erro }}</div>{% endif %}
       <div>
         <label class="label" for="email">E-mail</label>
         <input class="input" type="email" id="email" name="email" value="{{ email or '' }}"
@@ -25,6 +32,6 @@
       </div>
       <button type="submit" class="btn-primario w-full">Entrar</button>
     </form>
-  </div>
+  </main>
 </body>
 </html>
