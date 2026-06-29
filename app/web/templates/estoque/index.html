@@ -32,12 +32,15 @@
     <span id="busca-load" class="carregando" role="status">buscando…</span>
   </div>
 
+  {# Região de confirmação de entrada/ajuste (atualizada via HTMX OOB). #}
+  <div id="estoque-msg" aria-live="polite"></div>
+
   {# ---- Painel de entrada (HTMX) ---- #}
   {% if pode_entrada %}
   <div x-show="entrada" x-cloak role="region" aria-label="Entrada de mercadoria"
        class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
     <form method="post" action="/estoque/entrada"
-          hx-post="/estoque/entrada" hx-target="#tbody-estoque" hx-swap="afterbegin"
+          hx-post="/estoque/entrada" hx-target="#tbody-estoque" hx-swap="none"
           @htmx:after-request="entrada = null">
       <p class="mb-2 text-sm">Entrada de mercadoria — <strong x-text="entrada?.rotulo"></strong></p>
       <input type="hidden" name="variacao_id" :value="entrada?.id" />
@@ -58,7 +61,7 @@
   <div x-show="ajuste" x-cloak role="region" aria-label="Ajuste manual de estoque"
        class="mb-4 rounded-md border border-marca-borda bg-marca-fundo p-4">
     <form method="post" action="/estoque/ajuste"
-          hx-post="/estoque/ajuste" hx-target="#tbody-estoque" hx-swap="afterbegin"
+          hx-post="/estoque/ajuste" hx-target="#tbody-estoque" hx-swap="none"
           @htmx:after-request="ajuste = null">
       <p class="mb-2 text-sm">Ajuste manual — <strong x-text="ajuste?.rotulo"></strong></p>
       <input type="hidden" name="variacao_id" :value="ajuste?.id" />

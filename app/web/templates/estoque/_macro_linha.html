@@ -1,0 +1,50 @@
+{# Macro da linha de estoque, reutilizada na listagem e na atualização OOB. #}
+{% macro linha(v, pode_entrada, pode_ajuste, oob=False) %}
+{% set p = v.produto %}
+<tr id="linha-{{ v.id }}" {% if oob %}hx-swap-oob="true"{% endif %} class="{{ '' if v.ativo else 'opacity-50' }}">
+  <td>
+    {% if v.imagem_url %}
+      <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-10 w-10 rounded object-cover" />
+    {% else %}
+      <span class="text-xs text-gray-300">—</span>
+    {% endif %}
+  </td>
+  <td class="font-mono">{{ p.codigo }}</td>
+  <td>{{ p.descricao }}</td>
+  <td>{{ v.cor or "padrão" }}</td>
+  <td>{{ p.localizacao or "—" }}</td>
+  <td class="text-center">
+    {% if v.estoque_modo.value == "EXATO" %}
+      <span class="font-semibold {{ 'text-critico' if v.estoque_fisico <= v.estoque_minimo else '' }}">
+        {{ v.estoque_fisico }}
+      </span>
+      {% if v.estoque_reservado %}<span class="text-xs text-gray-400">(-{{ v.estoque_reservado }})</span>{% endif %}
+    {% elif v.rotulo_aprox %}
+      {% set r = v.rotulo_aprox.value | lower %}
+      <span class="selo-{{ 'muito' if r=='muito' else 'pouco' if r=='pouco' else 'tem' if r=='tem' else 'acabou' }}">
+        {{ r }}
+      </span>
+    {% else %}
+      <span class="text-gray-400">aprox.</span>
+    {% endif %}
+  </td>
+  <td class="text-center text-xs text-gray-500">
+    {{ "exato" if v.estoque_modo.value == "EXATO" else "aproximado" }}
+  </td>
+  <td class="whitespace-nowrap text-right">
+    <a href="/estoque/{{ v.id }}/movimentacoes" class="btn-secundario">Histórico</a>
+    {% if pode_entrada %}
+    <button type="button" class="btn-secundario"
+            x-data @click="$dispatch('abrir-entrada', {id: {{ v.id }}, rotulo: '{{ p.codigo }} {{ v.cor or "" }}'})">
+      Entrada
+    </button>
+    {% endif %}
+    {% if pode_ajuste %}
+    <button type="button" class="btn-secundario"
+            x-data @click="$dispatch('abrir-ajuste', {id: {{ v.id }}, rotulo: '{{ p.codigo }} {{ v.cor or "" }}', saldo: {{ v.estoque_fisico }}})">
+      Ajustar
+    </button>
+    {% endif %}
+  </td>
+</tr>
+{% endmacro %}

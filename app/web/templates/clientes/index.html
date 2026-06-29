@@ -5,13 +5,13 @@
 {% block cabecalho %}Clientes{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Clientes", none)]) }}{% endblock %}
 
-{% if pode_editar %}
 {% block acoes %}
+  {% if pode_editar %}
   <a href="/clientes/novo" class="btn-primario">
     <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo cliente
   </a>
+  {% endif %}
 {% endblock %}
-{% endif %}
 
 {% block content %}
 <div class="card">

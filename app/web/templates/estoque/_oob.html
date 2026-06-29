@@ -1,0 +1,7 @@
+{# Resposta de entrada/ajuste: atualiza a(s) linha(s) no lugar (OOB) + mensagem.
+   As <tr> OOB vão dentro de <template> para o parser não descartá-las. #}
+{% from "estoque/_macro_linha.html" import linha %}
+{% if msg_ok %}<div id="estoque-msg" hx-swap-oob="true" class="alerta-ok mb-3" role="status">{{ msg_ok }}</div>{% endif %}
+<template>
+{% for v in variacoes %}{{ linha(v, pode_entrada, pode_ajuste, oob=True) }}{% endfor %}
+</template>

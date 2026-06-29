@@ -110,8 +110,9 @@ def post_entrada(
         "pode_entrada": True,
         "pode_ajuste": usuario.perfil == "admin",
         "msg_ok": f"Entrada de {qtd} registrada.",
+        "oob": True,
     }
-    return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
+    return templates.TemplateResponse(request, "estoque/_oob.html", contexto)
 
 
 @router.post("/estoque/ajuste", response_class=HTMLResponse)
@@ -131,8 +132,9 @@ def post_ajuste(
         "pode_entrada": True,
         "pode_ajuste": True,
         "msg_ok": f"Ajuste para {novo_saldo} registrado.",
+        "oob": True,
     }
-    return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
+    return templates.TemplateResponse(request, "estoque/_oob.html", contexto)
 
 
 # ============================================================ INVENTÁRIO
