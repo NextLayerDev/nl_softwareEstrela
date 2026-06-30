@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
+{% block titulo %}Guia{% endblock %}
+{% block cabecalho %}Guia do sistema{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Guia", none)]) }}{% endblock %}
+
+{% block content %}
+<div x-data="guia([{% for t in topicos %}'{{ t.id }}'{{ ',' if not loop.last }}{% endfor %}])">
+
+  {# Barra de progresso do treinamento #}
+  <div class="card mb-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="text-base font-semibold">Treinamento do Estrela Gestão</h2>
+        <p class="text-sm text-gray-500">Aprenda cada módulo no seu ritmo e marque o que já dominou.</p>
+      </div>
+      <div class="min-w-[180px]">
+        <div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+          <span>Progresso</span><span x-text="progresso + '%'"></span>
+        </div>
+        <div class="h-2 w-full overflow-hidden rounded bg-marca-fundo"
+             role="progressbar" aria-label="Progresso do treinamento"
+             :aria-valuenow="progresso" aria-valuemin="0" aria-valuemax="100">
+          <div class="h-2 bg-gold-500 transition-all" :style="`width: ${progresso}%`"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[18rem_1fr]">
+
+    {# -------------------- Índice (menu de tópicos) -------------------- #}
+    <aside class="card self-start lg:sticky lg:top-4">
+      <label for="guia-busca" class="sr-only">Buscar no guia</label>
+      <div class="relative mb-3">
+        <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
+        <input type="search" id="guia-busca" x-model="busca" placeholder="Buscar tópico…" class="input w-full pl-9" autocomplete="off" />
+      </div>
+
+      <nav aria-label="Tópicos do guia" class="space-y-3">
+        {% for grupo in grupos %}
+        <div data-grupobusca="{% for t in topicos if t.grupo == grupo %}{{ (t.titulo ~ ' ' ~ t.resumo) | lower }} {% endfor %}"
+             x-show="!busca || $el.dataset.grupobusca.includes(busca.toLowerCase())">
+          <p class="nav-grupo-titulo !text-gray-400">{{ grupo }}</p>
+          <ul class="space-y-0.5">
+            {% for t in topicos if t.grupo == grupo %}
+            <li data-busca="{{ (t.titulo ~ ' ' ~ t.resumo) | lower }}"
+                x-show="!busca || $el.dataset.busca.includes(busca.toLowerCase())">
+              <button type="button" @click="ir('{{ t.id }}')"
+                      class="tab !mb-0 flex w-full items-center gap-2 rounded-md !border-b-0 !border-l-2 !px-3 !py-2"
+                      :class="atual === '{{ t.id }}' ? 'border-gold-500 bg-gold-50 text-gold-700' : 'border-transparent'">
+                <span class="h-4 w-4 shrink-0" aria-hidden="true">{{ icone(t.icone) }}</span>
+                <span class="min-w-0 flex-1 truncate text-left">{{ t.titulo }}</span>
+                <span x-show="estaLido('{{ t.id }}')" class="h-4 w-4 shrink-0 text-ok" aria-label="concluído">{{ icone("check") }}</span>
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    {# -------------------- Painéis (conteúdo) -------------------- #}
+    <div>
+      {% for t in topicos %}
+      <article id="painel-{{ t.id }}" tabindex="-1" x-show="atual === '{{ t.id }}'" x-cloak
+               class="card focus-visible:outline-none">
+        <header class="mb-4 flex items-start gap-3 border-b border-marca-borda pb-4">
+          <span class="vazio-icone !h-9 !w-9 shrink-0 text-gold-500" aria-hidden="true">{{ icone(t.icone) }}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs uppercase tracking-wider text-gray-400">{{ t.grupo }}</p>
+            <h2 class="text-xl font-bold">{{ t.titulo }}</h2>
+            <p class="mt-0.5 text-sm text-gray-500">{{ t.resumo }}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-1.5">
+              <span class="text-xs text-gray-400">Quem usa:</span>
+              {% for p in t.perfis %}
+              <span class="selo-neutro {{ 'ring-gold-400 ring-2' if user and user.perfil == p else '' }}">{{ p }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        </header>
+
+        {# Passos numerados #}
+        <ol class="space-y-3">
+          {% for passo in t.passos %}
+          <li class="flex gap-3">
+            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold-100 text-sm font-semibold text-gold-700">{{ loop.index }}</span>
+            <div class="pt-0.5 text-sm leading-relaxed">{{ passo | safe }}</div>
+          </li>
+          {% endfor %}
+        </ol>
+
+        {# Dicas #}
+        {% if t.dicas %}
+        <div class="mt-5 space-y-2">
+          {% for dica in t.dicas %}
+          <div class="flex items-start gap-2 rounded-md border border-gold-200 bg-gold-50 px-3 py-2 text-sm">
+            <span class="mt-0.5 h-4 w-4 shrink-0 text-gold-600" aria-hidden="true">{{ icone("alerta") }}</span>
+            <div>{{ dica | safe }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Rodapé: marcar como concluído + navegação #}
+        <footer class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-marca-borda pt-4">
+          <button type="button" @click="alternarLido('{{ t.id }}')"
+                  class="btn-secundario" :class="estaLido('{{ t.id }}') ? '!border-ok !text-ok' : ''">
+            <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span>
+            <span x-text="estaLido('{{ t.id }}') ? 'Concluído' : 'Marcar como concluído'"></span>
+          </button>
+          <div class="flex gap-2">
+            <button type="button" class="btn-secundario"
+                    @click="ir(ids[Math.max(ids.indexOf(atual) - 1, 0)])"
+                    :disabled="ids.indexOf('{{ t.id }}') === 0">
+              <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Anterior
+            </button>
+            <button type="button" class="btn-primario"
+                    @click="ir(ids[Math.min(ids.indexOf(atual) + 1, ids.length - 1)])"
+                    :disabled="ids.indexOf('{{ t.id }}') === ids.length - 1">
+              Próximo <span class="nav-icone" aria-hidden="true">{{ icone("sair") }}</span>
+            </button>
+          </div>
+        </footer>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

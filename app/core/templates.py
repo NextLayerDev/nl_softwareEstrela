@@ -5,21 +5,25 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
-_OUTPUT_CSS = Path(__file__).resolve().parent.parent / "static" / "css" / "output.css"
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_ASSETS = (_STATIC_DIR / "css" / "output.css", _STATIC_DIR / "js" / "ui.js")
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 
 def _asset_version() -> str:
-    """Versão dos assets (mtime do output.css) para cache-busting do CSS/JS.
+    """Versão dos assets (maior mtime de CSS/JS) para cache-busting.
 
-    Garante que terminais peguem o CSS novo após cada build, sem ficar presos
+    Garante que terminais peguem o CSS/JS novo após cada build, sem ficar presos
     em uma versão antiga do navegador.
     """
-    try:
-        return str(int(_OUTPUT_CSS.stat().st_mtime))
-    except OSError:
-        return "0"
+    mtimes = []
+    for caminho in _ASSETS:
+        try:
+            mtimes.append(int(caminho.stat().st_mtime))
+        except OSError:
+            continue
+    return str(max(mtimes)) if mtimes else "0"
 
 
 # Disponível em todos os templates como {{ asset_version }}.

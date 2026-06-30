@@ -69,4 +69,57 @@ document.addEventListener("alpine:init", () => {
       }
     },
   }));
+
+  // Guia de treinamento: navegação por tópico, busca e progresso (localStorage).
+  window.Alpine.data("guia", (ids = []) => ({
+    ids,
+    atual: ids[0] || "",
+    busca: "",
+    lidos: [],
+
+    init() {
+      try {
+        this.lidos = JSON.parse(localStorage.getItem("guia_lidos") || "[]");
+      } catch (e) {
+        this.lidos = [];
+      }
+      // Permite abrir direto num tópico via #ancora.
+      const hash = (window.location.hash || "").replace("#", "");
+      if (hash && this.ids.includes(hash)) this.atual = hash;
+    },
+
+    ir(id) {
+      this.atual = id;
+      this.busca = "";
+      try {
+        history.replaceState(null, "", "#" + id);
+      } catch (e) {
+        /* ignore */
+      }
+      this.$nextTick(() => {
+        const painel = document.getElementById("painel-" + id);
+        if (painel) painel.focus({ preventScroll: true });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+    },
+
+    estaLido(id) {
+      return this.lidos.includes(id);
+    },
+
+    alternarLido(id) {
+      if (this.estaLido(id)) {
+        this.lidos = this.lidos.filter((x) => x !== id);
+      } else {
+        this.lidos = [...this.lidos, id];
+      }
+      localStorage.setItem("guia_lidos", JSON.stringify(this.lidos));
+    },
+
+    get progresso() {
+      if (!this.ids.length) return 0;
+      const validos = this.lidos.filter((x) => this.ids.includes(x)).length;
+      return Math.round((validos / this.ids.length) * 100);
+    },
+  }));
 });

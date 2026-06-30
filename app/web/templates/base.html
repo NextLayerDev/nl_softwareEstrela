@@ -53,6 +53,7 @@
         {% endmacro %}
 
         {{ item("/", "Painel", ["admin","vendedor","financeiro","funcionario"], "painel") }}
+        {{ item("/guia", "Guia", ["admin","vendedor","financeiro","funcionario"], "guia") }}
 
         {% if p in ["admin","vendedor","financeiro","funcionario"] %}
         <p class="nav-grupo-titulo">Estoque</p>

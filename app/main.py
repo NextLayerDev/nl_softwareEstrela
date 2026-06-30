@@ -108,6 +108,7 @@ def _registrar_routers() -> None:
         "financeiro",
         "relatorios",
         "importacao",
+        "guia",
     ]
     for nome in web_modulos:
         caminho = f"app.web.routes.{nome}"
