@@ -140,6 +140,21 @@ async def inativar_produto(
     return RedirectResponse(url="/produtos", status_code=303)
 
 
+@router.post("/produtos/variacao/{variacao_id}/cor", response_class=HTMLResponse)
+async def renomear_cor_variacao(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    form = dict(await request.form())
+    variacao = produto_controller.renomear_variacao(db, variacao_id, form)
+    db.flush()
+    return templates.TemplateResponse(
+        request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )
+
+
 @router.post("/produtos/variacao/{variacao_id}/imagem", response_class=HTMLResponse)
 async def enviar_imagem_variacao(
     request: Request,
@@ -150,8 +165,8 @@ async def enviar_imagem_variacao(
 ):
     variacao = _get_variacao(db, variacao_id)
     conteudo = await imagem.read()
-    variacao.imagem_filename = salvar_imagem_variacao(
-        variacao.id, conteudo, anterior=variacao.imagem_filename
+    variacao.imagem_url = salvar_imagem_variacao(
+        variacao.id, conteudo, anterior=variacao.imagem_url
     )
     db.flush()
     return templates.TemplateResponse(
@@ -167,8 +182,8 @@ async def remover_imagem_variacao(
     usuario: Usuario = Depends(require_role("admin")),
 ):
     variacao = _get_variacao(db, variacao_id)
-    remover_imagem(variacao.imagem_filename)
-    variacao.imagem_filename = None
+    remover_imagem(variacao.imagem_url)
+    variacao.imagem_url = None
     db.flush()
     return templates.TemplateResponse(
         request, "produtos/_thumb_variacao.html", {"variacao": variacao}

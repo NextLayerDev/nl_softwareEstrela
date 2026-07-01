@@ -14,6 +14,16 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ENV: str = "dev"
 
+    # Storage de imagens (MinIO / S3-compatible). S3_ENDPOINT_URL é o endpoint usado pelo
+    # servidor para enviar/apagar objetos (na VPS, aponta pro hostname interno do serviço —
+    # mais rápido, sem sair da rede). S3_PUBLIC_URL é o domínio público usado para montar a
+    # URL salva no banco e exibida no <img src="">.
+    S3_ENDPOINT_URL: str = "https://api-nextpy-minio.1nwz76.easypanel.host"
+    S3_PUBLIC_URL: str = "https://api-nextpy-minio.1nwz76.easypanel.host"
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_BUCKET: str = "estrela-uploads"
+
     @property
     def is_dev(self) -> bool:
         return self.ENV == "dev"

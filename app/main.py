@@ -37,10 +37,8 @@ app = FastAPI(title="Estrela Gestão", docs_url=None, redoc_url=None, lifespan=l
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
-# Uploads do usuário (fotos de produto por cor) — servidos localmente, offline.
-_UPLOADS_DIR = Path(__file__).resolve().parent.parent / "data" / "uploads"
-_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(_UPLOADS_DIR)), name="uploads")
+# Uploads do usuário (fotos de produto por cor) são servidos direto pelo bucket público do
+# MinIO — ver app/core/imagens.py. Não há mount local de /uploads.
 
 
 def _quer_json(request: Request) -> bool:

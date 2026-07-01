@@ -40,7 +40,7 @@ def _ids():
         prod = db.scalar(
             select(Produto.id)
             .join(Produto.variacoes)
-            .where(Produto.descricao.ilike("%CANETA%"), ProdutoVariacao.imagem_filename.isnot(None))
+            .where(Produto.descricao.ilike("%CANETA%"), ProdutoVariacao.imagem_url.isnot(None))
             .limit(1)
         )
         return (fat.id if fat else None), (sep.id if sep else None), prod

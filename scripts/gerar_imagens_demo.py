@@ -113,10 +113,10 @@ def main() -> None:
 
         gerados = 0
         for v in variacoes:
-            if v.imagem_filename:
+            if v.imagem_url:
                 continue
             conteudo = _imagem(v.produto.codigo, v.produto.descricao, v.cor)
-            v.imagem_filename = salvar_imagem_variacao(v.id, conteudo)
+            v.imagem_url = salvar_imagem_variacao(v.id, conteudo)
             gerados += 1
         db.commit()
         print(f"Imagens de demonstração geradas: {gerados} (de {len(variacoes)} variações alvo)")
