@@ -34,7 +34,14 @@ def _cliente_s3():
         aws_access_key_id=settings.S3_ACCESS_KEY,
         aws_secret_access_key=settings.S3_SECRET_KEY,
         region_name="us-east-1",
-        config=BotoConfig(signature_version="s3v4"),
+        # timeout curto: se a rede até o MinIO travar, falha rápido em vez de prender o
+        # worker do Gunicorn (que só tem poucos workers sync) até o request expirar sozinho.
+        config=BotoConfig(
+            signature_version="s3v4",
+            connect_timeout=5,
+            read_timeout=10,
+            retries={"max_attempts": 1},
+        ),
         **kwargs,
     )
 
