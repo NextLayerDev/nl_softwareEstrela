@@ -9,9 +9,9 @@
                 htmx.ajax('GET', '/pedidos/saldo/{{ v.id }}?qtd=' + (qtd || 1), {target: '#saldo-box'});
                 document.getElementById('resultado-busca').innerHTML = ''">
   {% if v.imagem_url %}
-    <img src="{{ v.imagem_url }}" alt="" class="h-8 w-8 shrink-0 rounded object-cover" />
+    <img src="{{ v.imagem_url }}" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
   {% else %}
-    <span class="h-8 w-8 shrink-0 rounded bg-gold-50"></span>
+    <span class="h-12 w-12 shrink-0 rounded bg-gold-50"></span>
   {% endif %}
   <span class="font-mono">{{ p.codigo }}</span>
   <span class="min-w-0 flex-1 truncate">{{ p.descricao }}</span>

@@ -1,27 +1,37 @@
-<div id="var-thumb-{{ variacao.id }}" class="flex items-center gap-3 rounded-md border border-marca-borda p-2">
-  <div class="h-16 w-16 flex-shrink-0 overflow-hidden rounded bg-marca-fundo">
+<div id="var-thumb-{{ variacao.id }}" class="flex flex-col items-center gap-2 rounded-lg border border-marca-borda p-3">
+  <div class="aspect-square w-full overflow-hidden rounded-lg bg-marca-fundo">
     {% if variacao.imagem_url %}
       <img src="{{ variacao.imagem_url }}" alt="{{ variacao.cor or 'padrão' }}"
-           class="h-16 w-16 object-cover" />
+           class="h-full w-full object-cover" />
     {% else %}
-      <div class="flex h-16 w-16 items-center justify-center text-[10px] text-gray-400">sem foto</div>
+      <div class="flex h-full w-full items-center justify-center text-xs text-gray-400">sem foto</div>
     {% endif %}
   </div>
-  <div class="min-w-0 flex-1">
-    <div class="text-sm font-medium">{{ variacao.cor or "padrão" }}</div>
-    <form hx-post="/produtos/variacao/{{ variacao.id }}/imagem"
-          hx-encoding="multipart/form-data"
-          hx-target="#var-thumb-{{ variacao.id }}"
-          hx-swap="outerHTML"
-          class="mt-1 flex items-center gap-2">
-      <input type="file" name="imagem" accept="image/*" required
-             class="text-xs file:mr-2 file:rounded file:border-0 file:bg-gold-100 file:px-2 file:py-1" />
-      <button type="submit" class="btn-secundario px-2 py-1 text-xs">Enviar</button>
+  <div class="w-full text-center">
+    <input type="text" name="cor" value="{{ variacao.cor }}" placeholder="padrão"
+           hx-post="/produtos/variacao/{{ variacao.id }}/cor"
+           hx-trigger="change"
+           hx-target="#var-thumb-{{ variacao.id }}"
+           hx-swap="outerHTML"
+           class="input py-1 text-center text-sm font-medium" />
+    <form hx-encoding="multipart/form-data">
+      <label class="mt-1 block cursor-pointer text-xs">
+        <input type="file" name="imagem" accept="image/*" class="hidden"
+               hx-post="/produtos/variacao/{{ variacao.id }}/imagem"
+               hx-trigger="change"
+               hx-target="#var-thumb-{{ variacao.id }}"
+               hx-swap="outerHTML"
+               hx-indicator="#var-carregando-{{ variacao.id }}" />
+        <span class="btn-secundario inline-block w-full px-2 py-1">
+          {{ "Trocar foto" if variacao.imagem_url else "Enviar foto" }}
+        </span>
+      </label>
     </form>
+    <span id="var-carregando-{{ variacao.id }}" class="carregando" role="status">enviando…</span>
   </div>
   {% if variacao.imagem_url %}
   <button hx-post="/produtos/variacao/{{ variacao.id }}/imagem/remover"
           hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
-          class="btn-perigo px-2 py-1 text-xs">Remover</button>
+          class="btn-perigo w-full px-2 py-1 text-xs">Remover</button>
   {% endif %}
 </div>

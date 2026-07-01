@@ -17,6 +17,15 @@ class VariacaoCreate(BaseModel):
     ativo: bool = True
 
 
+class VariacaoCorUpdate(BaseModel):
+    cor: str = ""
+
+    @field_validator("cor")
+    @classmethod
+    def _trim(cls, v: str) -> str:
+        return v.strip()
+
+
 class VariacaoRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

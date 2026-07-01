@@ -69,5 +69,17 @@ class ProdutoService:
         db.flush()
         return produto
 
+    def obter_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
+        variacao = produto_repo.get_variacao(db, variacao_id)
+        if variacao is None:
+            raise NaoEncontradoError("Variação não encontrada.")
+        return variacao
+
+    def renomear_variacao(self, db: Session, variacao_id: int, cor: str) -> ProdutoVariacao:
+        variacao = self.obter_variacao(db, variacao_id)
+        variacao.cor = cor
+        db.flush()
+        return variacao
+
 
 produto_service = ProdutoService()

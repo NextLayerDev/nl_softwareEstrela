@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import RegraNegocioError
 from app.models.enums import EstoqueModo, RotuloAprox
-from app.models.produto import Produto
+from app.models.produto import Produto, ProdutoVariacao
 from app.schemas.produto import (
     CodigoAltCreate,
     ProdutoCreate,
     ProdutoUpdate,
+    VariacaoCorUpdate,
     VariacaoCreate,
 )
 from app.services.produto_service import produto_service
@@ -85,6 +86,10 @@ class ProdutoController:
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
         return produto_service.inativar(db, produto_id)
+
+    def renomear_variacao(self, db: Session, variacao_id: int, form: dict) -> ProdutoVariacao:
+        dados = VariacaoCorUpdate(cor=form.get("cor", ""))
+        return produto_service.renomear_variacao(db, variacao_id, dados.cor)
 
     @staticmethod
     def _parse_variacoes(form: dict) -> list[VariacaoCreate]:

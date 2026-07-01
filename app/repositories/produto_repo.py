@@ -3,12 +3,15 @@ from __future__ import annotations
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.produto import Produto
+from app.models.produto import Produto, ProdutoVariacao
 
 
 class ProdutoRepository:
     def get(self, db: Session, produto_id: int) -> Produto | None:
         return db.get(Produto, produto_id)
+
+    def get_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao | None:
+        return db.get(ProdutoVariacao, variacao_id)
 
     def get_by_codigo(self, db: Session, codigo: str) -> Produto | None:
         return db.scalar(select(Produto).where(Produto.codigo == codigo.strip()))

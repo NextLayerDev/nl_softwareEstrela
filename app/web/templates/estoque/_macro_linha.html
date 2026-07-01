@@ -4,7 +4,7 @@
 <tr id="linha-{{ v.id }}" {% if oob %}hx-swap-oob="true"{% endif %} class="{{ '' if v.ativo else 'opacity-50' }}">
   <td>
     {% if v.imagem_url %}
-      <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-10 w-10 rounded object-cover" />
+      <img src="{{ v.imagem_url }}" alt="{{ v.cor }}" class="h-14 w-14 rounded object-cover" />
     {% else %}
       <span class="text-xs text-gray-300">—</span>
     {% endif %}

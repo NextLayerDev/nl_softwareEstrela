@@ -1,9 +1,9 @@
 {% for p in produtos %}
-{% set vimg = (p.variacoes | selectattr("imagem_filename") | list | first) %}
+{% set vimg = (p.variacoes | selectattr("imagem_url") | list | first) %}
 <tr class="{{ '' if p.ativo else 'opacity-50' }}">
   <td>
     {% if vimg %}
-      <img src="{{ vimg.imagem_url }}" alt="{{ p.codigo }}" class="h-10 w-10 rounded object-cover" />
+      <img src="{{ vimg.imagem_url }}" alt="{{ p.codigo }}" class="h-14 w-14 rounded object-cover" />
     {% else %}
       <span class="text-xs text-gray-300">—</span>
     {% endif %}
