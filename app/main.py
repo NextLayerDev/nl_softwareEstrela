@@ -66,7 +66,8 @@ app = FastAPI(title="Estrela Gestão", docs_url=None, redoc_url=None, lifespan=l
 
 # Em produção, só aceita requisições com Host conhecido (barra Host-header spoofing).
 # Em dev não aplica: o TestClient usa "testserver" e o dev acessa por localhost/IP variados.
-if not settings.is_dev:
+# Se ALLOWED_HOSTS contiver "*", a checagem é desligada (proxy à frente já valida o Host).
+if not settings.is_dev and "*" not in settings.allowed_hosts_list:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
 
 

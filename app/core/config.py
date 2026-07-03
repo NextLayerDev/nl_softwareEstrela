@@ -28,8 +28,10 @@ class Settings(BaseSettings):
     ENV: str = "dev"
 
     # Hosts aceitos pelo TrustedHostMiddleware em produção (barra Host-header spoofing).
-    # Em dev não é aplicado (o TestClient usa "testserver").
-    ALLOWED_HOSTS: str = "sistema.local,localhost,127.0.0.1"
+    # Em dev não é aplicado (o TestClient usa "testserver"). Aceita curingas (*.easypanel.host).
+    # "*" = desliga a checagem (qualquer host). Por ora liberado; dá pra restringir depois
+    # setando ALLOWED_HOSTS no .env.prod (ex.: "sistema.local,*.easypanel.host").
+    ALLOWED_HOSTS: str = "*"
 
     # Storage de imagens (MinIO / S3-compatible). S3_ENDPOINT_URL é o endpoint usado pelo
     # servidor para enviar/apagar objetos (na VPS, aponta pro hostname interno do serviço —
