@@ -10,7 +10,12 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.imagens import _cliente_s3, salvar_imagem_variacao
+from app.core.imagens import (
+    _cliente_s3,
+    _cliente_s3_assinatura,
+    salvar_imagem_variacao,
+    url_para_exibicao,
+)
 from app.models.categoria import Categoria
 from app.models.enums import EstoqueModo
 from app.models.produto import Produto, ProdutoVariacao
@@ -28,20 +33,19 @@ def _s3_mock(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "S3_ACCESS_KEY", "testing")
     monkeypatch.setattr(settings, "S3_SECRET_KEY", "testing")
     monkeypatch.setattr(settings, "S3_ENDPOINT_URL", "")
+    monkeypatch.setattr(settings, "S3_PUBLIC_URL", "")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_SECURITY_TOKEN", "testing")
     monkeypatch.setenv("AWS_SESSION_TOKEN", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     _cliente_s3.cache_clear()
+    _cliente_s3_assinatura.cache_clear()
     with mock_aws():
         _cliente_s3().create_bucket(Bucket=settings.S3_BUCKET)
         yield
     _cliente_s3.cache_clear()
-
-
-def _chave(url: str) -> str:
-    return url.split(f"{settings.S3_BUCKET}/", 1)[1]
+    _cliente_s3_assinatura.cache_clear()
 
 
 @pytest.fixture
@@ -61,12 +65,25 @@ def test_imagem_url_none_sem_arquivo(variacao: ProdutoVariacao) -> None:
     assert variacao.imagem_url is None
 
 
-def test_salvar_gera_url_publica_e_objeto(variacao: ProdutoVariacao) -> None:
-    url = salvar_imagem_variacao(variacao.id, _png_bytes())
-    assert url.startswith(f"{settings.S3_PUBLIC_URL}/{settings.S3_BUCKET}/variacoes/")
-    assert url.endswith(".jpg")  # foi convertida para JPEG
-    obj = _cliente_s3().get_object(Bucket=settings.S3_BUCKET, Key=_chave(url))
+def test_salvar_gera_chave_e_objeto(variacao: ProdutoVariacao) -> None:
+    chave = salvar_imagem_variacao(variacao.id, _png_bytes())
+    # O banco guarda a CHAVE do objeto (não uma URL pública) — bucket é privado.
+    assert chave.startswith("variacoes/")
+    assert chave.endswith(".jpg")  # foi convertida para JPEG
+    obj = _cliente_s3().get_object(Bucket=settings.S3_BUCKET, Key=chave)
     assert obj["ContentLength"] > 0
+
+
+def test_url_para_exibicao_assina_a_chave(variacao: ProdutoVariacao) -> None:
+    chave = salvar_imagem_variacao(variacao.id, _png_bytes())
+    url = url_para_exibicao(chave)
+    # É uma URL assinada temporária (SigV4), não um link permanente.
+    assert chave in url
+    assert "X-Amz-Signature" in url
+    assert "X-Amz-Expires" in url
+    # Sem chave, sem URL.
+    assert url_para_exibicao(None) == ""
+    assert url_para_exibicao("") == ""
 
 
 def test_substituir_remove_anterior(variacao: ProdutoVariacao) -> None:
@@ -76,8 +93,8 @@ def test_substituir_remove_anterior(variacao: ProdutoVariacao) -> None:
     nova = salvar_imagem_variacao(variacao.id, _png_bytes((20, 120, 40)), anterior=antiga)
     assert nova != antiga
     with pytest.raises(ClientError):
-        _cliente_s3().get_object(Bucket=settings.S3_BUCKET, Key=_chave(antiga))
-    obj = _cliente_s3().get_object(Bucket=settings.S3_BUCKET, Key=_chave(nova))
+        _cliente_s3().get_object(Bucket=settings.S3_BUCKET, Key=antiga)
+    obj = _cliente_s3().get_object(Bucket=settings.S3_BUCKET, Key=nova)
     assert obj["ContentLength"] > 0
 
 

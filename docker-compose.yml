@@ -1,12 +1,14 @@
+# Stack de DESENVOLVIMENTO: só o Postgres (a app roda no host via `uv run uvicorn`).
+# A porta é publicada apenas em 127.0.0.1 para o app do host conectar — NUNCA na LAN.
 services:
   db:
-    image: postgres:16
+    image: postgres:16.4
     environment:
       POSTGRES_USER: estrela
-      POSTGRES_PASSWORD: senha
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha}
       POSTGRES_DB: estrela_gestao
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 

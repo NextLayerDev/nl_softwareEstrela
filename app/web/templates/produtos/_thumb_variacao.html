@@ -1,7 +1,7 @@
 <div id="var-thumb-{{ variacao.id }}" class="flex flex-col items-center gap-2 rounded-lg border border-marca-borda p-3">
   <div class="aspect-square w-full overflow-hidden rounded-lg bg-marca-fundo">
     {% if variacao.imagem_url %}
-      <img src="{{ variacao.imagem_url }}" alt="{{ variacao.cor or 'padrão' }}"
+      <img src="{{ foto_url(variacao.imagem_url) }}" alt="{{ variacao.cor or 'padrão' }}"
            class="h-full w-full object-cover" />
     {% else %}
       <div class="flex h-full w-full items-center justify-center text-xs text-gray-400">sem foto</div>

@@ -4,8 +4,10 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -14,6 +16,34 @@ from app.core.errors import DominioError, NaoAutenticadoError
 from app.core.templates import templates
 
 logger = logging.getLogger("estrela")
+
+
+def _origem_minio() -> str:
+    """Origem (scheme://host) do MinIO público, para liberar as fotos no img-src da CSP."""
+    url = settings.S3_PUBLIC_URL
+    if not url:
+        return ""
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else ""
+
+
+# CSP pragmática: bloqueia script/estilo/imagem externos (offline-first, sem CDN) e clickjacking.
+# 'unsafe-eval' é necessário para o Alpine.js; 'unsafe-inline' para os scripts/estilos inline dos
+# templates. A app já tem autoescape do Jinja como defesa primária contra XSS.
+_CSP = "; ".join(
+    [
+        "default-src 'self'",
+        f"img-src 'self' data: {_origem_minio()}".strip(),
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "font-src 'self'",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+    ]
+)
 
 
 @asynccontextmanager
@@ -34,11 +64,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Estrela Gestão", docs_url=None, redoc_url=None, lifespan=lifespan)
 
+# Em produção, só aceita requisições com Host conhecido (barra Host-header spoofing).
+# Em dev não aplica: o TestClient usa "testserver" e o dev acessa por localhost/IP variados.
+if not settings.is_dev:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
+
+
+@app.middleware("http")
+async def cabecalhos_seguranca(request: Request, call_next):
+    """Injeta headers de segurança em toda resposta."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = _CSP
+    # HSTS só em produção (dev usa http; forçar HTTPS quebraria o fluxo local).
+    if not settings.is_dev:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
-# Uploads do usuário (fotos de produto por cor) são servidos direto pelo bucket público do
-# MinIO — ver app/core/imagens.py. Não há mount local de /uploads.
+# Uploads do usuário (fotos de produto por cor) ficam num bucket PRIVADO do MinIO e são
+# servidos via URL assinada (presigned) gerada a cada render — ver app/core/imagens.py.
+# Não há mount local de /uploads.
 
 
 def _quer_json(request: Request) -> bool:

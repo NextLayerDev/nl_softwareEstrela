@@ -8,6 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
+from app.core.planilha import linha_segura
 from app.repositories.relatorio_repo import relatorio_repo
 
 # Cortes da curva ABC por valor acumulado (doc): A=80%, B=15% (até 95%), C=5%.
@@ -78,7 +79,7 @@ class RelatorioService:
         for celula in ws[1]:
             celula.font = Font(bold=True)
         for linha in linhas:
-            ws.append(linha)
+            ws.append(linha_segura(linha))
         buffer = io.BytesIO()
         wb.save(buffer)
         return buffer.getvalue()

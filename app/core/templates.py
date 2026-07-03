@@ -42,3 +42,17 @@ def _moeda(valor: object) -> str:
 
 
 templates.env.filters["moeda"] = _moeda
+
+
+def _foto_url(chave: object) -> str:
+    """Converte a chave do objeto (ou URL antiga) numa URL assinada temporária do MinIO.
+
+    Import tardio para evitar carregar boto3/PIL quando o módulo de templates sobe.
+    """
+    from app.core.imagens import url_para_exibicao
+
+    return url_para_exibicao(chave if isinstance(chave, str) else None)
+
+
+# Disponível em todos os templates como {{ foto_url(variacao.imagem_url) }}.
+templates.env.globals["foto_url"] = _foto_url

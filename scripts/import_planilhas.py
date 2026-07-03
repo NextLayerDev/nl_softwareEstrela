@@ -21,6 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import openpyxl
 
 from app.core.database import SessionLocal
+from app.core.planilha import linha_segura
 from app.importer import ABA_PARA_CATEGORIA, ABAS_CATALOGO
 from app.importer.carga import carregar
 from app.importer.parser import parse_blocos
@@ -38,7 +39,7 @@ def _gerar_relatorio(inconsistencias, destino: pathlib.Path) -> None:
     ws.title = "Inconsistências"
     ws.append(["Aba", "Linha", "Código", "Problema"])
     for inc in inconsistencias:
-        ws.append(list(inc.como_linha()))
+        ws.append(linha_segura(list(inc.como_linha())))
     wb.save(destino)
 
 

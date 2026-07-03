@@ -5,7 +5,7 @@
     {# Foto da cor — destaque para o funcionário reconhecer o modelo. #}
     <div class="h-40 w-40 flex-shrink-0 overflow-hidden rounded-lg border border-marca-borda bg-marca-fundo">
       {% if v.imagem_url %}
-        <img src="{{ v.imagem_url }}" alt="{{ p.descricao }} {{ v.cor }}" class="h-40 w-40 object-cover" />
+        <img src="{{ foto_url(v.imagem_url) }}" alt="{{ p.descricao }} {{ v.cor }}" class="h-40 w-40 object-cover" />
       {% else %}
         <div class="flex h-40 w-40 items-center justify-center text-sm text-gray-400">sem foto</div>
       {% endif %}

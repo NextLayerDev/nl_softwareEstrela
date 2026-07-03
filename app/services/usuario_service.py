@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.errors import NaoEncontradoError, RegraNegocioError
-from app.core.security import hash_senha
+from app.core.security import hash_senha, senha_fraca
 from app.models.usuario import Usuario
 from app.repositories.usuario_repo import usuario_repo
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
@@ -22,7 +22,8 @@ class UsuarioService:
     def criar(self, db: Session, dados: UsuarioCreate) -> Usuario:
         email = dados.email.lower().strip()
         if usuario_repo.get_by_email(db, email) is not None:
-            raise RegraNegocioError(f"Já existe um usuário com o e-mail {email}.")
+            # Mensagem genérica: não confirma se o e-mail já existe (evita enumeração).
+            raise RegraNegocioError("Não foi possível cadastrar com esse e-mail.")
         usuario = Usuario(
             nome=dados.nome,
             email=email,
@@ -40,20 +41,28 @@ class UsuarioService:
             novo_email = novo_email.lower().strip()
             existente = usuario_repo.get_by_email(db, novo_email)
             if existente is not None and existente.id != usuario_id:
-                raise RegraNegocioError(f"Já existe um usuário com o e-mail {novo_email}.")
+                raise RegraNegocioError("Não foi possível salvar com esse e-mail.")
             payload["email"] = novo_email
         if "perfil" in payload and payload["perfil"] is not None:
             payload["perfil"] = str(payload["perfil"])
+        # Desativar ou trocar o perfil invalida sessões ativas (tokens já emitidos).
+        desativou = payload.get("ativo") is False and usuario.ativo
+        trocou_perfil = "perfil" in payload and payload["perfil"] != usuario.perfil
         for campo, valor in payload.items():
             setattr(usuario, campo, valor)
+        if desativou or trocou_perfil:
+            usuario.token_version += 1
         usuario_repo.flush(db)
         return usuario
 
     def resetar_senha(self, db: Session, usuario_id: int, nova_senha: str) -> Usuario:
-        if len(nova_senha) < 6:
-            raise RegraNegocioError("A senha deve ter ao menos 6 caracteres.")
+        erro = senha_fraca(nova_senha)
+        if erro:
+            raise RegraNegocioError(erro)
         usuario = self.obter(db, usuario_id)
         usuario.senha_hash = hash_senha(nova_senha)
+        # Reset de senha invalida sessões antigas (token roubado/compartilhado).
+        usuario.token_version += 1
         usuario_repo.flush(db)
         return usuario
 

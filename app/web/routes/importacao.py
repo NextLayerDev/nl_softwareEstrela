@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.core.errors import RegraNegocioError
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
@@ -25,6 +26,35 @@ router = APIRouter()
 # Diretório onde uploads ficam até a confirmação da carga.
 _UPLOAD_DIR = Path(tempfile.gettempdir()) / "estrela_importacao"
 _UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Limite de tamanho da planilha (defesa contra upload gigante / zip-bomb).
+_MAX_XLSX_BYTES = 20 * 1024 * 1024  # 20 MB
+# Content-types que navegadores mandam para .xlsx (alguns mandam octet-stream/vazio).
+_XLSX_CONTENT_TYPES = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/octet-stream",
+    "application/zip",
+    "",
+}
+
+
+async def _ler_xlsx_validado(arquivo: UploadFile) -> bytes:
+    """Valida extensão, content-type e tamanho; devolve os bytes. Levanta RegraNegocioError."""
+    nome = (arquivo.filename or "").lower()
+    if not nome.endswith(".xlsx"):
+        raise RegraNegocioError("Envie uma planilha no formato .xlsx.")
+    ct = (arquivo.content_type or "").lower()
+    if ct not in _XLSX_CONTENT_TYPES:
+        raise RegraNegocioError("Tipo de arquivo inválido. Envie uma planilha .xlsx.")
+    if arquivo.size is not None and arquivo.size > _MAX_XLSX_BYTES:
+        raise RegraNegocioError("Planilha muito grande (máximo 20 MB).")
+    conteudo = await arquivo.read(_MAX_XLSX_BYTES + 1)
+    if len(conteudo) > _MAX_XLSX_BYTES:
+        raise RegraNegocioError("Planilha muito grande (máximo 20 MB).")
+    # Assinatura de arquivo ZIP (xlsx é um zip): "PK\x03\x04".
+    if not conteudo.startswith(b"PK\x03\x04"):
+        raise RegraNegocioError("Arquivo não é uma planilha .xlsx válida.")
+    return conteudo
 
 
 def _processar(caminho: Path):
@@ -47,8 +77,9 @@ async def preview_importacao(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role("admin")),
 ):
+    conteudo = await _ler_xlsx_validado(arquivo)
     destino = _UPLOAD_DIR / f"upload_{usuario.id}.xlsx"
-    destino.write_bytes(await arquivo.read())
+    destino.write_bytes(conteudo)
 
     produtos, inconsistencias = _processar(destino)
     exatas = sum(1 for p in produtos for v in p.variacoes if v.estoque_modo == "EXATO")

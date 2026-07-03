@@ -25,6 +25,10 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Usuario
     usuario = db.scalar(select(Usuario).where(Usuario.id == int(payload["sub"])))
     if usuario is None or not usuario.ativo:
         raise NaoAutenticadoError("Usuário inativo ou inexistente.")
+    # Revogação de sessão: se a senha foi resetada ou o usuário desativado/reativado,
+    # o token_version muda e os tokens antigos deixam de valer.
+    if int(payload.get("tv", 0)) != usuario.token_version:
+        raise NaoAutenticadoError("Sessão expirada. Faça login novamente.")
     return usuario
 
 

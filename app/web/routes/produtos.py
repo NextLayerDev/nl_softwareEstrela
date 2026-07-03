@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.controllers.produto_controller import produto_controller
-from app.core.errors import NaoEncontradoError
+from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.core.imagens import remover_imagem, salvar_imagem_variacao
 from app.core.templates import templates
 from app.deps.auth import get_current_user, require_role
@@ -77,6 +77,7 @@ def form_novo_produto(
         "titulo": "Novo produto",
         "produto": None,
         "categorias": _categorias(db),
+        "ver_custo": pode_ver_custo(usuario.perfil),
     }
     return templates.TemplateResponse(request, "produtos/form.html", contexto)
 
@@ -94,6 +95,7 @@ def form_editar_produto(
         "titulo": f"Editar {produto.codigo}",
         "produto": produto,
         "categorias": _categorias(db),
+        "ver_custo": pode_ver_custo(usuario.perfil),
     }
     return templates.TemplateResponse(request, "produtos/form.html", contexto)
 
@@ -164,7 +166,10 @@ async def enviar_imagem_variacao(
     usuario: Usuario = Depends(require_role("admin")),
 ):
     variacao = _get_variacao(db, variacao_id)
-    conteudo = await imagem.read()
+    # Rejeita cedo (antes de carregar tudo em memória) se o tamanho já vier grande.
+    if imagem.size is not None and imagem.size > 8 * 1024 * 1024:
+        raise RegraNegocioError("Imagem muito grande (máximo 8 MB).")
+    conteudo = await imagem.read(8 * 1024 * 1024 + 1)
     variacao.imagem_url = salvar_imagem_variacao(
         variacao.id, conteudo, anterior=variacao.imagem_url
     )

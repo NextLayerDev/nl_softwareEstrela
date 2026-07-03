@@ -62,10 +62,12 @@
       <label class="label" for="qtd_corte_atacado">Qtd corte atacado</label>
       <input id="qtd_corte_atacado" class="input" type="number" name="qtd_corte_atacado" value="{{ produto.qtd_corte_atacado if produto and produto.qtd_corte_atacado is not none else '' }}" />
     </div>
+    {% if ver_custo %}
     <div>
       <label class="label" for="preco_custo">Preço de custo</label>
       <input id="preco_custo" class="input" name="preco_custo" value="{{ produto.preco_custo if produto else '0' }}" />
     </div>
+    {% endif %}
     <div class="sm:col-span-2">
       <label class="label" for="observacao">Observação</label>
       <textarea id="observacao" class="input" name="observacao" rows="2">{{ produto.observacao if produto and produto.observacao else '' }}</textarea>

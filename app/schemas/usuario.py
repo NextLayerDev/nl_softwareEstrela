@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.core.security import senha_fraca
 from app.models.enums import Perfil
 
 
@@ -24,9 +25,10 @@ class UsuarioCreate(BaseModel):
 
     @field_validator("senha")
     @classmethod
-    def _senha_minima(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError("A senha deve ter ao menos 6 caracteres.")
+    def _senha_forte(cls, v: str) -> str:
+        erro = senha_fraca(v)
+        if erro:
+            raise ValueError(erro)
         return v
 
 

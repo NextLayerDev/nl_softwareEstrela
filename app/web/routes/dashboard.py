@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.templates import templates
-from app.deps.auth import get_current_user
+from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.conta_receber import ContaReceber
 from app.models.enums import EstoqueModo, RotuloAprox, StatusConta, StatusPedido
@@ -24,7 +24,7 @@ router = APIRouter()
 def dashboard(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(get_current_user),
+    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro", "funcionario")),
 ):
     hoje = date.today()
     so_proprios = usuario.perfil == "vendedor"

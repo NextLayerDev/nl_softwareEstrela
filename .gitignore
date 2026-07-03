@@ -23,5 +23,9 @@ data/*.xls
 # Artefatos de importação
 relatorio_inconsistencias*.xlsx
 
+# Dumps de imagens / arquivos grandes soltos (não versionar)
+*.zip
+app/imagens produtos.zip
+
 # SO
 .DS_Store
