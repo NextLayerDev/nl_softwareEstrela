@@ -1,10 +1,17 @@
 {% for c in clientes %}
 <tr>
-  <td>{{ c.nome }}</td>
+  <td>
+    {% if c.categoria and categorias.get(c.categoria | string) %}
+      {% set info = categorias[c.categoria | string] %}
+      <span title="{{ info.rotulo }}"
+            style="display:inline-block;width:10px;height:10px;border-radius:9999px;margin-right:6px;vertical-align:middle;background-color:{{ info.cor }}"></span>
+    {% endif %}
+    {{ c.nome }}
+  </td>
   <td>{{ c.cnpj_cpf or "—" }}</td>
   <td>{{ c.telefone or "—" }}</td>
+  <td>{{ c.vendedor or "—" }}</td>
   <td>{{ c.condicao_pagto_padrao or "—" }}</td>
-  <td class="text-right">{{ c.limite_credito | moeda if c.limite_credito is not none else "—" }}</td>
   {% if pode_editar %}
   <td class="whitespace-nowrap text-right">
     <a href="/clientes/{{ c.id }}/editar" class="btn-secundario">Editar</a>
@@ -12,6 +19,12 @@
           onsubmit="return confirm('Inativar este cliente?');">
       <button type="submit" class="btn-perigo">Inativar</button>
     </form>
+    {% if pode_excluir %}
+    <form method="post" action="/clientes/{{ c.id }}/excluir" class="inline"
+          onsubmit="return confirm('Excluir DEFINITIVAMENTE este cliente? (só é possível se não tiver pedidos)');">
+      <button type="submit" class="btn-perigo">Excluir</button>
+    </form>
+    {% endif %}
   </td>
   {% endif %}
 </tr>

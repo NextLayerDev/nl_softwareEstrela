@@ -18,6 +18,15 @@ from app.schemas.produto import pode_ver_custo
 
 router = APIRouter()
 
+# Tamanho do bloco no scroll infinito da listagem de produtos.
+_BLOCO = 50
+
+
+def _ctx_paginacao(produtos: list, q: str, offset: int) -> dict:
+    """Contexto de paginação para o fragmento de linhas (scroll infinito)."""
+    tem_mais = (not q) and (len(produtos) == _BLOCO)
+    return {"q": q, "offset": offset, "tem_mais": tem_mais, "proximo_offset": offset + _BLOCO}
+
 
 def _categorias(db: Session) -> list[Categoria]:
     return list(db.scalars(select(Categoria).order_by(Categoria.nome)))
@@ -37,14 +46,14 @@ def listar_produtos(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
-    produtos = produto_controller.listar(db, q or None)
+    produtos = produto_controller.listar(db, q or None, limit=_BLOCO, offset=0)
     contexto = {
         "user": usuario,
         "titulo": "Produtos",
         "produtos": produtos,
-        "q": q,
         "pode_editar": usuario.perfil == "admin",
         "ver_custo": pode_ver_custo(usuario.perfil),
+        **_ctx_paginacao(produtos, q, 0),
     }
     return templates.TemplateResponse(request, "produtos/index.html", contexto)
 
@@ -53,15 +62,17 @@ def listar_produtos(
 def busca_produtos(
     request: Request,
     q: str = "",
+    offset: int = 0,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
-    produtos = produto_controller.listar(db, q or None)
+    produtos = produto_controller.listar(db, q or None, limit=_BLOCO, offset=offset)
     contexto = {
         "user": usuario,
         "produtos": produtos,
         "pode_editar": usuario.perfil == "admin",
         "ver_custo": pode_ver_custo(usuario.perfil),
+        **_ctx_paginacao(produtos, q, offset),
     }
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
 

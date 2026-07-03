@@ -13,38 +13,74 @@
 
 {% block content %}
 {% set acao = "/clientes/" ~ cliente.id if cliente else "/clientes" %}
+{% set cond = (cliente.condicao_pagto_padrao if cliente and cliente.condicao_pagto_padrao else '') %}
+{% set is_outro = cond and (cond|upper != 'À VISTA') %}
 <form method="post" action="{{ acao }}" class="card max-w-2xl">
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div class="sm:col-span-2">
       <label class="label" for="nome">Nome *</label>
-      <input id="nome" class="input" name="nome" required value="{{ cliente.nome if cliente else '' }}" />
+      <input id="nome" class="input" name="nome" required style="text-transform:uppercase"
+             value="{{ cliente.nome if cliente else '' }}" />
     </div>
     <div>
       <label class="label" for="cnpj_cpf">CNPJ/CPF</label>
       <input id="cnpj_cpf" class="input" name="cnpj_cpf" value="{{ cliente.cnpj_cpf if cliente and cliente.cnpj_cpf else '' }}" />
     </div>
     <div>
+      <label class="label" for="vendedor">Vendedor</label>
+      <input id="vendedor" class="input" name="vendedor" style="text-transform:uppercase"
+             value="{{ cliente.vendedor if cliente and cliente.vendedor else '' }}" />
+    </div>
+    <div>
       <label class="label" for="telefone">Telefone</label>
       <input id="telefone" class="input" name="telefone" value="{{ cliente.telefone if cliente and cliente.telefone else '' }}" />
     </div>
+    <div>
+      <label class="label" for="telefone2">Telefone 2</label>
+      <input id="telefone2" class="input" name="telefone2" value="{{ cliente.telefone2 if cliente and cliente.telefone2 else '' }}" />
+    </div>
     <div class="sm:col-span-2">
       <label class="label" for="endereco">Endereço</label>
-      <textarea id="endereco" class="input" name="endereco" rows="2">{{ cliente.endereco if cliente and cliente.endereco else '' }}</textarea>
+      <textarea id="endereco" class="input" name="endereco" rows="2" style="text-transform:uppercase">{{ cliente.endereco if cliente and cliente.endereco else '' }}</textarea>
+    </div>
+
+    {# Condição de pagamento: À vista / Outro (com descrição) #}
+    <div class="sm:col-span-2" x-data="{ tipo: '{{ 'outro' if is_outro else 'avista' }}' }">
+      <span class="label">Condição de pagamento</span>
+      <div class="flex flex-wrap items-center gap-4">
+        <label class="flex items-center gap-2">
+          <input type="radio" name="cond_tipo" value="avista" x-model="tipo" /> À vista
+        </label>
+        <label class="flex items-center gap-2">
+          <input type="radio" name="cond_tipo" value="outro" x-model="tipo" /> Outro
+        </label>
+        <input class="input flex-1" name="cond_desc" placeholder="Descreva a condição (ex.: 30 DIAS, 2X)…"
+               style="text-transform:uppercase" x-show="tipo === 'outro'" x-cloak
+               value="{{ cond if is_outro else '' }}" />
+      </div>
+    </div>
+
+    <div>
+      <label class="label" for="categoria">Categoria</label>
+      <select id="categoria" class="input" name="categoria">
+        <option value="">— Sem categoria —</option>
+        {% for val, info in categorias.items() %}
+        <option value="{{ val }}" {{ 'selected' if cliente and cliente.categoria == val else '' }}>{{ info.rotulo }}</option>
+        {% endfor %}
+      </select>
     </div>
     <div>
-      <label class="label" for="condicao_pagto_padrao">Condição de pagamento padrão</label>
-      <input id="condicao_pagto_padrao" class="input" name="condicao_pagto_padrao" placeholder="à vista, 30 dias, 2x…" value="{{ cliente.condicao_pagto_padrao if cliente and cliente.condicao_pagto_padrao else '' }}" />
-    </div>
-    <div>
-      <label class="label" for="limite_credito">Limite de crédito</label>
-      <input id="limite_credito" class="input" name="limite_credito" value="{{ cliente.limite_credito if cliente and cliente.limite_credito is not none else '' }}" />
-    </div>
-    <div>
-      <label class="flex items-center gap-2">
+      <label class="flex items-center gap-2 pt-7">
         <input type="checkbox" name="ativo" {{ 'checked' if (not cliente) or cliente.ativo else '' }} /> Ativo
       </label>
     </div>
+
+    <div class="sm:col-span-2">
+      <label class="label" for="observacao">Observação</label>
+      <textarea id="observacao" class="input" name="observacao" rows="2" style="text-transform:uppercase">{{ cliente.observacao if cliente and cliente.observacao else '' }}</textarea>
+    </div>
   </div>
+
   <div class="mt-6 flex gap-2">
     <button type="submit" class="btn-primario">
       <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Salvar

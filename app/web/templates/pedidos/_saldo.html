@@ -2,7 +2,7 @@
 <div class="flex gap-3 rounded-md border border-marca-borda bg-marca-fundo p-3 text-sm">
   {% if variacao.imagem_url %}
   <img src="{{ foto_url(variacao.imagem_url) }}" alt="{{ variacao.cor }}"
-       class="h-28 w-28 flex-shrink-0 rounded border border-marca-borda object-cover" />
+       class="h-24 w-24 flex-shrink-0 rounded border border-marca-borda object-cover" />
   {% endif %}
   <div class="flex-1">
   <p class="font-semibold">{{ produto.codigo }} — {{ produto.descricao }} {% if variacao.cor %}({{ variacao.cor }}){% endif %}</p>

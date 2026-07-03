@@ -17,13 +17,18 @@ class ProdutoRepository:
         return db.scalar(select(Produto).where(Produto.codigo == codigo.strip()))
 
     def listar(
-        self, db: Session, incluir_inativos: bool = False, limit: int = 100
+        self,
+        db: Session,
+        incluir_inativos: bool = False,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[Produto]:
         stmt = (
             select(Produto)
             .options(selectinload(Produto.variacoes), selectinload(Produto.codigos_alt))
             .order_by(Produto.descricao)
             .limit(limit)
+            .offset(offset)
         )
         if not incluir_inativos:
             stmt = stmt.where(Produto.ativo.is_(True))

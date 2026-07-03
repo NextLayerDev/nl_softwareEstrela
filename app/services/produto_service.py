@@ -9,10 +9,14 @@ from app.schemas.produto import ProdutoCreate, ProdutoUpdate
 
 
 class ProdutoService:
-    def listar(self, db: Session, termo: str | None = None) -> list[Produto]:
+    def listar(
+        self, db: Session, termo: str | None = None, limit: int = 50, offset: int = 0
+    ) -> list[Produto]:
+        # Busca por termo usa pg_trgm (topo dos matches); navegação sem termo é paginada
+        # (scroll infinito) via limit/offset.
         if termo:
             return produto_repo.busca_rapida(db, termo)
-        return produto_repo.listar(db)
+        return produto_repo.listar(db, limit=limit, offset=offset)
 
     def obter(self, db: Session, produto_id: int) -> Produto:
         produto = produto_repo.get(db, produto_id)

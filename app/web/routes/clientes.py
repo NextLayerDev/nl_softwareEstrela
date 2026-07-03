@@ -8,6 +8,7 @@ from app.controllers.cliente_controller import cliente_controller
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
+from app.models.enums import CATEGORIA_CLIENTE_INFO
 from app.models.usuario import Usuario
 
 router = APIRouter()
@@ -27,6 +28,8 @@ def listar_clientes(
         "clientes": clientes,
         "q": q,
         "pode_editar": usuario.perfil in ("admin", "vendedor"),
+        "pode_excluir": usuario.perfil == "admin",
+        "categorias": CATEGORIA_CLIENTE_INFO,
     }
     return templates.TemplateResponse(request, "clientes/index.html", contexto)
 
@@ -43,6 +46,8 @@ def busca_clientes(
         "user": usuario,
         "clientes": clientes,
         "pode_editar": usuario.perfil in ("admin", "vendedor"),
+        "pode_excluir": usuario.perfil == "admin",
+        "categorias": CATEGORIA_CLIENTE_INFO,
     }
     return templates.TemplateResponse(request, "clientes/_linhas.html", contexto)
 
@@ -52,7 +57,12 @@ def form_novo_cliente(
     request: Request,
     usuario: Usuario = Depends(require_role("admin", "vendedor")),
 ):
-    contexto = {"user": usuario, "titulo": "Novo cliente", "cliente": None}
+    contexto = {
+        "user": usuario,
+        "titulo": "Novo cliente",
+        "cliente": None,
+        "categorias": CATEGORIA_CLIENTE_INFO,
+    }
     return templates.TemplateResponse(request, "clientes/form.html", contexto)
 
 
@@ -64,7 +74,12 @@ def form_editar_cliente(
     usuario: Usuario = Depends(require_role("admin", "vendedor")),
 ):
     cliente = cliente_controller.obter(db, cliente_id)
-    contexto = {"user": usuario, "titulo": f"Editar {cliente.nome}", "cliente": cliente}
+    contexto = {
+        "user": usuario,
+        "titulo": f"Editar {cliente.nome}",
+        "cliente": cliente,
+        "categorias": CATEGORIA_CLIENTE_INFO,
+    }
     return templates.TemplateResponse(request, "clientes/form.html", contexto)
 
 
@@ -99,4 +114,15 @@ async def inativar_cliente(
     usuario: Usuario = Depends(require_role("admin", "vendedor")),
 ):
     cliente_controller.inativar(db, cliente_id)
+    return RedirectResponse(url="/clientes", status_code=303)
+
+
+@router.post("/clientes/{cliente_id}/excluir", response_class=HTMLResponse)
+async def excluir_cliente(
+    request: Request,
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    cliente_controller.excluir(db, cliente_id)
     return RedirectResponse(url="/clientes", status_code=303)

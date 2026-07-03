@@ -3,7 +3,7 @@
 <tr class="{{ '' if p.ativo else 'opacity-50' }}">
   <td>
     {% if vimg %}
-      <img src="{{ foto_url(vimg.imagem_url) }}" alt="{{ p.codigo }}" class="h-14 w-14 rounded object-cover" />
+      <img src="{{ foto_url(vimg.imagem_url) }}" alt="{{ p.codigo }}" class="h-12 w-12 rounded object-cover" />
     {% else %}
       <span class="text-xs text-gray-300">—</span>
     {% endif %}
@@ -34,6 +34,13 @@
   </td>
   {% endif %}
 </tr>
-{% else %}
-<tr><td colspan="9" class="py-6 text-center text-gray-400">Nenhum produto encontrado.</td></tr>
 {% endfor %}
+{% if not produtos and (offset | default(0)) == 0 %}
+<tr><td colspan="9" class="py-6 text-center text-gray-400">Nenhum produto encontrado.</td></tr>
+{% endif %}
+{% if tem_mais %}
+<tr hx-get="/produtos/busca?q={{ q | default('') | urlencode }}&offset={{ proximo_offset }}"
+    hx-trigger="revealed" hx-swap="outerHTML" hx-target="this">
+  <td colspan="9" class="py-3 text-center text-gray-400">carregando…</td>
+</tr>
+{% endif %}
