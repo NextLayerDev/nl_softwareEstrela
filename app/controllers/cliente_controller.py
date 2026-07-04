@@ -26,6 +26,22 @@ def _condicao(form: dict) -> str | None:
     return "À VISTA"
 
 
+def _fiscais(form: dict) -> dict:
+    """Campos de nota fiscal (eNotas) vindos do form."""
+    return {
+        "email": (form.get("email") or None),
+        "inscricao_estadual": (form.get("inscricao_estadual") or None),
+        "contribuinte_icms": form.get("contribuinte_icms") in ("on", "true", "1", True),
+        "fisc_cep": (form.get("fisc_cep") or None),
+        "fisc_logradouro": (form.get("fisc_logradouro") or None),
+        "fisc_numero": (form.get("fisc_numero") or None),
+        "fisc_complemento": (form.get("fisc_complemento") or None),
+        "fisc_bairro": (form.get("fisc_bairro") or None),
+        "fisc_cidade": (form.get("fisc_cidade") or None),
+        "fisc_uf": (form.get("fisc_uf") or None),
+    }
+
+
 class ClienteController:
     def listar(self, db: Session, termo: str | None) -> list[Cliente]:
         return cliente_service.listar(db, termo)
@@ -45,6 +61,7 @@ class ClienteController:
             categoria=_categoria_opt(form.get("categoria")),
             observacao=(form.get("observacao") or None),
             ativo=form.get("ativo") in ("on", "true", "1", True),
+            **_fiscais(form),
         )
         return cliente_service.criar(db, dados)
 
@@ -60,6 +77,7 @@ class ClienteController:
             categoria=_categoria_opt(form.get("categoria")),
             observacao=(form.get("observacao") or None),
             ativo=form.get("ativo") in ("on", "true", "1", True),
+            **_fiscais(form),
         )
         return cliente_service.atualizar(db, cliente_id, dados)
 

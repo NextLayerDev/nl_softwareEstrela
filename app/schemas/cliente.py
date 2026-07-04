@@ -3,7 +3,22 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class ClienteCreate(BaseModel):
+class DadosFiscais(BaseModel):
+    """Campos usados para emitir NF-e via eNotas (todos opcionais no cadastro)."""
+
+    email: str | None = None
+    inscricao_estadual: str | None = None
+    contribuinte_icms: bool = False
+    fisc_cep: str | None = None
+    fisc_logradouro: str | None = None
+    fisc_numero: str | None = None
+    fisc_complemento: str | None = None
+    fisc_bairro: str | None = None
+    fisc_cidade: str | None = None
+    fisc_uf: str | None = None
+
+
+class ClienteCreate(DadosFiscais):
     nome: str
     cnpj_cpf: str | None = None
     telefone: str | None = None
@@ -24,7 +39,7 @@ class ClienteCreate(BaseModel):
         return v
 
 
-class ClienteUpdate(BaseModel):
+class ClienteUpdate(DadosFiscais):
     nome: str | None = None
     cnpj_cpf: str | None = None
     telefone: str | None = None
@@ -37,7 +52,7 @@ class ClienteUpdate(BaseModel):
     ativo: bool | None = None
 
 
-class ClienteRead(BaseModel):
+class ClienteRead(DadosFiscais):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

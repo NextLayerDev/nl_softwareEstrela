@@ -7,12 +7,31 @@ from app.models.cliente import Cliente
 from app.repositories.cliente_repo import cliente_repo
 from app.schemas.cliente import ClienteCreate, ClienteUpdate
 
-# Campos de texto que o cliente pediu em CAIXA ALTA.
-_CAMPOS_MAIUSCULOS = {"nome", "endereco", "observacao", "vendedor", "condicao_pagto_padrao"}
+# Campos de texto gravados em CAIXA ALTA (pedido do cliente + padronização do endereço fiscal).
+_CAMPOS_MAIUSCULOS = {
+    "nome",
+    "endereco",
+    "observacao",
+    "vendedor",
+    "condicao_pagto_padrao",
+    "fisc_logradouro",
+    "fisc_bairro",
+    "fisc_cidade",
+    "fisc_complemento",
+}
 
 
-def _maiuscula(valor: str | None) -> str | None:
-    return valor.upper() if isinstance(valor, str) else valor
+def _norm(campo: str, valor: object) -> object:
+    """Normaliza por campo: e-mail em minúsculas, UF com 2 letras, demais textos em maiúsculas."""
+    if not isinstance(valor, str):
+        return valor
+    if campo == "email":
+        return valor.strip().lower() or None
+    if campo == "fisc_uf":
+        return valor.strip().upper()[:2] or None
+    if campo in _CAMPOS_MAIUSCULOS:
+        return valor.upper()
+    return valor
 
 
 class ClienteService:
@@ -28,26 +47,14 @@ class ClienteService:
         return cliente
 
     def criar(self, db: Session, dados: ClienteCreate) -> Cliente:
-        cliente = Cliente(
-            nome=_maiuscula(dados.nome),
-            cnpj_cpf=dados.cnpj_cpf,
-            telefone=dados.telefone,
-            telefone2=dados.telefone2,
-            endereco=_maiuscula(dados.endereco),
-            condicao_pagto_padrao=_maiuscula(dados.condicao_pagto_padrao),
-            vendedor=_maiuscula(dados.vendedor),
-            categoria=dados.categoria,
-            observacao=_maiuscula(dados.observacao),
-            ativo=dados.ativo,
-        )
-        return cliente_repo.add(db, cliente)
+        # Os campos do schema batem 1:1 com as colunas do model; normaliza cada um por nome.
+        dados_norm = {campo: _norm(campo, valor) for campo, valor in dados.model_dump().items()}
+        return cliente_repo.add(db, Cliente(**dados_norm))
 
     def atualizar(self, db: Session, cliente_id: int, dados: ClienteUpdate) -> Cliente:
         cliente = self.obter(db, cliente_id)
         for campo, valor in dados.model_dump(exclude_unset=True).items():
-            if campo in _CAMPOS_MAIUSCULOS:
-                valor = _maiuscula(valor)
-            setattr(cliente, campo, valor)
+            setattr(cliente, campo, _norm(campo, valor))
         db.flush()
         return cliente
 

@@ -64,6 +64,33 @@ def test_criar_cliente_campos_novos(db: Session) -> None:
     assert c.categoria == "ruim"
 
 
+def test_criar_cliente_dados_fiscais(db: Session) -> None:
+    c = cliente_service.criar(
+        db,
+        ClienteCreate(
+            nome="fiscal ltda",
+            cnpj_cpf="12345678000199",
+            email="Contato@Loja.COM",
+            fisc_cep="04775-110",
+            fisc_logradouro="rua a",
+            fisc_numero="100",
+            fisc_bairro="centro",
+            fisc_cidade="são paulo",
+            fisc_uf="sp",
+            inscricao_estadual="123",
+            contribuinte_icms=True,
+        ),
+    )
+    db.flush()
+    assert c.email == "contato@loja.com"  # e-mail em minúsculas
+    assert c.fisc_uf == "SP"  # UF em maiúsculas, 2 letras
+    assert c.fisc_logradouro == "RUA A"  # endereço fiscal em CAIXA ALTA
+    assert c.fisc_cidade == "SÃO PAULO"
+    assert c.fisc_numero == "100"
+    assert c.inscricao_estadual == "123"
+    assert c.contribuinte_icms is True
+
+
 def test_condicao_avista_e_outro(db: Session) -> None:
     # Via controller (caminho do form): "À vista" e "Outro" + descrição.
     a = cliente_controller.criar(db, {"nome": "AV", "cond_tipo": "avista", "ativo": "on"})

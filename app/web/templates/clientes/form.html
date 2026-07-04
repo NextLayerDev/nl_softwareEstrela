@@ -79,6 +79,53 @@
       <label class="label" for="observacao">Observação</label>
       <textarea id="observacao" class="input" name="observacao" rows="2" style="text-transform:uppercase">{{ cliente.observacao if cliente and cliente.observacao else '' }}</textarea>
     </div>
+
+    {# ---------- Dados para nota fiscal (eNotas) ---------- #}
+    <div class="sm:col-span-2 mt-2 border-t border-marca-borda pt-4">
+      <h3 class="text-sm font-semibold">Dados para nota fiscal</h3>
+      <p class="text-xs text-gray-400">Usados para emitir NF-e. Preencha se este cliente vai receber nota. Nome e CNPJ/CPF acima são reaproveitados.</p>
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label" for="email">E-mail (para receber a nota)</label>
+      <input id="email" class="input" type="email" name="email" value="{{ cliente.email if cliente and cliente.email else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="fisc_cep">CEP</label>
+      <input id="fisc_cep" class="input" name="fisc_cep" placeholder="00000-000" value="{{ cliente.fisc_cep if cliente and cliente.fisc_cep else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="fisc_uf">UF</label>
+      <input id="fisc_uf" class="input" name="fisc_uf" maxlength="2" placeholder="SP" style="text-transform:uppercase" value="{{ cliente.fisc_uf if cliente and cliente.fisc_uf else '' }}" />
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label" for="fisc_logradouro">Logradouro</label>
+      <input id="fisc_logradouro" class="input" name="fisc_logradouro" style="text-transform:uppercase" value="{{ cliente.fisc_logradouro if cliente and cliente.fisc_logradouro else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="fisc_numero">Número</label>
+      <input id="fisc_numero" class="input" name="fisc_numero" placeholder="S/N" value="{{ cliente.fisc_numero if cliente and cliente.fisc_numero else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="fisc_complemento">Complemento</label>
+      <input id="fisc_complemento" class="input" name="fisc_complemento" style="text-transform:uppercase" value="{{ cliente.fisc_complemento if cliente and cliente.fisc_complemento else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="fisc_bairro">Bairro</label>
+      <input id="fisc_bairro" class="input" name="fisc_bairro" style="text-transform:uppercase" value="{{ cliente.fisc_bairro if cliente and cliente.fisc_bairro else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="fisc_cidade">Cidade</label>
+      <input id="fisc_cidade" class="input" name="fisc_cidade" style="text-transform:uppercase" value="{{ cliente.fisc_cidade if cliente and cliente.fisc_cidade else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="inscricao_estadual">Inscrição estadual (opcional)</label>
+      <input id="inscricao_estadual" class="input" name="inscricao_estadual" placeholder="ISENTO" value="{{ cliente.inscricao_estadual if cliente and cliente.inscricao_estadual else '' }}" />
+    </div>
+    <div>
+      <label class="flex items-center gap-2 pt-7">
+        <input type="checkbox" name="contribuinte_icms" {{ 'checked' if cliente and cliente.contribuinte_icms else '' }} /> Contribuinte de ICMS
+      </label>
+    </div>
   </div>
 
   <div class="mt-6 flex gap-2">
