@@ -5,6 +5,7 @@
     <table class="tabela w-full">
       <thead>
         <tr>
+          <th class="text-left">Foto</th>
           <th class="text-left">Produto</th>
           <th class="text-left">Cor</th>
           <th class="text-right">Qtd</th>
@@ -18,6 +19,13 @@
         {% for item in pedido.itens %}
         {% set v = item.variacao %}
         <tr>
+          <td>
+            {% if v.imagem_url %}
+              <img src="{{ foto_url(v.imagem_url) }}" alt="{{ v.produto.codigo }}" class="h-14 w-14 rounded object-cover" />
+            {% else %}
+              <span class="text-xs text-gray-300">—</span>
+            {% endif %}
+          </td>
           <td>
             {{ v.produto.codigo }} — {{ v.produto.descricao }}
             {% if item.qtd_caixas %}
@@ -41,7 +49,7 @@
           {% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ 7 if editavel else 6 }}" class="py-6 text-center text-gray-400">
+        <tr><td colspan="{{ 8 if editavel else 7 }}" class="py-6 text-center text-gray-400">
           Nenhum item.
         </td></tr>
         {% endfor %}
