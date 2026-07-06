@@ -27,7 +27,7 @@ module.exports = {
           borda: "#E4DCCA",
         },
         ok: { DEFAULT: "#1F7A40", bg: "#E3F2E8" },
-        aviso: { DEFAULT: "#B8860B", bg: "#FBF1D8" },
+        aviso: { DEFAULT: "#8A5B00", bg: "#FBF1D8" },
         critico: { DEFAULT: "#B3261E", bg: "#FBE4E2" },
         info: { DEFAULT: "#1D4ED8", bg: "#E5EDFB" },
       },

@@ -122,7 +122,7 @@
     @apply selo bg-aviso-bg text-aviso;
   }
   .selo-tem {
-    @apply selo bg-gold-100 text-gold-700;
+    @apply selo bg-gold-100 text-gold-900;
   }
   .selo-acabou {
     @apply selo bg-critico-bg text-critico;

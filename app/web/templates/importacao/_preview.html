@@ -21,7 +21,7 @@
   </div>
   <div class="mt-3 max-h-72 overflow-auto">
     <table class="tabela">
-      <thead><tr><th>Aba</th><th>Linha</th><th>Código</th><th>Problema</th></tr></thead>
+      <thead><tr><th scope="col">Aba</th><th scope="col">Linha</th><th scope="col">Código</th><th scope="col">Problema</th></tr></thead>
       <tbody>
         {% for inc in inconsistencias[:200] %}
         <tr><td>{{ inc.aba }}</td><td>{{ inc.linha }}</td><td>{{ inc.codigo or "—" }}</td><td>{{ inc.problema }}</td></tr>

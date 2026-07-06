@@ -1,3 +1,5 @@
+{% from "_ui.html" import confirmar_botao %}
+{% from "_icones.html" import icone %}
 {% for p in produtos %}
 {% set vimg = (p.variacoes | selectattr("imagem_url") | list | first) %}
 <tr class="{{ '' if p.ativo else 'opacity-50' }}">
@@ -26,17 +28,20 @@
   <td class="whitespace-nowrap text-right">
     <a href="/produtos/{{ p.id }}/editar" class="btn-secundario">Editar</a>
     {% if p.ativo %}
-    <form method="post" action="/produtos/{{ p.id }}/inativar" class="inline"
-          onsubmit="return confirm('Inativar este produto?');">
-      <button type="submit" class="btn-perigo">Inativar</button>
-    </form>
+    {{ confirmar_botao("/produtos/" ~ p.id ~ "/inativar", "Inativar", "Inativar produto",
+        "O produto " ~ p.codigo ~ " deixa de aparecer para novos pedidos. O estoque e o histórico são mantidos.") }}
     {% endif %}
   </td>
   {% endif %}
 </tr>
 {% endfor %}
 {% if not produtos and (offset | default(0)) == 0 %}
-<tr><td colspan="9" class="py-6 text-center text-gray-400">Nenhum produto encontrado.</td></tr>
+<tr><td colspan="9">
+  <div class="vazio">
+    <span class="vazio-icone" aria-hidden="true">{{ icone("etiqueta") }}</span>
+    <p>Nenhum produto encontrado.</p>
+  </div>
+</td></tr>
 {% endif %}
 {% if tem_mais %}
 <tr hx-get="/produtos/busca?q={{ q | default('') | urlencode }}&offset={{ proximo_offset }}"

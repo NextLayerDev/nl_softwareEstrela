@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="/static/css/output.css?v={{ asset_version }}" />
   <link rel="manifest" href="/static/manifest.webmanifest" />
   <meta name="theme-color" content="#B98A19" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 </head>
 <body class="flex min-h-screen items-center justify-center bg-sidebar p-4">
   <main class="w-full max-w-sm">
@@ -28,10 +30,28 @@
       <div>
         <label class="label" for="senha">Senha</label>
         <input class="input" type="password" id="senha" name="senha"
-               autocomplete="current-password" required />
+               autocomplete="current-password" required
+               aria-describedby="caps-hint" />
+        <p id="caps-hint" class="mt-1 text-xs font-medium text-aviso" role="status" hidden>
+          ⚠️ Caps Lock está ativado
+        </p>
       </div>
       <button type="submit" class="btn-primario w-full">Entrar</button>
     </form>
   </main>
+  <script>
+    // Aviso de Caps Lock no campo de senha (offline, sem dependências).
+    (function () {
+      var senha = document.getElementById("senha");
+      var hint = document.getElementById("caps-hint");
+      if (!senha || !hint) return;
+      function checar(e) {
+        if (e.getModifierState) hint.hidden = !e.getModifierState("CapsLock");
+      }
+      senha.addEventListener("keydown", checar);
+      senha.addEventListener("keyup", checar);
+      senha.addEventListener("blur", function () { hint.hidden = true; });
+    })();
+  </script>
 </body>
 </html>

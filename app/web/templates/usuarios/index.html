@@ -13,14 +13,14 @@
 {% block content %}
 <div class="card" x-data="modal()" @keydown.escape.window="fechar()">
   <div class="overflow-x-auto">
-    <table class="tabela tabela-densa w-full">
+    <table class="tabela tabela-densa w-full" aria-label="Lista de usuários">
       <thead>
         <tr>
-          <th class="text-left">Nome</th>
-          <th class="text-left">E-mail</th>
-          <th class="text-left">Perfil</th>
-          <th class="text-left">Status</th>
-          <th></th>
+          <th scope="col" class="text-left">Nome</th>
+          <th scope="col" class="text-left">E-mail</th>
+          <th scope="col" class="text-left">Perfil</th>
+          <th scope="col" class="text-left">Status</th>
+          <th scope="col"></th>
         </tr>
       </thead>
       <tbody>

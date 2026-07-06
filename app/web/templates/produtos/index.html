@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icones.html" import icone %}
-{% from "_ui.html" import trilha %}
+{% from "_ui.html" import trilha, confirmar_modal %}
 {% block titulo %}Produtos{% endblock %}
 {% block cabecalho %}Produtos{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Produtos", none)]) }}{% endblock %}
@@ -14,7 +14,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="card">
+<div class="card" x-data="modal()" @keydown.escape.window="fechar()">
   <div class="mb-4 flex items-center gap-3">
     <div class="relative w-full max-w-md">
       <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
@@ -35,18 +35,18 @@
   </div>
 
   <div class="overflow-x-auto">
-    <table class="tabela tabela-densa w-full">
+    <table class="tabela tabela-densa w-full" aria-label="Lista de produtos">
       <thead>
         <tr>
-          <th class="text-left">Foto</th>
-          <th class="text-left">Código</th>
-          <th class="text-left">Descrição</th>
-          <th class="text-left">Categoria</th>
-          <th class="text-right">Preço varejo</th>
-          <th class="text-right">Preço atacado</th>
-          {% if ver_custo %}<th class="text-right">Custo</th>{% endif %}
-          <th class="text-left">Variações</th>
-          {% if pode_editar %}<th></th>{% endif %}
+          <th scope="col" class="text-left">Foto</th>
+          <th scope="col" class="text-left">Código</th>
+          <th scope="col" class="text-left">Descrição</th>
+          <th scope="col" class="text-left">Categoria</th>
+          <th scope="col" class="text-right">Preço varejo</th>
+          <th scope="col" class="text-right">Preço atacado</th>
+          {% if ver_custo %}<th scope="col" class="text-right">Custo</th>{% endif %}
+          <th scope="col" class="text-left">Variações</th>
+          {% if pode_editar %}<th scope="col"></th>{% endif %}
         </tr>
       </thead>
       <tbody id="tbody-produtos">
@@ -54,5 +54,6 @@
       </tbody>
     </table>
   </div>
+  {{ confirmar_modal() }}
 </div>
 {% endblock %}

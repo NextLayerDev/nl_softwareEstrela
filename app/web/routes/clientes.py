@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.controllers.cliente_controller import cliente_controller
@@ -10,6 +10,7 @@ from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.enums import CATEGORIA_CLIENTE_INFO
 from app.models.usuario import Usuario
+from app.web.routes._flash import redirect_ok
 
 router = APIRouter()
 
@@ -18,6 +19,7 @@ router = APIRouter()
 def listar_clientes(
     request: Request,
     q: str = "",
+    ok: str = "",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro")),
 ):
@@ -30,6 +32,7 @@ def listar_clientes(
         "pode_editar": usuario.perfil in ("admin", "vendedor"),
         "pode_excluir": usuario.perfil == "admin",
         "categorias": CATEGORIA_CLIENTE_INFO,
+        "mensagem_ok": ok or None,
     }
     return templates.TemplateResponse(request, "clientes/index.html", contexto)
 
@@ -91,7 +94,7 @@ async def criar_cliente(
 ):
     form = dict(await request.form())
     cliente_controller.criar(db, form)
-    return RedirectResponse(url="/clientes", status_code=303)
+    return redirect_ok("/clientes", "Cliente cadastrado com sucesso.")
 
 
 @router.post("/clientes/{cliente_id}", response_class=HTMLResponse)
@@ -103,7 +106,7 @@ async def atualizar_cliente(
 ):
     form = dict(await request.form())
     cliente_controller.atualizar(db, cliente_id, form)
-    return RedirectResponse(url="/clientes", status_code=303)
+    return redirect_ok("/clientes", "Cliente atualizado com sucesso.")
 
 
 @router.post("/clientes/{cliente_id}/inativar", response_class=HTMLResponse)
@@ -114,7 +117,7 @@ async def inativar_cliente(
     usuario: Usuario = Depends(require_role("admin", "vendedor")),
 ):
     cliente_controller.inativar(db, cliente_id)
-    return RedirectResponse(url="/clientes", status_code=303)
+    return redirect_ok("/clientes", "Cliente inativado.")
 
 
 @router.post("/clientes/{cliente_id}/excluir", response_class=HTMLResponse)
@@ -125,4 +128,4 @@ async def excluir_cliente(
     usuario: Usuario = Depends(require_role("admin")),
 ):
     cliente_controller.excluir(db, cliente_id)
-    return RedirectResponse(url="/clientes", status_code=303)
+    return redirect_ok("/clientes", "Cliente excluído.")

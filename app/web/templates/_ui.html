@@ -40,3 +40,33 @@
   {%- endfor %}
 </div>
 {%- endmacro %}
+
+{#
+  Confirmação padronizada (substitui window.confirm). Reusa o componente Alpine `modal()`
+  (foco preso, Esc, retorno de foco). O ANCESTRAL precisa ter x-data="modal()" e incluir
+  confirmar_modal() uma vez. Cada botão-gatilho passa a ação/mensagem via data-* (evita
+  quebra por aspas) e chama abrir({...dataset}).
+#}
+{% macro confirmar_botao(action, rotulo, titulo, mensagem, detalhe="", classe="btn-perigo") -%}
+<button type="button" class="{{ classe }}"
+        data-action="{{ action }}" data-rotulo="{{ rotulo }}" data-titulo="{{ titulo }}"
+        data-mensagem="{{ mensagem }}" data-detalhe="{{ detalhe }}"
+        @click="abrir({...$el.dataset}, $event)">{{ rotulo }}</button>
+{%- endmacro %}
+
+{% macro confirmar_modal() -%}
+<template x-teleport="body">
+  <div x-show="aberto" x-cloak class="modal-overlay" @click="fechar()">
+    <div class="modal-painel" role="dialog" aria-modal="true" aria-labelledby="confirmar-titulo"
+         x-ref="painel" @click.stop @keydown="trapTab($event)">
+      <h3 id="confirmar-titulo" class="mb-2 font-semibold" x-text="dados?.titulo"></h3>
+      <p class="text-sm text-gray-600" x-text="dados?.mensagem"></p>
+      <p class="mt-1 text-xs text-gray-500" x-show="dados?.detalhe" x-text="dados?.detalhe"></p>
+      <form method="post" :action="dados?.action" class="mt-4 flex justify-end gap-2">
+        <button type="button" class="btn-secundario" @click="fechar()">Cancelar</button>
+        <button type="submit" class="btn-perigo" x-text="dados?.rotulo || 'Confirmar'"></button>
+      </form>
+    </div>
+  </div>
+</template>
+{%- endmacro %}

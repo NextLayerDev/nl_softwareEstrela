@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.models.categoria import Categoria
 from app.models.produto import ProdutoVariacao
 from app.models.usuario import Usuario
 from app.schemas.produto import pode_ver_custo
+from app.web.routes._flash import redirect_ok
 
 router = APIRouter()
 
@@ -43,6 +44,7 @@ def _get_variacao(db: Session, variacao_id: int) -> ProdutoVariacao:
 def listar_produtos(
     request: Request,
     q: str = "",
+    ok: str = "",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
@@ -53,6 +55,7 @@ def listar_produtos(
         "produtos": produtos,
         "pode_editar": usuario.perfil == "admin",
         "ver_custo": pode_ver_custo(usuario.perfil),
+        "mensagem_ok": ok or None,
         **_ctx_paginacao(produtos, q, 0),
     }
     return templates.TemplateResponse(request, "produtos/index.html", contexto)
@@ -127,7 +130,7 @@ async def criar_produto(
     form["var_rotulo"] = raw.getlist("var_rotulo")
     form["cod_alt"] = raw.getlist("cod_alt")
     produto_controller.criar(db, form)
-    return RedirectResponse(url="/produtos", status_code=303)
+    return redirect_ok("/produtos", "Produto cadastrado com sucesso.")
 
 
 @router.post("/produtos/{produto_id}", response_class=HTMLResponse)
@@ -139,7 +142,7 @@ async def atualizar_produto(
 ):
     form = dict(await request.form())
     produto_controller.atualizar(db, produto_id, form)
-    return RedirectResponse(url="/produtos", status_code=303)
+    return redirect_ok("/produtos", "Produto atualizado com sucesso.")
 
 
 @router.post("/produtos/{produto_id}/inativar", response_class=HTMLResponse)
@@ -150,7 +153,7 @@ async def inativar_produto(
     usuario: Usuario = Depends(require_role("admin")),
 ):
     produto_controller.inativar(db, produto_id)
-    return RedirectResponse(url="/produtos", status_code=303)
+    return redirect_ok("/produtos", "Produto inativado.")
 
 
 @router.post("/produtos/variacao/{variacao_id}/cor", response_class=HTMLResponse)

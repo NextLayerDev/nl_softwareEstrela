@@ -5,9 +5,14 @@
 <button type="button"
         class="flex w-full items-center gap-3 border-b border-marca-borda px-2 py-2 text-left text-sm
                hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
-        @click="variacaoId = {{ v.id }};
-                htmx.ajax('GET', '/pedidos/saldo/{{ v.id }}?qtd=' + (qtd || 1), {target: '#saldo-box'});
-                document.getElementById('resultado-busca').innerHTML = ''">
+        data-id="{{ v.id }}" data-codigo="{{ p.codigo }}" data-descricao="{{ p.descricao }}"
+        data-cor="{{ v.cor or 'padrão' }}" data-img="{{ foto_url(v.imagem_url) if v.imagem_url else '' }}"
+        @click="variacaoId = $el.dataset.id;
+                selCodigo = $el.dataset.codigo; selDescricao = $el.dataset.descricao;
+                selCor = $el.dataset.cor; selImg = $el.dataset.img;
+                htmx.ajax('GET', '/pedidos/saldo/' + $el.dataset.id + '?qtd=' + (qtd || 1), {target: '#saldo-box'});
+                document.getElementById('resultado-busca').innerHTML = '';
+                $nextTick(() => document.getElementById('item-qtd')?.focus())">
   {% if v.imagem_url %}
     <img src="{{ foto_url(v.imagem_url) }}" alt="" class="h-10 w-10 shrink-0 rounded object-cover" />
   {% else %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icones.html" import icone %}
-{% from "_ui.html" import trilha %}
+{% from "_ui.html" import trilha, confirmar_modal %}
 {% block titulo %}Clientes{% endblock %}
 {% block cabecalho %}Clientes{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Clientes", none)]) }}{% endblock %}
@@ -14,7 +14,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="card">
+<div class="card" x-data="modal()" @keydown.escape.window="fechar()">
   <div class="mb-4 flex items-center gap-3">
     <div class="relative w-full max-w-md">
       <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
@@ -35,15 +35,15 @@
   </div>
 
   <div class="overflow-x-auto">
-    <table class="tabela tabela-densa w-full">
+    <table class="tabela tabela-densa w-full" aria-label="Lista de clientes">
       <thead>
         <tr>
-          <th class="text-left">Nome</th>
-          <th class="text-left">CNPJ/CPF</th>
-          <th class="text-left">Telefone</th>
-          <th class="text-left">Vendedor</th>
-          <th class="text-left">Cond. pagto</th>
-          {% if pode_editar %}<th></th>{% endif %}
+          <th scope="col" class="text-left">Nome</th>
+          <th scope="col" class="text-left">CNPJ/CPF</th>
+          <th scope="col" class="text-left">Telefone</th>
+          <th scope="col" class="text-left">Vendedor</th>
+          <th scope="col" class="text-left">Cond. pagto</th>
+          {% if pode_editar %}<th scope="col"></th>{% endif %}
         </tr>
       </thead>
       <tbody id="tbody-clientes">
@@ -51,5 +51,6 @@
       </tbody>
     </table>
   </div>
+  {{ confirmar_modal() }}
 </div>
 {% endblock %}

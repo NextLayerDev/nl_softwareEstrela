@@ -1,9 +1,15 @@
 {% from "estoque/_macro_linha.html" import linha %}
+{% from "_icones.html" import icone %}
 {% if msg_ok %}
 <tr><td colspan="8" class="bg-marca-fundo py-2 text-center text-sm text-ok">{{ msg_ok }}</td></tr>
 {% endif %}
 {% for v in variacoes %}
 {{ linha(v, pode_entrada, pode_ajuste) }}
 {% else %}
-<tr><td colspan="8" class="py-6 text-center text-gray-400">Nenhuma variação encontrada.</td></tr>
+<tr><td colspan="8">
+  <div class="vazio">
+    <span class="vazio-icone" aria-hidden="true">{{ icone("caixa") }}</span>
+    <p>Nenhuma variação encontrada.</p>
+  </div>
+</td></tr>
 {% endfor %}

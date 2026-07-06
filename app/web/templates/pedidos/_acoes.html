@@ -1,7 +1,9 @@
 {# Ações do pedido (Confirmar/Faturar/Cancelar). Re-renderizado via OOB quando os
    itens mudam, para o "Confirmar" habilitar sem recarregar a página. #}
 {% from "_icones.html" import icone %}
-<div id="acoes-pedido" {% if oob %}hx-swap-oob="true"{% endif %} class="flex flex-wrap gap-2">
+{% from "_ui.html" import confirmar_botao, confirmar_modal %}
+<div id="acoes-pedido" {% if oob %}hx-swap-oob="true"{% endif %} class="flex flex-wrap gap-2"
+     x-data="modal()" @keydown.escape.window="fechar()">
   {% if pedido.status == "rascunho" %}
     <form method="post" action="/pedidos/{{ pedido.id }}/confirmar">
       <button class="btn-primario" {% if not pedido.itens %}aria-disabled="true" disabled title="Adicione itens para confirmar"{% endif %}>
@@ -17,12 +19,8 @@
       </button>
     </form>
     {% endif %}
-    <form method="post" action="/pedidos/{{ pedido.id }}/cancelar"
-          onsubmit="return confirm('Cancelar este pedido e estornar reservas?')">
-      <button class="btn-perigo">
-        <span class="nav-icone" aria-hidden="true">{{ icone("fechar") }}</span> Cancelar pedido
-      </button>
-    </form>
+    {{ confirmar_botao("/pedidos/" ~ pedido.id ~ "/cancelar", "Cancelar pedido", "Cancelar pedido",
+        "O pedido é marcado como cancelado e as reservas de estoque dos itens são estornadas.") }}
   {% endif %}
   {% if pedido.status == "faturado" %}
     <form method="post" action="/pedidos/{{ pedido.id }}/entregar">
@@ -31,4 +29,5 @@
       </button>
     </form>
   {% endif %}
+  {{ confirmar_modal() }}
 </div>

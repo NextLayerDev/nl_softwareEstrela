@@ -29,48 +29,61 @@
 
 {% if editavel %}
 {# ----------------------- Adicionar item (busca + saldo + preço sugerido) ----------------------- #}
-<div class="card mb-4" x-data="{ variacaoId: null, qtd: 1, caixas: false }">
+<div class="card mb-4"
+     x-data="{ variacaoId: null, selCodigo: '', selDescricao: '', selCor: '', selImg: '', qtd: 1, caixas: false,
+               limpar() { this.variacaoId = null; this.selCodigo = ''; this.selDescricao = ''; this.selCor = ''; this.selImg = '';
+                          document.getElementById('saldo-box').innerHTML = ''; } }">
   <h3 class="mb-3 text-sm font-semibold">Adicionar item</h3>
 
-  <div class="mb-3">
+  {# 1) Busca — só aparece enquanto nenhum produto está selecionado #}
+  <div class="mb-3" x-show="!variacaoId">
     <label class="label" for="busca-item">Buscar produto/variação</label>
-    <input type="search" id="busca-item" name="q" class="input w-full" autocomplete="off"
-           placeholder="Código, descrição, cor ou localização…"
-           hx-get="/pedidos/busca-item" hx-trigger="keyup changed delay:250ms, search"
-           hx-target="#resultado-busca" />
+    <div class="flex items-center gap-2">
+      <input type="search" id="busca-item" name="q" class="input w-full" autocomplete="off"
+             placeholder="Código, descrição, cor ou localização…"
+             hx-get="/pedidos/busca-item" hx-trigger="keyup changed delay:250ms, search"
+             hx-target="#resultado-busca" hx-indicator="#busca-item-load" />
+      <span id="busca-item-load" class="carregando shrink-0" role="status">buscando…</span>
+    </div>
     <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto rounded-md border border-marca-borda empty:border-0"></div>
-    <p class="mt-1 text-xs text-gray-400">
-      Clique no resultado para <strong>selecionar</strong> o produto.
-    </p>
+    <p class="mt-1 text-xs text-gray-500">Clique no resultado para <strong>selecionar</strong> o produto.</p>
+  </div>
+
+  {# 2) Produto selecionado — cartão de confirmação #}
+  <div x-show="variacaoId" x-cloak class="mb-3 flex items-center gap-3 rounded-md border border-marca-borda bg-gold-50 p-2">
+    <img :src="selImg" x-show="selImg" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
+    <div class="min-w-0 flex-1">
+      <p class="truncate text-sm font-semibold"><span class="font-mono" x-text="selCodigo"></span> — <span x-text="selDescricao"></span></p>
+      <p class="text-xs text-gray-500">Cor: <span x-text="selCor || 'padrão'"></span></p>
+    </div>
+    <button type="button" class="btn-secundario shrink-0" @click="limpar(); $nextTick(() => document.getElementById('busca-item')?.focus())">Trocar</button>
   </div>
 
   <form method="post" action="/pedidos/{{ pedido.id }}/itens"
-        hx-post="/pedidos/{{ pedido.id }}/itens" hx-target="#bloco-itens" hx-swap="outerHTML">
-    <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
-      <div>
-        <label class="label">Variação (ID)</label>
-        <input type="number" name="variacao_id" x-model="variacaoId" required class="input w-full"
-               @change="htmx.ajax('GET', '/pedidos/saldo/' + variacaoId + '?qtd=' + qtd, {target:'#saldo-box'})" />
-      </div>
+        hx-post="/pedidos/{{ pedido.id }}/itens" hx-target="#bloco-itens" hx-swap="outerHTML"
+        @htmx:after-request="if(event.detail.successful){ limpar(); qtd = 1; }">
+    <input type="hidden" name="variacao_id" :value="variacaoId" />
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
       <div x-show="!caixas">
-        <label class="label">Qtd (un)</label>
-        <input type="number" name="qtd" min="1" x-model.number="qtd" class="input w-full"
-               @input.debounce.300ms="if(variacaoId) htmx.ajax('GET', '/pedidos/saldo/' + variacaoId + '?qtd=' + qtd, {target:'#saldo-box'})" />
+        <label class="label" for="item-qtd">Qtd (un)</label>
+        <input type="number" id="item-qtd" name="qtd" min="1" x-model.number="qtd" x-ref="qtdInput" class="input w-full"
+               @input.debounce.200ms="if(variacaoId) htmx.ajax('GET', '/pedidos/saldo/' + variacaoId + '?qtd=' + qtd, {target:'#saldo-box'})" />
       </div>
       <div x-show="caixas">
-        <label class="label">Qtd (caixas)</label>
-        <input type="number" name="qtd_caixas" min="1" x-bind:disabled="!caixas" class="input w-full" />
+        <label class="label" for="item-qtd-cx">Qtd (caixas)</label>
+        <input type="number" id="item-qtd-cx" name="qtd_caixas" min="1" x-bind:disabled="!caixas" class="input w-full" />
       </div>
       <div>
-        <label class="label">Preço unit.</label>
-        <input type="text" name="preco_unit" class="input w-full" placeholder="auto" />
+        <label class="label" for="item-preco">Preço unit.</label>
+        <input type="text" id="item-preco" name="preco_unit" class="input w-full" placeholder="auto" />
       </div>
       <div>
-        <label class="label">Desconto (R$)</label>
-        <input type="text" name="desconto" value="0" class="input w-full" />
+        <label class="label" for="item-desc">Desconto (R$)</label>
+        <input type="text" id="item-desc" name="desconto" value="0" class="input w-full" />
       </div>
       <div class="flex items-end">
-        <button type="submit" class="btn-primario w-full">Adicionar</button>
+        <button type="submit" class="btn-primario w-full" :disabled="!variacaoId"
+                :title="variacaoId ? '' : 'Selecione um produto na busca acima'">Adicionar</button>
       </div>
     </div>
     <label class="mt-2 inline-flex items-center gap-2 text-sm">

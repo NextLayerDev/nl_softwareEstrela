@@ -18,14 +18,14 @@
       <span class="font-semibold {{ 'text-critico' if v.estoque_fisico <= v.estoque_minimo else '' }}">
         {{ v.estoque_fisico }}
       </span>
-      {% if v.estoque_reservado %}<span class="text-xs text-gray-400">(-{{ v.estoque_reservado }})</span>{% endif %}
+      {% if v.estoque_reservado %}<span class="text-xs text-gray-500">(-{{ v.estoque_reservado }})</span>{% endif %}
     {% elif v.rotulo_aprox %}
       {% set r = v.rotulo_aprox.value | lower %}
       <span class="selo-{{ 'muito' if r=='muito' else 'pouco' if r=='pouco' else 'tem' if r=='tem' else 'acabou' }}">
         {{ r }}
       </span>
     {% else %}
-      <span class="text-gray-400">aprox.</span>
+      <span class="text-gray-500">aprox.</span>
     {% endif %}
   </td>
   <td class="text-center text-xs text-gray-500">

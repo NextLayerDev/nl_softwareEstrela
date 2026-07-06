@@ -88,14 +88,14 @@
     <h3 class="mb-2 font-semibold">Variações (cores)</h3>
     <template x-for="(v, i) in variacoes" :key="i">
       <div class="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-6 items-end">
-        <input class="input" name="var_cor" placeholder="Cor" x-model="v.cor" />
-        <select class="input" name="var_modo" x-model="v.modo">
+        <input class="input" name="var_cor" placeholder="Cor" aria-label="Cor da variação" x-model="v.cor" />
+        <select class="input" name="var_modo" aria-label="Modo de estoque da variação" x-model="v.modo">
           <option value="APROXIMADO">Aproximado</option>
           <option value="EXATO">Exato</option>
         </select>
-        <input class="input" name="var_estoque" type="number" placeholder="Estoque" x-model="v.estoque" />
-        <input class="input" name="var_minimo" type="number" placeholder="Mínimo" x-model="v.minimo" />
-        <select class="input" name="var_rotulo" x-model="v.rotulo">
+        <input class="input" name="var_estoque" type="number" placeholder="Estoque" aria-label="Estoque inicial da variação" x-model="v.estoque" />
+        <input class="input" name="var_minimo" type="number" placeholder="Mínimo" aria-label="Estoque mínimo da variação" x-model="v.minimo" />
+        <select class="input" name="var_rotulo" aria-label="Rótulo aproximado da variação" x-model="v.rotulo">
           <option value="">—</option>
           <option value="MUITO">Muito</option>
           <option value="POUCO">Pouco</option>
@@ -112,7 +112,7 @@
     <h3 class="mb-2 font-semibold">Códigos alternativos</h3>
     <template x-for="(c, i) in codigos" :key="i">
       <div class="mb-2 flex gap-2">
-        <input class="input" name="cod_alt" placeholder="Código alternativo" x-model="codigos[i]" />
+        <input class="input" name="cod_alt" placeholder="Código alternativo" aria-label="Código alternativo" x-model="codigos[i]" />
         <button type="button" class="btn-perigo" @click="codigos.splice(i,1)">Remover</button>
       </div>
     </template>

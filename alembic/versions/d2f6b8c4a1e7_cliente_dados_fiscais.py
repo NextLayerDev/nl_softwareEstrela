@@ -23,9 +23,7 @@ depends_on: str | Sequence[str] | None = None
 _COLUNAS = [
     sa.Column("email", sa.String(length=180), nullable=True),
     sa.Column("inscricao_estadual", sa.String(length=20), nullable=True),
-    sa.Column(
-        "contribuinte_icms", sa.Boolean(), nullable=False, server_default=sa.false()
-    ),
+    sa.Column("contribuinte_icms", sa.Boolean(), nullable=False, server_default=sa.false()),
     sa.Column("fisc_cep", sa.String(length=9), nullable=True),
     sa.Column("fisc_logradouro", sa.String(length=160), nullable=True),
     sa.Column("fisc_numero", sa.String(length=20), nullable=True),

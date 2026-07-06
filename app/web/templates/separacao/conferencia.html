@@ -27,20 +27,21 @@
     <table class="tabela tabela-densa w-full">
       <thead>
         <tr>
-          <th class="text-center">OK</th>
-          <th class="text-left">Foto</th>
-          <th class="text-left">Produto</th>
-          <th class="text-left">Cor</th>
-          <th class="text-left">Localização</th>
-          <th class="text-right">Qtd</th>
+          <th scope="col" class="text-center">OK</th>
+          <th scope="col" class="text-left">Foto</th>
+          <th scope="col" class="text-left">Produto</th>
+          <th scope="col" class="text-left">Cor</th>
+          <th scope="col" class="text-left">Localização</th>
+          <th scope="col" class="text-right">Qtd</th>
         </tr>
       </thead>
       <tbody>
         {% for item in pedido.itens %}
         {% set v = item.variacao %}
-        <tr>
+        <tr x-data="{ ok: {{ 'true' if item.separado else 'false' }} }" :class="ok ? 'bg-ok-bg' : ''">
           <td class="text-center">
             <input type="checkbox" {% if item.separado %}checked{% endif %}
+                   @change="ok = $event.target.checked"
                    hx-post="/separacao/{{ pedido.id }}/itens/{{ item.id }}"
                    hx-target="#progresso" hx-swap="outerHTML"
                    hx-vals='js:{separado: event.target.checked}'
