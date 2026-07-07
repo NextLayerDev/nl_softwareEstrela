@@ -18,6 +18,7 @@ from app.core.database import SessionLocal
 from app.core.security import hash_senha
 from app.models.categoria import Categoria
 from app.models.cliente import Cliente
+from app.models.empresa_config import EmpresaConfig
 from app.models.enums import EstoqueModo, Perfil, RotuloAprox
 from app.models.produto import Produto, ProdutoVariacao
 from app.models.usuario import Usuario
@@ -69,6 +70,20 @@ def seed() -> None:
         # Cliente de exemplo
         if not db.scalar(select(Cliente).where(Cliente.nome == "Claudemir")):
             db.add(Cliente(nome="Claudemir", condicao_pagto_padrao="30 dias"))
+
+        # Dados da empresa (emitente) para o cabeçalho do cupom
+        if not db.get(EmpresaConfig, 1):
+            db.add(
+                EmpresaConfig(
+                    id=1,
+                    razao_social="ESTRELA IMPORTACAO E EXPORTACAO LTDA",
+                    nome_fantasia="ESTRELA",
+                    cnpj="00.000.000/0001-00",
+                    telefone="(11) 0000-0000",
+                    endereco="RUA EXEMPLO, 123 - CENTRO - SAO PAULO/SP",
+                    observacao_cupom="Obrigado pela preferência!",
+                )
+            )
 
         # Produtos espelhando a planilha (catálogo por blocos)
         produtos = [

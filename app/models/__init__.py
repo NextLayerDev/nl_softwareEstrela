@@ -4,6 +4,7 @@ from app.models.auditoria import Auditoria
 from app.models.categoria import Categoria
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
+from app.models.empresa_config import EmpresaConfig
 from app.models.fornecedor import Fornecedor
 from app.models.inventario import Inventario, InventarioItem
 from app.models.movimentacao import MovimentacaoEstoque
@@ -17,6 +18,7 @@ __all__ = [
     "Categoria",
     "Cliente",
     "ContaReceber",
+    "EmpresaConfig",
     "Fornecedor",
     "Inventario",
     "InventarioItem",

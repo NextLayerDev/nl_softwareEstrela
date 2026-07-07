@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Comprovante #{{ pedido.numero or pedido.id }} · {{ (empresa.nome_fantasia or empresa.razao_social) if empresa else "Estrela Gestão" }}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: "Courier New", "Consolas", monospace;
+      color: #000; background: #fff;
+      width: 80mm; margin: 0 auto; padding: 4mm 3mm;
+      font-size: 11px; line-height: 1.35;
+    }
+    .center { text-align: center; }
+    .b { font-weight: bold; }
+    .empresa { font-size: 13px; font-weight: bold; text-transform: uppercase; }
+    .peq { font-size: 10px; }
+    .aviso { border: 1px dashed #000; padding: 3px; margin: 6px 0; text-align: center; font-size: 10px; }
+    hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
+    .linha { display: flex; justify-content: space-between; gap: 8px; }
+    .itens { width: 100%; border-collapse: collapse; }
+    .itens td { padding: 1px 0; vertical-align: top; }
+    .itens .desc { font-size: 10px; }
+    .num { text-align: right; white-space: nowrap; }
+    .total { font-size: 14px; font-weight: bold; }
+    .rodape { margin-top: 8px; text-align: center; font-size: 10px; }
+    .btn-print { display: block; width: 100%; margin-bottom: 8px; padding: 6px; cursor: pointer; }
+    @media print {
+      .btn-print { display: none; }
+      body { width: auto; margin: 0; padding: 0; }
+      @page { size: 80mm auto; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <button class="btn-print" onclick="window.print()">Imprimir</button>
+
+  {# ---------- Cabeçalho: dados da empresa (emitente) ---------- #}
+  <div class="center">
+    <div class="empresa">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa and (empresa.nome_fantasia or empresa.razao_social) else "Estrela Gestão" }}</div>
+    {% if empresa and empresa.razao_social and empresa.nome_fantasia %}<div class="peq">{{ empresa.razao_social }}</div>{% endif %}
+    {% if empresa and empresa.cnpj %}<div class="peq">CNPJ: {{ empresa.cnpj }}{% if empresa.inscricao_estadual %} · IE: {{ empresa.inscricao_estadual }}{% endif %}</div>{% endif %}
+    {% if empresa and empresa.endereco %}<div class="peq">{{ empresa.endereco }}</div>{% endif %}
+    {% if empresa and empresa.telefone %}<div class="peq">Tel: {{ empresa.telefone }}</div>{% endif %}
+  </div>
+
+  <div class="aviso">
+    <div class="b">COMPROVANTE — SEM VALOR FISCAL</div>
+    <div>Não é documento fiscal (não substitui a NFC-e / NF-e)</div>
+  </div>
+
+  {# ---------- Dados do pedido ---------- #}
+  <div class="linha"><span class="b">Pedido nº {{ pedido.numero or pedido.id }}</span>
+    <span>{{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "" }}</span></div>
+  <div class="peq">Vendedor: {{ pedido.vendedor.nome }}</div>
+  <div class="peq">Cliente: {{ pedido.cliente.nome }}{% if pedido.cliente.cnpj_cpf %} — {{ pedido.cliente.cnpj_cpf }}{% endif %}</div>
+
+  <hr />
+
+  {# ---------- Itens ---------- #}
+  <table class="itens">
+    <thead>
+      <tr class="peq b">
+        <td>Item</td><td class="num">Qtd</td><td class="num">Un.</td><td class="num">Total</td>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pedido.itens %}
+      {% set v = item.variacao %}
+      <tr>
+        <td colspan="4" class="desc">
+          {{ v.produto.codigo }} — {{ v.produto.descricao }}{% if v.cor %} ({{ v.cor }}){% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td class="num">{{ item.qtd }}{% if item.qtd_caixas %}<span class="peq"> ({{ item.qtd_caixas }}cx)</span>{% endif %}</td>
+        <td class="num">{{ item.preco_unit | moeda }}</td>
+        <td class="num">{{ item.subtotal | moeda }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <hr />
+
+  {% if pedido.desconto_total and pedido.desconto_total > 0 %}
+  <div class="linha"><span>Desconto</span><span class="num">- {{ pedido.desconto_total | moeda }}</span></div>
+  {% endif %}
+  <div class="linha total"><span>TOTAL</span><span class="num">{{ pedido.total | moeda }}</span></div>
+  <div class="linha peq"><span>Pagamento</span><span>{{ pedido.cliente.condicao_pagto_padrao or "à vista" }}</span></div>
+
+  {% if pedido.observacao %}<hr /><div class="peq">Obs.: {{ pedido.observacao }}</div>{% endif %}
+
+  <hr />
+  <div class="rodape">
+    {% if empresa and empresa.observacao_cupom %}<div>{{ empresa.observacao_cupom }}</div>{% endif %}
+    <div class="peq">Documento sem valor fiscal · {{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "" }}</div>
+  </div>
+</body>
+</html>

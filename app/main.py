@@ -158,6 +158,7 @@ def _registrar_routers() -> None:
         "financeiro",
         "relatorios",
         "importacao",
+        "empresa",
         "guia",
     ]
     for nome in web_modulos:

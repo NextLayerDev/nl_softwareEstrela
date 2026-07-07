@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block cabecalho %}{{ titulo }}{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Empresa", none)]) }}{% endblock %}
+
+{% block content %}
+<form method="post" action="/empresa" class="card max-w-2xl">
+  <p class="mb-4 text-xs text-gray-400">
+    Estes dados aparecem no cabeçalho do comprovante/cupom impresso do pedido.
+  </p>
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div class="sm:col-span-2">
+      <label class="label" for="razao_social">Razão social</label>
+      <input id="razao_social" class="input" name="razao_social" style="text-transform:uppercase"
+             value="{{ empresa.razao_social if empresa and empresa.razao_social else '' }}" />
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label" for="nome_fantasia">Nome fantasia</label>
+      <input id="nome_fantasia" class="input" name="nome_fantasia" style="text-transform:uppercase"
+             value="{{ empresa.nome_fantasia if empresa and empresa.nome_fantasia else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="cnpj">CNPJ</label>
+      <input id="cnpj" class="input" name="cnpj" placeholder="00.000.000/0000-00"
+             value="{{ empresa.cnpj if empresa and empresa.cnpj else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="inscricao_estadual">Inscrição estadual</label>
+      <input id="inscricao_estadual" class="input" name="inscricao_estadual" placeholder="ISENTO"
+             value="{{ empresa.inscricao_estadual if empresa and empresa.inscricao_estadual else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="telefone">Telefone</label>
+      <input id="telefone" class="input" name="telefone"
+             value="{{ empresa.telefone if empresa and empresa.telefone else '' }}" />
+    </div>
+    <div>
+      <label class="label" for="email">E-mail</label>
+      <input id="email" class="input" type="email" name="email"
+             value="{{ empresa.email if empresa and empresa.email else '' }}" />
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label" for="endereco">Endereço</label>
+      <textarea id="endereco" class="input" name="endereco" rows="2" style="text-transform:uppercase"
+                placeholder="Rua, nº, bairro, cidade/UF">{{ empresa.endereco if empresa and empresa.endereco else '' }}</textarea>
+    </div>
+    <div class="sm:col-span-2">
+      <label class="label" for="observacao_cupom">Mensagem no rodapé do cupom</label>
+      <textarea id="observacao_cupom" class="input" name="observacao_cupom" rows="2"
+                placeholder="Ex.: Obrigado pela preferência!">{{ empresa.observacao_cupom if empresa and empresa.observacao_cupom else '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="mt-6 flex gap-2">
+    <button type="submit" class="btn-primario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Salvar
+    </button>
+  </div>
+</form>
+{% endblock %}

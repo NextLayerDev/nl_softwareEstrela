@@ -16,6 +16,7 @@ from app.models.usuario import Usuario
 from app.repositories.cliente_repo import cliente_repo
 from app.repositories.estoque_repo import estoque_repo
 from app.schemas.pedido import ItemAdicionar, PedidoCreate
+from app.services.empresa_service import empresa_service
 from app.services.pedido_service import pedido_service
 
 router = APIRouter()
@@ -230,3 +231,16 @@ def imprimir_pedido(
     pedido = pedido_controller.get(db, pedido_id, usuario)
     contexto = {"user": usuario, "pedido": pedido}
     return templates.TemplateResponse(request, "pedidos/impressao_pedido.html", contexto)
+
+
+@router.get("/pedidos/{pedido_id}/cupom", response_class=HTMLResponse)
+def cupom_pedido(
+    request: Request,
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro")),
+):
+    """Comprovante não fiscal em formato cupom (bobina 80mm)."""
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    contexto = {"user": usuario, "pedido": pedido, "empresa": empresa_service.obter(db)}
+    return templates.TemplateResponse(request, "pedidos/cupom.html", contexto)
