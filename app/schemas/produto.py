@@ -80,6 +80,7 @@ class ProdutoCreate(BaseModel):
 
 
 class ProdutoUpdate(BaseModel):
+    codigo: str | None = None
     descricao: str | None = None
     categoria_id: int | None = None
     unidades_por_caixa: int | None = None
@@ -92,6 +93,18 @@ class ProdutoUpdate(BaseModel):
     observacao: str | None = None
     ativo: bool | None = None
     publicar_catalogo: bool | None = None
+    codigos_alt: list[CodigoAltCreate] = []
+
+    @field_validator("codigo")
+    @classmethod
+    def _codigo_nao_vazio(cls, v: str | None) -> str | None:
+        # None = "não veio no form"; só valida quando vier um valor.
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Campo obrigatório.")
+        return v
 
 
 class ProdutoRead(BaseModel):

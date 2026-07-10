@@ -71,6 +71,7 @@ class ProdutoController:
 
     def atualizar(self, db: Session, produto_id: int, form: dict) -> Produto:
         dados = ProdutoUpdate(
+            codigo=form.get("codigo") or None,
             descricao=form.get("descricao") or None,
             categoria_id=_int_opt(form.get("categoria_id")),
             unidades_por_caixa=_int_opt(form.get("unidades_por_caixa")),
@@ -83,6 +84,7 @@ class ProdutoController:
             observacao=(form.get("observacao") or None),
             ativo=form.get("ativo") in ("on", "true", "1", True),
             publicar_catalogo=form.get("publicar_catalogo") in ("on", "true", "1", True),
+            codigos_alt=self._parse_codigos(form),
         )
         return produto_service.atualizar(db, produto_id, dados)
 

@@ -14,16 +14,11 @@
 {% block content %}
 {% set acao = "/produtos/" ~ produto.id if produto else "/produtos" %}
 <form method="post" action="{{ acao }}" class="card max-w-3xl"
-      x-data="{ variacoes: [], codigos: [] }">
+      x-data="{ variacoes: [], codigos: {{ (produto.codigos_alt | map(attribute='codigo_alt') | list) | tojson if produto else '[]' }} }">
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
       <label class="label" for="codigo">Código *</label>
-      {% if produto %}
-        <input id="codigo" class="input bg-gray-100" value="{{ produto.codigo }}" readonly />
-        <input type="hidden" name="codigo" value="{{ produto.codigo }}" />
-      {% else %}
-        <input id="codigo" class="input" name="codigo" required />
-      {% endif %}
+      <input id="codigo" class="input" name="codigo" required value="{{ produto.codigo if produto else '' }}" />
     </div>
     <div>
       <label class="label" for="categoria_id">Categoria</label>
@@ -107,9 +102,11 @@
     </template>
     <button type="button" class="btn-secundario" @click="variacoes.push({cor:'',modo:'APROXIMADO',estoque:0,minimo:0,rotulo:''})">+ Adicionar variação</button>
   </div>
+  {% endif %}
 
   <div class="mt-6">
     <h3 class="mb-2 font-semibold">Códigos alternativos</h3>
+    <p class="mb-2 text-sm text-gray-500">Outros códigos pelos quais este produto também é encontrado na busca.</p>
     <template x-for="(c, i) in codigos" :key="i">
       <div class="mb-2 flex gap-2">
         <input class="input" name="cod_alt" placeholder="Código alternativo" aria-label="Código alternativo" x-model="codigos[i]" />
@@ -118,7 +115,6 @@
     </template>
     <button type="button" class="btn-secundario" @click="codigos.push('')">+ Adicionar código</button>
   </div>
-  {% endif %}
 
   <div class="mt-6 flex gap-2">
     <button type="submit" class="btn-primario">

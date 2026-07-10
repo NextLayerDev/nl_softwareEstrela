@@ -67,8 +67,32 @@ class ProdutoService:
 
     def atualizar(self, db: Session, produto_id: int, dados: ProdutoUpdate) -> Produto:
         produto = self.obter(db, produto_id)
-        for campo, valor in dados.model_dump(exclude_unset=True).items():
+        # Código: valida unicidade excluindo o próprio produto (evita erro
+        # genérico do Postgres e dá mensagem amigável, como na criação).
+        if dados.codigo is not None:
+            novo = dados.codigo.strip()
+            outro = produto_repo.get_by_codigo(db, novo)
+            if outro is not None and outro.id != produto_id:
+                raise RegraNegocioError(f"Já existe um produto com o código {novo}.")
+            produto.codigo = novo
+        # Campos simples (codigo e codigos_alt são tratados à parte: o código
+        # passa por validação de unicidade e codigos_alt é relationship de lista).
+        for campo, valor in dados.model_dump(
+            exclude_unset=True, exclude={"codigo", "codigos_alt"}
+        ).items():
             setattr(produto, campo, valor)
+        # Códigos alternativos: reconcilia add/remove por string (preserva os
+        # que permanecem, adiciona os novos, remove os que saíram).
+        desejados = {c.codigo_alt.strip() for c in dados.codigos_alt if c.codigo_alt.strip()}
+        existentes = {c.codigo_alt: c for c in produto.codigos_alt}
+        for codigo_alt, obj in existentes.items():
+            if codigo_alt not in desejados:
+                # remove da coleção -> delete-orphan apaga a linha no flush
+                # (e mantém a lista em memória sincronizada).
+                produto.codigos_alt.remove(obj)
+        for codigo_alt in desejados:
+            if codigo_alt not in existentes:
+                produto.codigos_alt.append(ProdutoCodigoAlt(codigo_alt=codigo_alt))
         db.flush()
         return produto
 

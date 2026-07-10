@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +15,7 @@ from app.main import app
 from app.models.enums import EstoqueModo, TipoMov
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto, ProdutoVariacao
-from app.schemas.produto import ProdutoCreate, VariacaoCreate
+from app.schemas.produto import CodigoAltCreate, ProdutoCreate, ProdutoUpdate, VariacaoCreate
 from app.services.estoque_service import estoque_service
 from app.services.produto_service import produto_service
 
@@ -252,3 +253,120 @@ def test_criar_produto_redireciona_para_edicao() -> None:
     # Vai direto à edição (não para a lista /produtos?ok=...).
     assert "/editar" in location
     _remover(codigo)
+
+
+# --------------------------------------------------------------------------- #
+# Edição do código (e códigos alternativos) do produto já cadastrado.          #
+# --------------------------------------------------------------------------- #
+
+
+def test_atualizar_codigo_altera(db: Session) -> None:
+    p = produto_service.criar(db, ProdutoCreate(codigo=_codigo(), descricao="EDIT COD"))
+    db.flush()
+    novo = _codigo()
+    produto_service.atualizar(db, p.id, ProdutoUpdate(codigo=novo))
+    db.flush()
+    assert p.codigo == novo
+    # Reconfirma pelo repositório (não é só o objeto em memória).
+    assert produto_service.obter(db, p.id).codigo == novo
+
+
+def test_atualizar_codigo_duplicado_falha(db: Session) -> None:
+    codigo_outro = _codigo()
+    produto_service.criar(db, ProdutoCreate(codigo=codigo_outro, descricao="OUTRO"))
+    p = produto_service.criar(db, ProdutoCreate(codigo=_codigo(), descricao="EU"))
+    db.flush()
+    # Não pode assumir o código já usado por outro produto.
+    with pytest.raises(RegraNegocioError):
+        produto_service.atualizar(db, p.id, ProdutoUpdate(codigo=codigo_outro))
+
+
+def test_atualizar_codigo_proprio_nao_conflita(db: Session) -> None:
+    """Reenviar o próprio código (sem mudar) não pode disparar conflito de unicidade."""
+    codigo = _codigo()
+    p = produto_service.criar(db, ProdutoCreate(codigo=codigo, descricao="KEEP"))
+    db.flush()
+    produto_service.atualizar(db, p.id, ProdutoUpdate(codigo=codigo, descricao="KEEP ALT"))
+    db.flush()
+    assert p.codigo == codigo
+
+
+def test_atualizar_codigo_vazio_rejeitado(db: Session) -> None:
+    # Validator de ProdutoUpdate rejeita código vazio (rede de segurança).
+    with pytest.raises(ValidationError):
+        ProdutoUpdate(codigo="   ")
+
+
+def test_atualizar_codigos_alt_reconcilia(db: Session) -> None:
+    p = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=_codigo(),
+            descricao="CODS",
+            codigos_alt=[CodigoAltCreate(codigo_alt="A"), CodigoAltCreate(codigo_alt="B")],
+        ),
+    )
+    db.flush()
+    # Mantém B, remove A, adiciona C.
+    produto_service.atualizar(
+        db,
+        p.id,
+        ProdutoUpdate(
+            codigos_alt=[CodigoAltCreate(codigo_alt="B"), CodigoAltCreate(codigo_alt="C")],
+        ),
+    )
+    db.flush()
+    atual = produto_service.obter(db, p.id)
+    codigos = {c.codigo_alt for c in atual.codigos_alt}
+    assert codigos == {"B", "C"}
+
+
+def test_atualizar_codigos_alt_remove_todos(db: Session) -> None:
+    p = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=_codigo(),
+            descricao="ZERAR",
+            codigos_alt=[CodigoAltCreate(codigo_alt="A")],
+        ),
+    )
+    db.flush()
+    produto_service.atualizar(db, p.id, ProdutoUpdate(codigos_alt=[]))
+    db.flush()
+    atual = produto_service.obter(db, p.id)
+    assert [c.codigo_alt for c in atual.codigos_alt] == []
+
+
+def test_editar_codigo_via_rota() -> None:
+    """End-to-end: cadastra via rota, edita o código pela rota e confirma no banco real."""
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo_original = _codigo()
+    resp_criar = client.post(
+        "/produtos",
+        data={"codigo": codigo_original, "descricao": "ROTA EDIT", "ativo": "on"},
+        follow_redirects=False,
+    )
+    assert resp_criar.status_code == 303
+    pid = resp_criar.headers["location"].rstrip("/").split("/")[-2]
+
+    novo = _codigo()
+    resp = client.post(
+        f"/produtos/{pid}",
+        data={"codigo": novo, "descricao": "ROTA EDIT ALT", "ativo": "on"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    # Confirma no banco real (session do app) e limpa.
+    from app.core.database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        prod = s.get(Produto, int(pid))
+        assert prod is not None
+        assert prod.codigo == novo
+        s.delete(prod)
+        s.commit()
+    finally:
+        s.close()

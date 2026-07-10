@@ -141,7 +141,10 @@ async def atualizar_produto(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role("admin")),
 ):
-    form = dict(await request.form())
+    raw = await request.form()
+    form = dict(raw)
+    # Lista paralela para os códigos alternativos (edição pode adicionar/remover).
+    form["cod_alt"] = raw.getlist("cod_alt")
     produto_controller.atualizar(db, produto_id, form)
     return redirect_ok("/produtos", "Produto atualizado com sucesso.")
 
