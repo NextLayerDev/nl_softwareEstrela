@@ -129,8 +129,9 @@ async def criar_produto(
     form["var_minimo"] = raw.getlist("var_minimo")
     form["var_rotulo"] = raw.getlist("var_rotulo")
     form["cod_alt"] = raw.getlist("cod_alt")
-    produto_controller.criar(db, form)
-    return redirect_ok("/produtos", "Produto cadastrado com sucesso.")
+    produto = produto_controller.criar(db, form)
+    # Vai direto à edição para enviar as fotos por cor (não precisa reabrir o produto).
+    return redirect_ok(f"/produtos/{produto.id}/editar", "Produto cadastrado com sucesso.")
 
 
 @router.post("/produtos/{produto_id}", response_class=HTMLResponse)
@@ -204,6 +205,37 @@ async def remover_imagem_variacao(
     remover_imagem(variacao.imagem_url)
     variacao.imagem_url = None
     db.flush()
+    return templates.TemplateResponse(
+        request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )
+
+
+@router.post("/produtos/{produto_id}/variacao", response_class=HTMLResponse)
+async def adicionar_variacao_produto(
+    request: Request,
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    form = dict(await request.form())
+    variacao = produto_controller.criar_variacao(db, produto_id, form, usuario.id)
+    return templates.TemplateResponse(
+        request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )
+
+
+@router.post("/produtos/variacao/{variacao_id}/remover", response_class=HTMLResponse)
+async def remover_variacao_produto(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    variacao, acao = produto_controller.remover_variacao(db, variacao_id)
+    if acao == "deletada":
+        # Card removido do DOM (HTMX troca o card por um span vazio).
+        return HTMLResponse("<span></span>")
+    # Inativada: re-renderiza o card com selo de inativa.
     return templates.TemplateResponse(
         request, "produtos/_thumb_variacao.html", {"variacao": variacao}
     )

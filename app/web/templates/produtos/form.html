@@ -132,14 +132,51 @@
 
 {% if produto %}
 {# Foto por cor: o funcionário identifica o modelo visualmente no estoque/tablet. #}
-<div class="card mt-6">
-  <h3 class="mb-1 font-semibold">Imagens por cor</h3>
-  <p class="mb-3 text-sm text-gray-500">
-    Envie uma foto para cada cor. A imagem já salva assim que você escolhe o arquivo, sem precisar
-    clicar em nada. Elas aparecem na busca de estoque e, principalmente, na tela de Localização
-    (tablet), ajudando a achar o produto certo.
-  </p>
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+<div class="card mt-6" x-data="{ mostrando_form: false }">
+  <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <h3 class="font-semibold">Imagens e cores</h3>
+      <p class="text-sm text-gray-500">
+        Envie uma foto para cada cor. A imagem salva assim que você escolhe o arquivo, sem clicar em
+        nada. O nome da cor pode ser editado no campo de texto de cada card.
+      </p>
+    </div>
+    <button type="button" class="btn-secundario" @click="mostrando_form = !mostrando_form">
+      <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span>
+      Adicionar cor
+    </button>
+  </div>
+
+  <div x-show="mostrando_form" x-cloak class="mb-4 rounded-lg border border-marca-borda bg-marca-fundo p-3">
+    <form class="grid grid-cols-1 gap-2 sm:grid-cols-6 items-end"
+          hx-post="/produtos/{{ produto.id }}/variacao"
+          hx-target="#variacoes-thumbs"
+          hx-swap="beforeend"
+          @htmx:after-request="if (event.detail.successful) { $el.reset(); mostrando_form = false }">
+      <div class="sm:col-span-2">
+        <label class="label text-xs" for="nova-cor">Cor</label>
+        <input id="nova-cor" class="input" name="cor" placeholder="Ex.: Azul" required />
+      </div>
+      <div>
+        <label class="label text-xs" for="nova-modo">Modo</label>
+        <select id="nova-modo" class="input" name="modo">
+          <option value="APROXIMADO">Aproximado</option>
+          <option value="EXATO">Exato</option>
+        </select>
+      </div>
+      <div>
+        <label class="label text-xs" for="nova-estoque">Estoque</label>
+        <input id="nova-estoque" class="input" type="number" name="estoque" value="0" min="0" />
+      </div>
+      <div>
+        <label class="label text-xs" for="nova-minimo">Mínimo</label>
+        <input id="nova-minimo" class="input" type="number" name="minimo" value="0" min="0" />
+      </div>
+      <button type="submit" class="btn-primario">Adicionar</button>
+    </form>
+  </div>
+
+  <div id="variacoes-thumbs" class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
     {% for variacao in produto.variacoes %}
       {% include "produtos/_thumb_variacao.html" %}
     {% else %}
@@ -149,7 +186,8 @@
 </div>
 {% else %}
 <p class="mt-4 max-w-3xl text-sm text-gray-500">
-  Após salvar, edite o produto para enviar as <strong>fotos por cor</strong>.
+  Após salvar, você poderá enviar as <strong>fotos por cor</strong> e adicionar cores novas direto
+  na tela de edição.
 </p>
 {% endif %}
 {% endblock %}

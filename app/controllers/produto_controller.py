@@ -93,6 +93,22 @@ class ProdutoController:
         dados = VariacaoCorUpdate(cor=form.get("cor", ""))
         return produto_service.renomear_variacao(db, variacao_id, dados.cor)
 
+    def criar_variacao(
+        self, db: Session, produto_id: int, form: dict, usuario_id: int
+    ) -> ProdutoVariacao:
+        """Adiciona uma cor nova a um produto existente, a partir do form HTMX."""
+        dados = VariacaoCreate(
+            cor=(form.get("cor") or "").strip(),
+            estoque_modo=EstoqueModo(form.get("modo") or "APROXIMADO"),
+            estoque_fisico=int(form.get("estoque")) if form.get("estoque") else 0,
+            estoque_minimo=int(form.get("minimo")) if form.get("minimo") else 0,
+            rotulo_aprox=RotuloAprox(form.get("rotulo")) if form.get("rotulo") else None,
+        )
+        return produto_service.adicionar_variacao(db, produto_id, dados, usuario_id)
+
+    def remover_variacao(self, db: Session, variacao_id: int) -> tuple[ProdutoVariacao, str]:
+        return produto_service.remover_variacao(db, variacao_id)
+
     @staticmethod
     def _parse_variacoes(form: dict) -> list[VariacaoCreate]:
         """Lê listas paralelas var_cor[], var_modo[], var_estoque[], var_minimo[], var_rotulo[]."""

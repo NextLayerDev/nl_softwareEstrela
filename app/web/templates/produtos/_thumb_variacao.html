@@ -1,4 +1,4 @@
-<div id="var-thumb-{{ variacao.id }}" class="flex flex-col items-center gap-2 rounded-lg border border-marca-borda p-3">
+<div id="var-thumb-{{ variacao.id }}" class="flex flex-col items-center gap-2 rounded-lg border border-marca-borda p-3{% if not variacao.ativo %} opacity-60{% endif %}">
   <div class="aspect-square w-full overflow-hidden rounded-lg bg-marca-fundo">
     {% if variacao.imagem_url %}
       <img src="{{ foto_url(variacao.imagem_url) }}" alt="{{ variacao.cor or 'padrão' }}"
@@ -8,12 +8,15 @@
     {% endif %}
   </div>
   <div class="w-full text-center">
-    <input type="text" name="cor" value="{{ variacao.cor }}" placeholder="padrão"
+    <label class="label mb-1 text-xs" for="cor-{{ variacao.id }}">Cor</label>
+    <input id="cor-{{ variacao.id }}" type="text" name="cor" value="{{ variacao.cor }}" placeholder="padrão"
+           {% if not variacao.ativo %}disabled{% endif %}
            hx-post="/produtos/variacao/{{ variacao.id }}/cor"
            hx-trigger="change"
            hx-target="#var-thumb-{{ variacao.id }}"
            hx-swap="outerHTML"
            class="input py-1 text-center text-sm font-medium" />
+    {% if variacao.ativo %}
     <form hx-encoding="multipart/form-data">
       <label class="mt-1 block cursor-pointer text-xs">
         <input type="file" name="imagem" accept="image/*" class="hidden"
@@ -28,10 +31,20 @@
       </label>
     </form>
     <span id="var-carregando-{{ variacao.id }}" class="carregando" role="status">enviando…</span>
+    {% endif %}
   </div>
-  {% if variacao.imagem_url %}
-  <button hx-post="/produtos/variacao/{{ variacao.id }}/imagem/remover"
-          hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
-          class="btn-perigo w-full px-2 py-1 text-xs">Remover</button>
+  {% if not variacao.ativo %}
+    <span class="text-xs font-semibold text-gray-400">inativa</span>
+  {% else %}
+    {% if variacao.imagem_url %}
+    <button hx-post="/produtos/variacao/{{ variacao.id }}/imagem/remover"
+            hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
+            hx-confirm="Remover apenas a foto desta cor?"
+            class="btn-perigo w-full px-2 py-1 text-xs">Remover foto</button>
+    {% endif %}
+    <button hx-post="/produtos/variacao/{{ variacao.id }}/remover"
+            hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
+            hx-confirm="Remover esta cor do produto? (Com saldo em estoque é bloqueado.)"
+            class="btn-perigo w-full px-2 py-1 text-xs">Remover cor</button>
   {% endif %}
 </div>
