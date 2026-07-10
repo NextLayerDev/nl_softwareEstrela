@@ -27,5 +27,8 @@ relatorio_inconsistencias*.xlsx
 *.zip
 app/imagens produtos.zip
 
+# SQL de recuperação de imagens (bytes embutidos — não versionar)
+data/recuperacao/
+
 # SO
 .DS_Store
