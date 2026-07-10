@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,7 +82,10 @@ class ProdutoVariacao(Base):
     estoque_minimo: Mapped[int] = mapped_column(Integer, default=0)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     # Foto da variação (cor): o funcionário identifica o modelo visualmente. Upload em /produtos.
-    # URL pública completa no bucket MinIO (app/core/imagens.py).
+    # imagem_dados guarda os bytes do JPEG (redimensionado) no próprio Postgres — offline-first,
+    # sem depender de MinIO/S3. imagem_url guarda o caminho da rota que serve a foto
+    # ("/produtos/variacao/{id}/foto?v=…"), usado pelo filtro foto_url() nos templates.
+    imagem_dados: Mapped[bytes | None] = mapped_column(LargeBinary)
     imagem_url: Mapped[str | None] = mapped_column(String(500))
 
     produto: Mapped[Produto] = relationship(back_populates="variacoes")

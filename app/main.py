@@ -4,7 +4,6 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -18,22 +17,15 @@ from app.core.templates import templates
 logger = logging.getLogger("estrela")
 
 
-def _origem_minio() -> str:
-    """Origem (scheme://host) do MinIO público, para liberar as fotos no img-src da CSP."""
-    url = settings.S3_PUBLIC_URL
-    if not url:
-        return ""
-    p = urlparse(url)
-    return f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else ""
-
-
 # CSP pragmática: bloqueia script/estilo/imagem externos (offline-first, sem CDN) e clickjacking.
 # 'unsafe-eval' é necessário para o Alpine.js; 'unsafe-inline' para os scripts/estilos inline dos
 # templates. A app já tem autoescape do Jinja como defesa primária contra XSS.
+# As fotos de produto são servidas pela própria app (rota /produtos/variacao/{id}/foto), então
+# img-src 'self' cobre tudo — sem origem externa de MinIO/CDN.
 _CSP = "; ".join(
     [
         "default-src 'self'",
-        f"img-src 'self' data: {_origem_minio()}".strip(),
+        "img-src 'self' data:",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
         "style-src 'self' 'unsafe-inline'",
         "font-src 'self'",

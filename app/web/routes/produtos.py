@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.controllers.produto_controller import produto_controller
 from app.core.errors import NaoEncontradoError, RegraNegocioError
-from app.core.imagens import remover_imagem, salvar_imagem_variacao
+from app.core.imagens import caminho_foto_variacao, salvar_imagem_variacao
 from app.core.templates import templates
 from app.deps.auth import get_current_user, require_role
 from app.deps.db import get_db
@@ -185,9 +185,10 @@ async def enviar_imagem_variacao(
     if imagem.size is not None and imagem.size > 8 * 1024 * 1024:
         raise RegraNegocioError("Imagem muito grande (máximo 8 MB).")
     conteudo = await imagem.read(8 * 1024 * 1024 + 1)
-    variacao.imagem_url = salvar_imagem_variacao(
-        variacao.id, conteudo, anterior=variacao.imagem_url
-    )
+    if len(conteudo) > 8 * 1024 * 1024:
+        raise RegraNegocioError("Imagem muito grande (máximo 8 MB).")
+    variacao.imagem_dados = salvar_imagem_variacao(variacao.id, conteudo)
+    variacao.imagem_url = caminho_foto_variacao(variacao.id)
     db.flush()
     return templates.TemplateResponse(
         request, "produtos/_thumb_variacao.html", {"variacao": variacao}
@@ -202,11 +203,28 @@ async def remover_imagem_variacao(
     usuario: Usuario = Depends(require_role("admin")),
 ):
     variacao = _get_variacao(db, variacao_id)
-    remover_imagem(variacao.imagem_url)
+    variacao.imagem_dados = None
     variacao.imagem_url = None
     db.flush()
     return templates.TemplateResponse(
         request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )
+
+
+@router.get("/produtos/variacao/{variacao_id}/foto")
+def foto_variacao(
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_current_user),
+):
+    """Serve os bytes da foto da variação (mesma origem, exige login). Offline-first."""
+    variacao = _get_variacao(db, variacao_id)
+    if not variacao.imagem_dados:
+        raise NaoEncontradoError("Esta variação não tem foto.")
+    return Response(
+        content=variacao.imagem_dados,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
     )
 
 

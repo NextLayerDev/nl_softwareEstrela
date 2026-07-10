@@ -3,7 +3,6 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.errors import NaoEncontradoError, RegraNegocioError
-from app.core.imagens import remover_imagem
 from app.models.enums import EstoqueModo, OrigemMov
 from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
 from app.repositories.produto_repo import produto_repo
@@ -143,8 +142,7 @@ class ProdutoService:
             variacao.ativo = False
             db.flush()
             return variacao, "inativada"
-        if variacao.imagem_url:
-            remover_imagem(variacao.imagem_url)
+        # Limpa: hard-delete. Os bytes da foto vão junto com a linha (bytea no Postgres).
         db.delete(variacao)
         db.flush()
         return variacao, "deletada"

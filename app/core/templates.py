@@ -45,9 +45,9 @@ templates.env.filters["moeda"] = _moeda
 
 
 def _foto_url(chave: object) -> str:
-    """Converte a chave do objeto (ou URL antiga) numa URL assinada temporária do MinIO.
+    """Devolve o caminho da rota de foto (mesma origem) guardado em ``imagem_url``.
 
-    Import tardio para evitar carregar boto3/PIL quando o módulo de templates sobe.
+    Import tardio para evitar carregar PIL quando o módulo de templates sobe.
     """
     from app.core.imagens import url_para_exibicao
 
