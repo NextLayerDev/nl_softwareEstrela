@@ -33,18 +33,15 @@ class Settings(BaseSettings):
     # setando ALLOWED_HOSTS no .env.prod (ex.: "sistema.local,*.easypanel.host").
     ALLOWED_HOSTS: str = "*"
 
-    # Storage de imagens (MinIO / S3-compatible). S3_ENDPOINT_URL é o endpoint usado pelo
-    # servidor para enviar/apagar objetos (na VPS, aponta pro hostname interno do serviço —
-    # mais rápido, sem sair da rede). S3_PUBLIC_URL é o domínio público usado para montar as
-    # URLs assinadas (presigned) exibidas no <img src="">. As chaves NÃO têm default: só vêm
-    # do .env; sem elas o upload de imagem simplesmente não funciona (mas a app sobe).
+    # Legado MinIO/S3: as fotos das variações agora moram no Postgres (bytea) — ver
+    # app/core/imagens.py e a migration b7e2c9f4a1d8. Estas settings só são lidas pela
+    # migration de backfill (para baixar as fotos antigas do bucket, se o servidor
+    # conseguir alcançá-lo). Em runtime NADA usa mais S3; podem ficar vazias.
     S3_ENDPOINT_URL: str = "https://api-nextpy-minio.1nwz76.easypanel.host"
     S3_PUBLIC_URL: str = "https://api-nextpy-minio.1nwz76.easypanel.host"
     S3_ACCESS_KEY: str = ""
     S3_SECRET_KEY: str = ""
     S3_BUCKET: str = "estrela-uploads"
-    # Validade (segundos) das URLs assinadas das imagens. 1h é suficiente para uma sessão de
-    # navegação; como são geradas a cada render, o link nunca é permanente.
     S3_URL_EXPIRA_SEG: int = 3600
 
     @property
