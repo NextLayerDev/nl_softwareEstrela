@@ -1,0 +1,282 @@
+# Release do Estrela Gestão — builda e publica a imagem no GHCR a partir de uma tag v*.*.*
+#
+# Contrato com o resto do sistema (não quebrar sem reler o CLAUDE.md e o agente):
+#
+#  1. GATE: uma tag só vira imagem se o ci.yml já tiver um run VERDE para o MESMO head_sha.
+#     `git tag` não roda a CI (o ci.yml dispara em push na main e em PR), então sem este
+#     gate qualquer commit — inclusive um que nunca passou nos testes — vira imagem
+#     publicada só por ganhar uma tag.
+#
+#  2. TAGS IMUTÁVEIS. Publica `v1.2.3` e `sha-abcdefg`, e NUNCA `:latest`/`:aprovado`.
+#     Uma tag móvel destrói as duas garantias em que o deploy pull-based se apoia: saber
+#     "o que está rodando" e conseguir voltar. O compose referencia ${APP_IMAGEM} por tag
+#     imutável e o agente reescreve essa var.
+#
+#  3. A Release NÃO-prerelease é o ATO DE APROVAR o deploy. É ela que o agente/CI service
+#     lê como "esta versão pode ir para o mini PC". Tag com hífen (v1.2.3-rc1) sai como
+#     prerelease automaticamente e, portanto, NÃO aprova nada.
+#
+# O pacote no GHCR é PÚBLICO (marcar na primeira publicação, em Packages → Package
+# settings → Change visibility). É isso que permite ao mini PC dar `docker pull` sem
+# token nenhum guardado no host.
+
+name: Release
+
+on:
+  push:
+    tags:
+      # Glob de ref, não regex: `v*.*.*` também casa v1.2.3-rc1 e v1.2.3.4. Quem faz a
+      # validação de verdade é o step `versao` abaixo (regex ancorada, fullmatch, teto de
+      # 32 chars) — este glob só reduz o ruído de disparo.
+      - "v*.*.*"
+
+# Escopo padrão mínimo. Cada job pede o que precisa.
+permissions:
+  contents: read
+
+concurrency:
+  # Por tag. Nunca cancela: um push cancelado no meio poderia deixar tag publicada no
+  # GHCR sem Release correspondente (ou o inverso).
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # GHCR exige o nome do pacote em MINÚSCULO — o repo é NextLayerDev/nl_softwareEstrela,
+  # a imagem é nextlayerdev/nl_softwareestrela. Não derivar de github.repository.
+  IMAGEM: ghcr.io/nextlayerdev/nl_softwareestrela
+
+jobs:
+  gate:
+    name: Gate — CI verde no mesmo commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # OBRIGATÓRIO e não-óbvio: ao declarar o bloco `permissions`, todo escopo NÃO
+      # listado vira `none` (não herda o default do repo). Sem esta linha a consulta a
+      # /actions/runs devolve 403 e o gate falha sem relação com o mérito do commit.
+      actions: read
+    steps:
+      - name: Exigir run verde do ci.yml para ${{ github.sha }}
+        uses: actions/github-script@v9
+        with:
+          script: |
+            // Espera a CI do commit terminar (a tag costuma ser empurrada logo depois do
+            // merge, com o run ainda in_progress) e só então julga o resultado.
+            const TETO_MS = 15 * 60 * 1000;
+            const INTERVALO_MS = 30 * 1000;
+            const limite = Date.now() + TETO_MS;
+
+            const buscar = async () => github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                head_sha: context.sha,
+                per_page: 100,
+              },
+            );
+
+            while (true) {
+              const runs = await buscar();
+
+              // Verde = concluído com sucesso. Um run cujo `ci-ok` foi "skipped" (commit
+              // que não tocou código) ainda conclui como success — é o comportamento
+              // desejado e documentado no ci.yml.
+              const verde = runs.find((r) => r.status === 'completed' && r.conclusion === 'success');
+              if (verde) {
+                core.info(`CI verde encontrada: run #${verde.run_number} (${verde.html_url})`);
+                return;
+              }
+
+              const rodando = runs.some((r) => r.status !== 'completed');
+              if (rodando && Date.now() < limite) {
+                core.info('CI ainda em execução para este commit; aguardando 30s...');
+                await new Promise((r) => setTimeout(r, INTERVALO_MS));
+                continue;
+              }
+
+              if (runs.length === 0 && Date.now() < limite) {
+                // Corrida de agendamento: a tag chegou antes de o run da main aparecer.
+                core.info('Nenhum run do ci.yml ainda para este commit; aguardando 30s...');
+                await new Promise((r) => setTimeout(r, INTERVALO_MS));
+                continue;
+              }
+
+              const resumo = runs.length
+                ? runs.map((r) => `#${r.run_number}: ${r.status}/${r.conclusion}`).join(', ')
+                : '(nenhum run)';
+              core.setFailed(
+                `Sem run VERDE do ci.yml para o commit ${context.sha}. Encontrado: ${resumo}. ` +
+                'A tag não vira imagem. Faça a CI passar neste commit exato e reempurre a tag.',
+              );
+              return;
+            }
+
+  publicar:
+    name: Build e push (GHCR)
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write # criar a GitHub Release
+      packages: write # push da imagem no GHCR
+      id-token: write # OIDC para a attestation de proveniência
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A Release usa notas geradas a partir do histórico; sem o histórico completo
+          # o "since last tag" sai errado.
+          fetch-depth: 0
+
+      - name: Validar a tag e derivar a identidade do build
+        id: versao
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          # `set -e` explícito, e não herdado do default do runner: sem ele, o exit 1 do
+          # python3 abaixo NÃO interrompe o step — o `echo build_date` seguinte roda, vira
+          # o último comando, e o step termina com exit 0. Ou seja: a tag hostil seria
+          # REJEITADA pelo validador e mesmo assim seguiria para o build. Não é hipótese,
+          # foi observado ao rodar este script com `bash` puro.
+          set -euo pipefail
+
+          # A validação é feita em Python de propósito, com a MESMA política da app e do
+          # agente: \A e \Z (e não ^/$ — em regex o "$" casa antes de um \n final e
+          # deixaria passar "v1.2.3\nrm -rf /"), fullmatch, e teto de 32 chars.
+          # Aqui a tag é um ref do git, mas a regra é duplicada por princípio: nenhuma
+          # camada confia na validação da anterior.
+          python3 - <<'PY'
+          import os, re, sys
+
+          tag = os.environ["TAG"]
+          if len(tag) > 32:
+              sys.exit(f"::error::Tag com {len(tag)} chars (teto: 32): {tag!r}")
+
+          padrao = re.compile(r"\Av(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.]+)?\Z")
+          m = padrao.fullmatch(tag)
+          if not m:
+              sys.exit(f"::error::Tag fora do formato vMAJOR.MINOR.PATCH[-pre]: {tag!r}")
+
+          versao = tag[1:]                       # APP_VERSION vai SEM o "v"
+          prerelease = "true" if m.group(4) else "false"
+          sha_curto = os.environ["SHA"][:7]
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"tag={tag}\n")
+              fh.write(f"versao={versao}\n")
+              fh.write(f"sha_curto={sha_curto}\n")
+              fh.write(f"prerelease={prerelease}\n")
+          print(f"tag={tag} versao={versao} sha_curto={sha_curto} prerelease={prerelease}")
+          PY
+
+          # BUILD_DATE em UTC ISO-8601 — é o que a aba /deploy mostra.
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN do run, com packages:write. Não há PAT guardado em lugar nenhum.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Montar tags e labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGEM }}
+          # latest=false: a metadata-action adiciona `:latest` sozinha em push de tag.
+          # É exatamente a tag móvel que este pipeline não pode publicar.
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=${{ steps.versao.outputs.tag }}
+            type=raw,value=sha-${{ steps.versao.outputs.sha_curto }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.versao.outputs.versao }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.versao.outputs.build_date }}
+
+      - name: Build e push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Os 4 ARGs existem no fim do Dockerfile (não invalidam o cache do uv sync).
+          # Sem eles a imagem sobe com APP_VERSION=dev e a aba /deploy fica cega — não há
+          # .git dentro da imagem (o .dockerignore o exclui).
+          build-args: |
+            APP_VERSION=${{ steps.versao.outputs.versao }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.versao.outputs.build_date }}
+            APP_TAG=${{ steps.versao.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # SBOM + proveniência anexados à imagem (referrers do OCI). `mode=max` inclui
+          # os build-args e as camadas — é o que permite auditar depois de qual commit
+          # exatamente saiu a imagem que está no mini PC.
+          sbom: true
+          provenance: mode=max
+
+      - name: Attestation de proveniência (assinada pelo GitHub)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGEM }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Resumo do run
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "## Imagem publicada"
+            echo ""
+            echo '```'
+            echo "$TAGS"
+            echo ""
+            echo "digest: $DIGEST"
+            echo '```'
+            echo ""
+            echo "Prerelease: \`${{ steps.versao.outputs.prerelease }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Criar a GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.versao.outputs.tag }}
+          name: ${{ steps.versao.outputs.tag }}
+          generate_release_notes: true
+          # Tag com hífen (v1.2.3-rc1) => prerelease => NÃO aprova deploy.
+          prerelease: ${{ steps.versao.outputs.prerelease == 'true' }}
+          body: |
+            ## Imagem
+
+            ```
+            ${{ env.IMAGEM }}:${{ steps.versao.outputs.tag }}
+            ${{ env.IMAGEM }}:sha-${{ steps.versao.outputs.sha_curto }}
+            ```
+
+            - **Digest:** `${{ steps.build.outputs.digest }}`
+            - **Commit:** ${{ github.sha }}
+            - **Build:** ${{ steps.versao.outputs.build_date }}
+
+            > Esta Release, quando **não** marcada como pré-lançamento, é o ato de
+            > **aprovar** o deploy desta versão no servidor da cliente. O deploy em si é
+            > pull-based: ninguém acessa o mini PC de fora — um usuário `dev` abre a aba
+            > `/deploy` e solicita a atualização.
+
+            ### Antes de aprovar, confira
+
+            - [ ] Tem migration nova? O rollback desta versão deixa de ser trivial
+                  (o agente **nunca** faz downgrade do banco).
+            - [ ] Tem variável nova no `.env.prod`? Ela precisa estar no mini PC **antes**.

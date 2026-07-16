@@ -72,7 +72,21 @@ class Settings(BaseSettings):
 
     @property
     def allowed_hosts_list(self) -> list[str]:
-        return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+        """Hosts aceitos, com o loopback SEMPRE incluído quando a checagem está ligada.
+
+        O HEALTHCHECK do container bate em http://127.0.0.1:8000/health. Sem o loopback na
+        lista, restringir ALLOWED_HOSTS a "sistema.local" faria o TrustedHostMiddleware
+        recusar o próprio healthcheck: o container nunca ficaria healthy, o
+        `depends_on: service_healthy` do Caddy travaria e o sistema inteiro não subiria —
+        por uma mudança que parece endurecer a segurança.
+        """
+        hosts = [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+        if "*" in hosts:
+            return hosts
+        for loopback in ("127.0.0.1", "localhost"):
+            if loopback not in hosts:
+                hosts.append(loopback)
+        return hosts
 
     @property
     def github_habilitado(self) -> bool:

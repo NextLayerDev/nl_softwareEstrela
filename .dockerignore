@@ -1,0 +1,47 @@
+# Contexto do build da imagem. O Dockerfile faz `COPY . .`, e o .gitignore NÃO se aplica
+# aqui — sem este arquivo, tudo abaixo é assado numa layer da imagem publicada no GHCR.
+#
+# CUIDADO ao editar: NÃO exclua `alembic/versions/_imagens_recuperadas/` (a migration head
+# e8c1d2a3b4f5 lê esses .jpg em runtime), nem `scripts/` (o entrypoint mora lá), nem
+# `app/static/css/output.css` (é buildado fora do Docker, pelo Tailwind standalone).
+
+# --- Segredos. O motivo principal deste arquivo existir. -----------------------
+# No mini PC o .env.prod fica ao lado do compose: sem esta linha, DB_PASSWORD e
+# JWT_SECRET vão para dentro de uma imagem publicada num registry de repo público.
+.env
+.env.*
+!.env.example
+!.env.prod.example
+
+# --- Dados da cliente ----------------------------------------------------------
+# Planilhas reais (11 MB) e dumps: não têm nada que fazer numa imagem distribuível.
+data/
+*.sql
+*.sql.gz
+backup/
+
+# --- Histórico do git (27 MB) --------------------------------------------------
+# A versão chega por build-arg (ver ARG APP_VERSION no Dockerfile), não pelo .git.
+.git
+.gitignore
+.github
+
+# --- Ferramentas e artefatos de dev --------------------------------------------
+.venv/
+tailwindcss
+tailwind.config.js
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+**/__pycache__/
+*.py[cod]
+.DS_Store
+.claude/
+skills-lock.json
+
+# --- Coisas que não afetam o runtime -------------------------------------------
+tests/
+docs/
+README.md
+CLAUDE.md

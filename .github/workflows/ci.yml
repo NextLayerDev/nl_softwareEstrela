@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       codigo: ${{ steps.filtro.outputs.codigo }}
+      docker: ${{ steps.filtro.outputs.docker }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -47,6 +48,17 @@ jobs:
               - 'app/**'
               - 'tests/**'
               - 'alembic/**'
+              - 'scripts/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/**'
+            # Filtro próprio: `codigo` não inclui Dockerfile nem .dockerignore, e um PR
+            # que mexa SÓ no .dockerignore é exatamente aquele em que a asserção abaixo
+            # mais precisa rodar.
+            docker:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'app/**'
               - 'scripts/**'
               - 'pyproject.toml'
               - 'uv.lock'
@@ -127,12 +139,109 @@ jobs:
             echo "Número medido **no runner** — é ele que calibra o \`fail_under\` da Fase 2." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  docker:
+    name: Imagem (build + asserções)
+    needs: mudancas
+    if: needs.mudancas.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Tag só do runner. Nada aqui é publicado: quem publica é o release.yml, a partir
+      # de uma tag v*.*.*, e só com um run VERDE deste workflow no mesmo sha.
+      IMG: estrela-gestao:ci-${{ github.sha }}
+      # Valor sentinela. Serve para provar que o Dockerfile ainda consome os build-args —
+      # se alguém remover os ARGs, a imagem sai com o default `dev` e o release publicaria
+      # uma imagem que a aba /deploy não consegue identificar (não há .git dentro dela).
+      VERSAO_TESTE: 0.0.0-ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fabricar segredos e dados falsos no contexto do build
+        # ANTES do build, de propósito. Se estes arquivos não existirem no contexto, a
+        # asserção lá embaixo passa por VACUIDADE: no runner não existe .env.prod, e
+        # "não achei" não distinguiria "o .dockerignore funciona" de "o arquivo nunca
+        # esteve lá". O .git já veio do checkout.
+        run: |
+          echo "DB_PASSWORD=segredo-de-mentira-do-ci" > .env
+          echo "JWT_SECRET=segredo-de-mentira-do-ci" > .env.prod
+          mkdir -p data && echo "planilha falsa da cliente" > data/estoque.xlsx
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build da imagem
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          # load: joga no daemon local do runner para os `docker run` abaixo.
+          load: true
+          tags: ${{ env.IMG }}
+          build-args: |
+            APP_VERSION=${{ env.VERSAO_TESTE }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=1970-01-01T00:00:00Z
+            APP_TAG=v0.0.0-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Asserção do .dockerignore (segredos e dados FORA da imagem)
+        # O teste que valida a premissa central de segurança do projeto. O Dockerfile faz
+        # `COPY . .` e o .gitignore NÃO se aplica ao contexto do build: sem o .dockerignore,
+        # o .env.prod (DB_PASSWORD, JWT_SECRET), as planilhas reais da cliente e o histórico
+        # do git vão assados numa layer de uma imagem publicada num registry PÚBLICO.
+        # Publicado é para sempre — não existe "despublicar" uma layer que alguém puxou.
+        #
+        # Uma linha a mais no .dockerignore não tem como ser testada por unit test; só
+        # olhando dentro da imagem que o build realmente produziu.
+        run: |
+          # set -e explícito, não herdado do default do runner: num step de asserção, um
+          # comando que falha no meio e não interrompe nada é como o teste passa a mentir.
+          set -euo pipefail
+
+          # `ls -d` de cada caminho proibido. 2>/dev/null || true porque quem julga é o
+          # CONTEÚDO de $ACHADOS, não o exit code do ls — que é não-zero justamente no
+          # caso bom (nada encontrado) e zero no caso ruim.
+          ACHADOS=$(docker run --rm --entrypoint sh "$IMG" -c \
+            'ls -d /app/.env /app/.env.prod /app/.git /app/data 2>/dev/null || true')
+
+          if [ -n "$ACHADOS" ]; then
+            echo "::error::.dockerignore FUROU. Encontrado dentro da imagem:"
+            echo "$ACHADOS"
+            echo "::error::Isto iria para o GHCR (repo PÚBLICO) e não há como despublicar uma layer já puxada. Corrija o .dockerignore."
+            exit 1
+          fi
+          echo "OK: /app/.env, /app/.env.prod, /app/.git e /app/data não existem na imagem."
+
+          # Contraprova: a asserção precisa saber ACHAR um arquivo quando ele existe.
+          # Sem isto, um `ls` quebrado ou um entrypoint trocado deixaria o teste verde
+          # para sempre, medindo nada.
+          if ! docker run --rm --entrypoint sh "$IMG" -c 'ls -d /app/pyproject.toml' >/dev/null 2>&1; then
+            echo "::error::A asserção está quebrada: nem /app/pyproject.toml foi encontrado na imagem."
+            exit 1
+          fi
+          echo "OK: contraprova — /app/pyproject.toml está presente, o teste mede algo."
+
+      - name: Conferir que os build-args chegaram na imagem (APP_VERSION != dev)
+        run: |
+          set -euo pipefail
+          VERSAO=$(docker run --rm --entrypoint sh "$IMG" -c 'printf "%s" "$APP_VERSION"')
+          echo "APP_VERSION na imagem: '$VERSAO'"
+          if [ "$VERSAO" = "dev" ] || [ -z "$VERSAO" ]; then
+            echo "::error::APP_VERSION saiu como '$VERSAO' mesmo com --build-arg. O ARG/ENV do Dockerfile foi removido ou renomeado — o release publicaria uma imagem anônima e a aba /deploy ficaria cega."
+            exit 1
+          fi
+          if [ "$VERSAO" != "$VERSAO_TESTE" ]; then
+            echo "::error::APP_VERSION é '$VERSAO', esperado '$VERSAO_TESTE'. O build-arg não está sendo respeitado."
+            exit 1
+          fi
+          echo "OK: o Dockerfile consome APP_VERSION via build-arg."
+
   ci-ok:
     name: ci-ok
     # Agregador: é ESTE o nome a marcar como required check na Fase 5. Os nomes
     # dos jobs acima podem mudar; este não.
     if: always()
-    needs: [mudancas, lint, testes]
+    needs: [mudancas, lint, testes, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

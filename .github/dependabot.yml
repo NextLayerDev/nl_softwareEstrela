@@ -1,0 +1,119 @@
+# Dependabot do Estrela Gestão.
+#
+# Contexto que muda as escolhas aqui: o sistema roda OFFLINE num mini PC na cliente e é
+# atualizado por deploy pull-based. Não existe "rollback rápido" de verdade — então o
+# custo de um major que quebra em produção é alto, e o valor de saber que há CVE numa
+# dependência é igualmente alto. Daí: patches/minors agrupados e frequentes; majors das
+# 4 dependências estruturais NUNCA automáticos.
+#
+# `versioning-strategy` fica no default: o uv.lock é a fonte da verdade, e o ci.yml roda
+# `uv sync --frozen` — um PR que mexa só no pyproject.toml sem o lock quebra o CI na hora.
+
+version: 2
+
+updates:
+  # --- Python (uv) -------------------------------------------------------------
+  # O ecossistema chama-se "pip"; o Dependabot lê pyproject.toml + uv.lock.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    labels:
+      - "dependencias"
+    groups:
+      # Um PR por semana com tudo que é seguro. Vinte PRs separados só treinam a gente
+      # a apertar merge sem ler.
+      python-menores:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      python-dev:
+        dependency-type: "development"
+        patterns:
+          - "*"
+    ignore:
+      # Majors do núcleo: entram à mão, com leitura do changelog e uma janela de deploy
+      # combinada — não num PR automático de segunda de manhã.
+      #
+      # SQLAlchemy 3: o projeto é sync/2.0-style (Mapped/mapped_column) e o estoque
+      #   append-only depende do comportamento exato de transação/flush.
+      # FastAPI: majors arrastam Starlette (middleware, TestClient) — 225 testes.
+      # Pydantic 3: os Settings com validator fail-fast em prod e os schemas Read/Create.
+      # psycopg 4: driver do banco. É a peça que, se falhar, falha calada às 8h da manhã.
+      - dependency-name: "sqlalchemy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "fastapi"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pydantic"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pydantic-settings"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "psycopg"
+        update-types: ["version-update:semver-major"]
+
+  # --- GitHub Actions ----------------------------------------------------------
+  # Mantém ci.yml/release.yml em dia. Relevante: o release.yml é o que assina e publica
+  # a imagem; actions defasadas aqui são supply chain do artefato que roda na cliente.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    labels:
+      - "dependencias"
+      - "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # --- Docker ------------------------------------------------------------------
+  # O Dockerfile pina a base E o uv POR DIGEST (ver comentário lá). É este ecossistema
+  # que abre o PR trocando o digest quando o python:3.12-slim é reconstruído — sem ele,
+  # o pin vira uma base congelada acumulando CVE de sistema em silêncio.
+  # Também cobre postgres:16.4 e caddy:2 nos composes.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Sao_Paulo"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+      include: "scope"
+    labels:
+      - "dependencias"
+      - "docker"
+    groups:
+      docker:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Postgres major = pg_upgrade no mini PC, com o banco que é a ÚNICA testemunha do
+      # deploy (deploys.log). Nunca por PR automático.
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      # Python 3.13+ na imagem: o projeto é 3.12 (CLAUDE.md §2) e o CI testa 3.12.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

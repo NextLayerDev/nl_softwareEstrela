@@ -12,6 +12,11 @@ services:
       POSTGRES_DB: estrela_gestao
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      # Só no loopback do host, nunca na LAN: é por aqui que o agente de deploy (que roda
+      # FORA do Docker) escreve o andamento e lê a allowlist. O db é o único container que
+      # não é recriado num deploy — é a testemunha do que acontece com o app morto.
+      - "127.0.0.1:5432:5432"
     networks:
       - estrela_net
     restart: always
@@ -20,16 +25,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Imagem publicada pelo pipeline, referenciada por tag IMUTÁVEL (nunca :latest — tag
+    # móvel destrói a noção de "o que está rodando" e o rollback). Quem reescreve o
+    # APP_IMAGEM é o agente de deploy, em /var/lib/estrela-agente/env.tag.
+    # Para buildar localmente (emergência, numa máquina COM internet):
+    #   docker compose -f docker-compose.prod.yml -f docker-compose.build.yml up -d --build
+    image: ${APP_IMAGEM:-ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.0}
     environment:
       DATABASE_URL: postgresql+psycopg://estrela:${DB_PASSWORD}@db:5432/estrela_gestao
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_MIN: ${JWT_EXPIRES_MIN:-120}
       ENV: prod
+      # Sem esta linha a setting existe no .env.prod, o compose não a repassa, o
+      # extra="ignore" do pydantic a engole e a tela mostra "não configurado" sem erro.
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       # Storage de imagens (MinIO). Sem estas vars o upload de foto fica indisponível,
       # mas a app sobe normalmente.
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
@@ -37,6 +53,10 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_BUCKET: ${S3_BUCKET:-estrela-uploads}
+    volumes:
+      # Read-only: a aba /deploy precisa enxergar o último backup, e o container é cego
+      # para o diretório do host. Ciente do trade-off: um RCE na app passa a LER os dumps.
+      - /backup/estrela_gestao:/backup:ro
     depends_on:
       db:
         condition: service_healthy
@@ -45,6 +65,14 @@ services:
     restart: always
     expose:
       - "8000"
+    # O healthcheck vem do Dockerfile (urllib — a imagem slim não tem curl). Aponta para
+    # /health (estático) e nunca /health/ready: uma piscada do banco marcaria unhealthy e
+    # travaria a subida do Caddy abaixo.
+    logging: &log_rotacionado
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   caddy:
     image: caddy:2
@@ -56,10 +84,14 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - app
+      app:
+        # Antes era só `- app`: o Caddy subia antes do app responder e devolvia 502, que o
+        # troubleshooting do guia listava como "esperado". Não era.
+        condition: service_healthy
     networks:
       - estrela_net
     restart: always
+    logging: *log_rotacionado
 
 networks:
   estrela_net:

@@ -1,0 +1,17 @@
+# Override que devolve o `build:` ao serviço app.
+#
+# Uso (emergência, ou para testar a imagem antes de publicar):
+#   docker compose -f docker-compose.prod.yml -f docker-compose.build.yml --env-file .env.prod up -d --build
+#
+# ATENÇÃO — isto NÃO é contingência offline. O build puxa a imagem base, o uv, os pacotes
+# do apt e do PyPI: sem internet ele falha igual. A contingência offline real é levar a
+# imagem pronta:
+#   (máquina com internet)  docker save ghcr.io/nextlayerdev/nl_softwareestrela:vX.Y.Z | gzip > estrela-vX.Y.Z.tgz
+#   (mini PC)               gunzip -c estrela-vX.Y.Z.tgz | docker load
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: dev-local

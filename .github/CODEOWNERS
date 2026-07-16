@@ -1,0 +1,52 @@
+# CODEOWNERS do Estrela Gestão.
+#
+# Isto é REVIEW REQUEST AUTOMÁTICO, não trava. A branch protection da main NÃO tem
+# "Require review from Code Owners" ligado — de propósito: o repo tem um dono só, e um
+# gate que só ele pode satisfazer viraria ou um bloqueio permanente ou um hábito de
+# clicar em "bypass" (que é pior do que não ter o gate).
+#
+# O required check da main é o `ci-ok` do ci.yml. Este arquivo é sinalização: garante que
+# ninguém mexa nas áreas abaixo sem o dono ser notificado.
+#
+# Regras: última linha que casa vence. Padrões no estilo .gitignore.
+
+# Fallback: qualquer coisa no repo.
+*                               @joaocruz1
+
+# --- Pipeline e supply chain -------------------------------------------------
+# Quem edita isto decide o que é assado na imagem que roda na cliente.
+/.github/                       @joaocruz1
+/Dockerfile                     @joaocruz1
+# O .dockerignore é a única barreira entre .env.prod/.git e uma imagem num registry
+# PÚBLICO. O job `docker` do ci.yml testa essa premissa; esta linha garante o olho humano.
+/.dockerignore                  @joaocruz1
+
+# --- Produção: o que toca o mini PC ------------------------------------------
+/docker-compose*.yml            @joaocruz1
+/Caddyfile                      @joaocruz1
+/deploy/                        @joaocruz1
+# entrypoint.sh roda `alembic upgrade head` no boot; backup-estrela.sh é o único plano B
+# do banco (o agente NUNCA restaura backup automaticamente).
+/scripts/                       @joaocruz1
+
+# --- Migrations ---------------------------------------------------------------
+# Toda migration é irreversível na prática: o agente não faz downgrade do banco e não
+# restaura backup sozinho (restaurar apagaria em silêncio os pedidos entre o backup e a
+# falha). Uma migration errada aqui é um chamado presencial.
+/alembic/                       @joaocruz1
+
+# --- Núcleo de segurança e das regras invioláveis ----------------------------
+# security.py (argon2/JWT), config.py (validator fail-fast em prod), auth (RBAC + perfil
+# dev como superusuário), locks e eventos (NOTIFY transacional, payload sem HTML/senha).
+/app/core/                      @joaocruz1
+/app/deps/                      @joaocruz1
+/app/models/enums.py            @joaocruz1
+
+# Estoque append-only e o ciclo reserva/baixa/estorno: onde um bug some com mercadoria.
+/app/services/estoque_service.py    @joaocruz1
+
+# Superfície do deploy: a tela é `require_role("dev")` e a app só INSERE linha em
+# `deploys` — ela nunca escreve imagem_digest/origem e nunca executa docker.
+/app/web/routes/deploy.py           @joaocruz1
+/app/services/saude_service.py      @joaocruz1
+/app/models/deploy.py               @joaocruz1
