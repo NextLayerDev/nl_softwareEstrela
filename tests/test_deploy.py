@@ -63,10 +63,11 @@ def test_dev_acessa(rota: str) -> None:
     assert _login("dev").get(rota).status_code == 200
 
 
-def test_deploy_nao_aparece_no_menu_de_ninguem() -> None:
-    """Ferramenta de manutenção: só por URL direta, nem para o dev."""
-    for perfil in PERFIS:
-        assert "Status do Deploy" not in _login(perfil).get("/").text
+def test_deploy_no_menu_so_do_dev() -> None:
+    """O admin da empresa não pode nem saber que a tela existe."""
+    assert "Status do Deploy" in _login("dev").get("/").text
+    for perfil in ("admin", "vendedor", "financeiro", "funcionario"):
+        assert "Status do Deploy" not in _login(perfil).get("/").text, perfil
 
 
 def test_dev_enxerga_todos_os_itens_do_menu() -> None:

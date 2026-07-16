@@ -82,9 +82,10 @@
         {{ item("/importacao", "Importação", ["admin"], "upload") }}
         {{ item("/empresa", "Empresa", ["admin"], "engrenagem") }}
         {{ item("/usuarios", "Usuários", ["admin"], "engrenagem") }}
-        {# /deploy NÃO entra no menu de propósito: é ferramenta de manutenção, acessada
-           só por URL direta, e nem o dev precisa de atalho para ela. Esconder é
-           cosmético — quem protege é o require_role("dev") nas rotas. #}
+        {# Manutenção: só o dev vê. Note que o `["dev"]` aqui NÃO é o que protege a tela
+           (quem protege é o require_role("dev") na rota) — mas é o que a tira do menu do
+           admin, que é usuário real da empresa. #}
+        {{ item("/deploy", "Status do Deploy", ["dev"], "servidor") }}
       </nav>
     </aside>
 
