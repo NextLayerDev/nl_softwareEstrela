@@ -45,6 +45,7 @@ ignore = ["B008"]  # FastAPI usa Depends() em defaults de argumento
 "alembic/*" = ["E501"]
 "scripts/gerar_pdf.py" = ["E501"]  # HTML/CSS embutido para o PDF de demonstração
 "scripts/gerar_doc_tecnica.py" = ["E501"]  # HTML/CSS embutido para o PDF de documentação
+"scripts/gerar_guia_instalacao.py" = ["E501"]  # HTML/CSS embutido para o PDF do guia
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
