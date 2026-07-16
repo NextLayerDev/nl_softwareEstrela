@@ -79,7 +79,9 @@
 
   <div class="card">
     <h2 class="mb-3 text-base font-semibold">Últimos pedidos</h2>
-    {% if ultimos %}
+    {# Cabeçalho sempre renderizado, estado vazio dentro do tbody — mesmo padrão de
+       usuarios/index.html. Embrulhar a tabela num {% if %} sumia com os scope="col"
+       num banco sem pedidos. #}
     <table class="tabela">
       <thead><tr><th scope="col">Nº</th><th scope="col">Status</th>{% if mostra_vendas %}<th scope="col" class="text-right">Total</th>{% endif %}</tr></thead>
       <tbody>
@@ -89,11 +91,12 @@
           <td>{{ p.status.value if p.status else "" }}</td>
           {% if mostra_vendas %}<td class="text-right">{{ p.total | moeda }}</td>{% endif %}
         </tr>
+        {% else %}
+        <tr>
+          <td colspan="{{ 3 if mostra_vendas else 2 }}" class="text-sm text-gray-500">Nenhum pedido ainda.</td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
-    {% else %}
-    <p class="text-sm text-gray-500">Nenhum pedido ainda.</p>
-    {% endif %}
   </div>
 </div>
