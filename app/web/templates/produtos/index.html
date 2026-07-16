@@ -49,7 +49,13 @@
           {% if pode_editar %}<th scope="col"></th>{% endif %}
         </tr>
       </thead>
-      <tbody id="tbody-produtos">
+      {# Troca só a linha que mudou: re-buscar a lista resetaria o scroll infinito
+         (o operador voltaria ao primeiro bloco no meio da rolagem). #}
+      <tbody id="tbody-produtos"
+             data-rt-linha="produto.atualizado,produto.inativado,variacao.adicionada,variacao.removida,variacao.renomeada"
+             data-rt-linha-key="produto_id"
+             data-rt-linha-get="/produtos/linha/"
+             data-rt-linha-alvo="#linha-produto-">
         {% include "produtos/_linhas.html" %}
       </tbody>
     </table>

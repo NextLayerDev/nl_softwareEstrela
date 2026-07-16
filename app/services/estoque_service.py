@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.core.errors import RegraNegocioError
+from app.core.estoque_alertas import abaixo_minimo
 from app.models.enums import EstoqueModo, OrigemMov, RotuloAprox, TipoMov
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import ProdutoVariacao
@@ -48,7 +50,65 @@ class EstoqueService:
         )
         db.add(mov)
         db.flush()
+        self._emitir_movimentacao(db, variacao, mov)
         return mov
+
+    def _emitir_movimentacao(
+        self, db: Session, variacao: ProdutoVariacao, mov: MovimentacaoEstoque
+    ) -> None:
+        """Avisa as telas de estoque. Emitir aqui cobre os seis métodos de uma vez.
+
+        A importação escreve movimentação direto (sem passar por aqui), mas o
+        `adicionar_variacao` chama a entrada com origem=IMPORTACAO — nesses casos o evento por
+        linha inundaria os terminais, então a carga emite só um resumo no fim.
+        """
+        if mov.origem == OrigemMov.IMPORTACAO:
+            return
+        eventos.emitir(
+            db,
+            "estoque.movimentado",
+            {
+                "mov_id": mov.id,
+                "variacao_id": variacao.id,
+                "produto_id": variacao.produto_id,
+                "codigo": variacao.produto.codigo if variacao.produto else None,
+                "cor": variacao.cor,
+                "tipo": str(mov.tipo),
+                "qtd": mov.qtd,
+                "origem": str(mov.origem),
+                "estoque_fisico": variacao.estoque_fisico,
+                "estoque_reservado": variacao.estoque_reservado,
+                "disponivel": variacao.disponivel,
+                "estoque_modo": str(variacao.estoque_modo),
+                "rotulo_aprox": str(variacao.rotulo_aprox) if variacao.rotulo_aprox else None,
+            },
+            audiencia=eventos.TODOS,
+            # Sempre silencioso: a linha mudando na tela já é o aviso, e quem lançou já vê a
+            # confirmação no #estoque-msg. Com toast, uma conferência de 40 itens encheria os
+            # 10 terminais de avisos. Quem precisa de atenção é o alerta de mínimo, abaixo.
+            silencioso=True,
+        )
+
+    def _alertar_se_cruzou_minimo(
+        self, db: Session, variacao: ProdutoVariacao, antes: bool
+    ) -> None:
+        """Avisa só na *transição* para abaixo do mínimo — não a cada movimentação."""
+        if antes or not abaixo_minimo(variacao):
+            return
+        eventos.emitir(
+            db,
+            "estoque.alerta_minimo",
+            {
+                "variacao_id": variacao.id,
+                "produto_id": variacao.produto_id,
+                "codigo": variacao.produto.codigo if variacao.produto else None,
+                "cor": variacao.cor,
+                "estoque_fisico": variacao.estoque_fisico,
+                "estoque_minimo": variacao.estoque_minimo,
+                "rotulo_aprox": str(variacao.rotulo_aprox) if variacao.rotulo_aprox else None,
+            },
+            audiencia=eventos.SEP_AUD,
+        )
 
     # ---------------------------------------------------------------- entrada
     def entrada(
@@ -63,12 +123,15 @@ class EstoqueService:
         """Entrada de mercadoria: soma ao físico e torna a variação EXATA."""
         if qtd <= 0:
             raise RegraNegocioError("A quantidade de entrada deve ser maior que zero.")
+        antes = abaixo_minimo(variacao)
         variacao.estoque_fisico += qtd
         variacao.estoque_modo = EstoqueModo.EXATO
         variacao.rotulo_aprox = None
-        return self._registrar(
-            db, variacao, TipoMov.ENTRADA, qtd, usuario_id, origem, ref_id=ref_id
-        )
+        mov = self._registrar(db, variacao, TipoMov.ENTRADA, qtd, usuario_id, origem, ref_id=ref_id)
+        # Entrada normalmente tira do mínimo, mas ela também converte APROXIMADO em EXATO:
+        # a variação pode acabar exata e ainda abaixo do mínimo.
+        self._alertar_se_cruzou_minimo(db, variacao, antes)
+        return mov
 
     # ---------------------------------------------------------------- reserva
     def reservar(
@@ -112,11 +175,14 @@ class EstoqueService:
                 f"Baixa maior que o físico para {_rotulo_variacao(variacao)}: "
                 f"físico {variacao.estoque_fisico}, baixa {qtd}."
             )
+        antes = abaixo_minimo(variacao)
         variacao.estoque_fisico -= qtd
         variacao.estoque_reservado = max(0, variacao.estoque_reservado - qtd)
-        return self._registrar(
+        mov = self._registrar(
             db, variacao, TipoMov.SAIDA, qtd, usuario_id, OrigemMov.PEDIDO, ref_id=pedido_id
         )
+        self._alertar_se_cruzou_minimo(db, variacao, antes)
+        return mov
 
     # --------------------------------------------------------------- estorno
     def estornar(
@@ -151,11 +217,12 @@ class EstoqueService:
             raise RegraNegocioError("O motivo do ajuste é obrigatório.")
         if novo_saldo < 0:
             raise RegraNegocioError("O novo saldo não pode ser negativo.")
+        antes = abaixo_minimo(variacao)
         diferenca = novo_saldo - variacao.estoque_fisico
         variacao.estoque_fisico = novo_saldo
         variacao.estoque_modo = EstoqueModo.EXATO
         variacao.rotulo_aprox = None
-        return self._registrar(
+        mov = self._registrar(
             db,
             variacao,
             TipoMov.AJUSTE,
@@ -165,6 +232,8 @@ class EstoqueService:
             ref_id=ref_id,
             motivo=motivo.strip(),
         )
+        self._alertar_se_cruzou_minimo(db, variacao, antes)
+        return mov
 
     # ----------------------------------------------------------- aproximado
     def definir_aproximado(
@@ -176,13 +245,16 @@ class EstoqueService:
         motivo: str = "rótulo aproximado",
     ) -> MovimentacaoEstoque:
         """Marca a variação como APROXIMADO com um rótulo (MUITO/POUCO/TEM/ACABOU)."""
+        antes = abaixo_minimo(variacao)
         variacao.estoque_modo = EstoqueModo.APROXIMADO
         variacao.rotulo_aprox = rotulo
         if rotulo == RotuloAprox.ACABOU:
             variacao.estoque_fisico = 0
-        return self._registrar(
+        mov = self._registrar(
             db, variacao, TipoMov.AJUSTE, 0, usuario_id, OrigemMov.MANUAL, motivo=motivo
         )
+        self._alertar_se_cruzou_minimo(db, variacao, antes)
+        return mov
 
 
 estoque_service = EstoqueService()

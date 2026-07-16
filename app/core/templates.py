@@ -6,7 +6,11 @@ from fastapi.templating import Jinja2Templates
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "web" / "templates"
 _STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-_ASSETS = (_STATIC_DIR / "css" / "output.css", _STATIC_DIR / "js" / "ui.js")
+_ASSETS = (
+    _STATIC_DIR / "css" / "output.css",
+    _STATIC_DIR / "js" / "ui.js",
+    _STATIC_DIR / "js" / "realtime.js",
+)
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 

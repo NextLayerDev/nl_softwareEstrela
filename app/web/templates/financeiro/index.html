@@ -32,8 +32,10 @@
     <form
       class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-5"
       hx-get="/financeiro/contas"
-      hx-trigger="change, submit"
+      hx-trigger="change, submit, rt-refresh"
       hx-target="#tbody-contas"
+      {# Re-dispara a própria busca do formulário: os filtros do operador vão junto. #}
+      data-rt-trigger="conta.baixada,conta.atrasada,pedido.faturado,pedido.cancelado"
     >
       <div>
         <label class="label" for="f-status">Status</label>

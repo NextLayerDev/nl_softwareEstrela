@@ -95,7 +95,13 @@
           <th scope="col"></th>
         </tr>
       </thead>
-      <tbody id="tbody-estoque">
+      {# Troca só a linha que se mexeu: refazer a lista chamaria /estoque/busca, que devolve
+         vazio quando a caixa de busca está em branco — e apagaria a tabela. #}
+      <tbody id="tbody-estoque"
+             data-rt-linha="estoque.movimentado,estoque.alerta_minimo"
+             data-rt-linha-key="variacao_id"
+             data-rt-linha-get="/estoque/linha/"
+             data-rt-linha-alvo="#linha-">
         {% include "estoque/_linhas.html" %}
       </tbody>
     </table>

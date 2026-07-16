@@ -5,27 +5,26 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.estoque_alertas import clausula_abaixo_minimo
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.conta_receber import ContaReceber
-from app.models.enums import EstoqueModo, RotuloAprox, StatusConta, StatusPedido
+from app.models.enums import StatusConta, StatusPedido
 from app.models.pedido import Pedido
 from app.models.produto import Produto, ProdutoVariacao
 from app.models.usuario import Usuario
 
 router = APIRouter()
 
+_PERFIS = ("admin", "vendedor", "financeiro", "funcionario")
 
-@router.get("/", response_class=HTMLResponse)
-def dashboard(
-    request: Request,
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro", "funcionario")),
-):
+
+def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
+    """Monta os KPIs do painel. Compartilhado pela página e pelo fragmento do realtime."""
     hoje = date.today()
     so_proprios = usuario.perfil == "vendedor"
 
@@ -44,18 +43,7 @@ def dashboard(
         or 0
     )
 
-    alertas = (
-        db.scalar(
-            select(func.count(ProdutoVariacao.id)).where(
-                or_(
-                    (ProdutoVariacao.estoque_modo == EstoqueModo.EXATO)
-                    & (ProdutoVariacao.estoque_fisico <= ProdutoVariacao.estoque_minimo),
-                    ProdutoVariacao.rotulo_aprox.in_([RotuloAprox.POUCO, RotuloAprox.ACABOU]),
-                )
-            )
-        )
-        or 0
-    )
+    alertas = db.scalar(select(func.count(ProdutoVariacao.id)).where(clausula_abaixo_minimo())) or 0
 
     pedidos_hoje = (
         db.scalar(
@@ -115,8 +103,7 @@ def dashboard(
     ]
     max_serie = max((s["valor"] for s in serie), default=0.0) or 1.0
 
-    contexto = {
-        "request": request,
+    return {
         "user": usuario,
         "titulo": "Painel",
         "kpis": {
@@ -135,4 +122,29 @@ def dashboard(
         # Funcionário (estoque) não vê receita — mostra a fila de separação no lugar.
         "mostra_vendas": usuario.perfil != "funcionario",
     }
-    return templates.TemplateResponse(request, "dashboard.html", contexto)
+
+
+@router.get("/", response_class=HTMLResponse)
+def dashboard(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_PERFIS)),
+):
+    return templates.TemplateResponse(
+        request, "dashboard.html", _montar_contexto(request, db, usuario)
+    )
+
+
+@router.get("/painel/cartoes", response_class=HTMLResponse)
+def cartoes_painel(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_PERFIS)),
+):
+    """Fragmento dos KPIs + gráfico + últimos pedidos, re-buscado pelo realtime.
+
+    Reusa o mesmo contexto da página, então o RBAC (receita/financeiro por perfil) vale igual.
+    """
+    return templates.TemplateResponse(
+        request, "dashboard/_kpis.html", _montar_contexto(request, db, usuario)
+    )

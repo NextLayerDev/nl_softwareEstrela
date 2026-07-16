@@ -34,6 +34,18 @@ def listar_usuarios(
     return templates.TemplateResponse(request, "usuarios/index.html", contexto)
 
 
+# Antes de qualquer rota /usuarios/{usuario_id}: senão "lista" seria lido como id (422).
+@router.get("/usuarios/lista", response_class=HTMLResponse)
+def fragmento_lista_usuarios(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    """Corpo da tabela, re-buscado pelo realtime quando um usuário é criado ou alterado."""
+    contexto = {"user": usuario, "usuarios": usuario_controller.listar(db)}
+    return templates.TemplateResponse(request, "usuarios/_linhas.html", contexto)
+
+
 @router.get("/usuarios/novo", response_class=HTMLResponse)
 def form_novo_usuario(
     request: Request,

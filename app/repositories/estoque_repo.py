@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models.enums import EstoqueModo, RotuloAprox
+from app.core.estoque_alertas import clausula_abaixo_minimo
 from app.models.inventario import Inventario
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
@@ -63,14 +63,7 @@ class EstoqueRepository:
         stmt = (
             select(ProdutoVariacao)
             .options(joinedload(ProdutoVariacao.produto))
-            .where(
-                ProdutoVariacao.ativo.is_(True),
-                or_(
-                    (ProdutoVariacao.estoque_modo == EstoqueModo.EXATO)
-                    & (ProdutoVariacao.estoque_fisico <= ProdutoVariacao.estoque_minimo),
-                    ProdutoVariacao.rotulo_aprox.in_([RotuloAprox.POUCO, RotuloAprox.ACABOU]),
-                ),
-            )
+            .where(ProdutoVariacao.ativo.is_(True), clausula_abaixo_minimo())
             .limit(limit)
         )
         return list(db.scalars(stmt))

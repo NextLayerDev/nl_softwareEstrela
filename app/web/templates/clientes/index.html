@@ -26,9 +26,11 @@
         class="input w-full pl-9"
         autocomplete="off"
         hx-get="/clientes/busca"
-        hx-trigger="keyup changed delay:250ms, search"
+        hx-trigger="keyup changed delay:250ms, search, rt-refresh"
         hx-target="#tbody-clientes"
         hx-indicator="#busca-load"
+        {# Seguro re-disparar: com a busca vazia a rota devolve a lista completa. #}
+        data-rt-trigger="cliente.criado,cliente.atualizado,cliente.inativado,cliente.excluido"
       />
     </div>
     <span id="busca-load" class="carregando text-sm text-gray-400" role="status">buscando…</span>

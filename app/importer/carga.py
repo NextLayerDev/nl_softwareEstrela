@@ -21,6 +21,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.importer.parser import ProdutoCanonico
 from app.models.categoria import Categoria
 from app.models.enums import EstoqueModo, OrigemMov, TipoMov
@@ -177,6 +178,21 @@ def carregar(
     if dry_run:
         db.rollback()
     else:
+        # Um único resumo: a carga escreve as movimentações direto (sem passar pelo
+        # estoque_service), então nada dispara por linha — e nem deveria, seriam milhares.
+        # O emit entra antes do commit de propósito: o NOTIFY é transacional.
+        eventos.emitir(
+            db,
+            "importacao.concluida",
+            {
+                "produtos_criados": res.produtos_criados,
+                "produtos_atualizados": res.produtos_atualizados,
+                "variacoes_criadas": res.variacoes_criadas,
+                "variacoes_atualizadas": res.variacoes_atualizadas,
+                "movimentacoes_criadas": res.movimentacoes_criadas,
+            },
+            audiencia=eventos.SEP_AUD,
+        )
         db.commit()
 
     return res

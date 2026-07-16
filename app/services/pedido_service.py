@@ -6,10 +6,11 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.core.errors import NaoEncontradoError, PermissaoNegadaError, RegraNegocioError
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
-from app.models.enums import StatusConta, StatusPedido
+from app.models.enums import Perfil, StatusConta, StatusPedido
 from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import Produto, ProdutoVariacao
 from app.repositories.pedido_repo import pedido_repo
@@ -201,6 +202,14 @@ class PedidoService:
         pedido.numero = pedido_repo.proximo_numero(db)
         pedido.status = StatusPedido.CONFIRMADO
         db.flush()
+        # O funcionário parado na fila de separação vê o pedido entrar na hora.
+        eventos.emitir(
+            db,
+            "pedido.confirmado",
+            self._dados_pedido(pedido),
+            audiencia=eventos.SEP_AUD,
+            vendedor_id=pedido.vendedor_id,
+        )
         return pedido
 
     def iniciar_separacao(self, db: Session, pedido_id: int) -> Pedido:
@@ -212,6 +221,14 @@ class PedidoService:
         if pedido.status == StatusPedido.CONFIRMADO:
             pedido.status = StatusPedido.SEPARACAO
             db.flush()
+            eventos.emitir(
+                db,
+                "pedido.status_alterado",
+                self._dados_pedido(pedido),
+                audiencia=eventos.SEP_AUD,
+                vendedor_id=pedido.vendedor_id,
+                silencioso=True,
+            )
         return pedido
 
     def marcar_item_separado(
@@ -229,6 +246,21 @@ class PedidoService:
             raise NaoEncontradoError("Item do pedido não encontrado.")
         item.separado = separado
         db.flush()
+        # Dois tablets conferindo o mesmo pedido enxergam o tique um do outro.
+        feitos = sum(1 for i in pedido.itens if i.separado)
+        eventos.emitir(
+            db,
+            "separacao.item_conferido",
+            {
+                **self._dados_pedido(pedido),
+                "item_id": item.id,
+                "separado": item.separado,
+                "feitos": feitos,
+                "itens": len(pedido.itens),
+            },
+            audiencia=eventos.SEP_AUD,
+            silencioso=True,
+        )
         return item
 
     def concluir_separacao(self, db: Session, pedido_id: int) -> Pedido:
@@ -241,6 +273,14 @@ class PedidoService:
             raise RegraNegocioError("Há itens ainda não conferidos na separação.")
         pedido.status = StatusPedido.SEPARADO
         db.flush()
+        # Sai da fila do funcionário e fica pronto para o financeiro faturar.
+        eventos.emitir(
+            db,
+            "separacao.concluida",
+            self._dados_pedido(pedido),
+            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            vendedor_id=pedido.vendedor_id,
+        )
         return pedido
 
     def faturar(self, db: Session, pedido_id: int, usuario_id: int) -> Pedido:
@@ -262,8 +302,16 @@ class PedidoService:
 
         pedido.status = StatusPedido.FATURADO
         pedido.faturado_em = datetime.now(UTC)
-        self._gerar_contas_receber(db, pedido)
+        contas = self._gerar_contas_receber(db, pedido)
         db.flush()
+        # Cada baixar() acima já emitiu estoque.movimentado; aqui é o fato do faturamento.
+        eventos.emitir(
+            db,
+            "pedido.faturado",
+            {**self._dados_pedido(pedido), "contas_geradas": len(contas or [])},
+            audiencia=eventos.FIN_AUD + (Perfil.FUNCIONARIO.value,),
+            vendedor_id=pedido.vendedor_id,
+        )
         return pedido
 
     def cancelar(self, db: Session, pedido_id: int, usuario_id: int) -> Pedido:
@@ -285,6 +333,14 @@ class PedidoService:
                 estoque_service.estornar(db, variacao, item.qtd, usuario_id, pedido.id)
         pedido.status = StatusPedido.CANCELADO
         db.flush()
+        # Sai da fila de separação em todos os terminais.
+        eventos.emitir(
+            db,
+            "pedido.cancelado",
+            self._dados_pedido(pedido),
+            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            vendedor_id=pedido.vendedor_id,
+        )
         return pedido
 
     def entregar(self, db: Session, pedido_id: int) -> Pedido:
@@ -295,7 +351,26 @@ class PedidoService:
             raise RegraNegocioError("Apenas pedidos faturados podem ser marcados como entregues.")
         pedido.status = StatusPedido.ENTREGUE
         db.flush()
+        eventos.emitir(
+            db,
+            "pedido.status_alterado",
+            self._dados_pedido(pedido),
+            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            vendedor_id=pedido.vendedor_id,
+        )
         return pedido
+
+    # ------------------------------------------------------- eventos
+    def _dados_pedido(self, pedido: Pedido) -> dict:
+        """Payload comum dos eventos de pedido: só ids/primitivos, nada de custo."""
+        return {
+            "pedido_id": pedido.id,
+            "numero": pedido.numero,
+            "status": str(pedido.status),
+            "cliente": pedido.cliente.nome if pedido.cliente else None,
+            "vendedor_id": pedido.vendedor_id,
+            "total": str(pedido.total or Decimal("0")),
+        }
 
     # ------------------------------------------------------- contas a receber
     def _parse_parcelas(self, condicao: str | None) -> list[int]:

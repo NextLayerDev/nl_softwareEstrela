@@ -27,6 +27,21 @@ def fila_separacao(
     return templates.TemplateResponse(request, "separacao/index.html", contexto)
 
 
+# Fragmento da fila, re-buscado pelo realtime quando um pedido entra ou sai dela.
+# Precisa vir ANTES de /separacao/{pedido_id}: aquela rota casa por ordem de declaração e
+# tentaria converter "fila" em int (422).
+@router.get("/separacao/fila", response_class=HTMLResponse)
+def fragmento_fila(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_SEP)),
+):
+    pedidos = pedido_controller.fila_separacao(db)
+    return templates.TemplateResponse(
+        request, "separacao/_fila.html", {"user": usuario, "pedidos": pedidos}
+    )
+
+
 # ===================================================================== CONFERÊNCIA
 @router.get("/separacao/{pedido_id}", response_class=HTMLResponse)
 def conferencia(
@@ -45,6 +60,20 @@ def conferencia(
         "total": total,
     }
     return templates.TemplateResponse(request, "separacao/conferencia.html", contexto)
+
+
+@router.get("/separacao/{pedido_id}/progresso", response_class=HTMLResponse)
+def fragmento_progresso(
+    request: Request,
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_SEP)),
+):
+    """Progresso da conferência — dois tablets no mesmo pedido veem o tique um do outro."""
+    pedido = pedido_controller.get_separacao(db, pedido_id)
+    feitos, total = progresso_separacao(pedido)
+    contexto = {"user": usuario, "pedido": pedido, "feitos": feitos, "total": total}
+    return templates.TemplateResponse(request, "separacao/_progresso.html", contexto)
 
 
 @router.post("/separacao/{pedido_id}/itens/{item_id}", response_class=HTMLResponse)

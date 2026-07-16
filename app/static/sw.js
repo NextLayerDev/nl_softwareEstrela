@@ -1,11 +1,12 @@
 // Service worker network-first: sempre busca a versão do servidor; cai para cache só offline.
 // Evita que um terminal fique preso em uma versão antiga do sistema.
-const CACHE = "estrela-v2";
+const CACHE = "estrela-v3";
 const ESTATICOS = [
   "/static/css/output.css",
   "/static/js/htmx.min.js",
   "/static/js/alpine.min.js",
   "/static/js/ui.js",
+  "/static/js/realtime.js",
   "/static/fonts/Inter-Regular.woff2",
   "/static/fonts/Inter-Medium.woff2",
   "/static/fonts/Inter-SemiBold.woff2",

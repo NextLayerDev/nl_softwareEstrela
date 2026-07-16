@@ -1,0 +1,13 @@
+{% from "_icones.html" import icone %}
+{% for m in movimentacoes %}
+<tr>
+  <td>{{ m.criado_em.strftime("%d/%m/%Y %H:%M") if m.criado_em else "—" }}</td>
+  <td>{{ m.tipo.value }}</td>
+  <td class="text-right">{{ m.qtd }}</td>
+  <td class="text-right font-semibold">{{ m.saldo_apos }}</td>
+  <td>{{ m.origem.value }}</td>
+  <td>{{ m.motivo or ("ref #" ~ m.ref_id if m.ref_id else "—") }}</td>
+</tr>
+{% else %}
+<tr><td colspan="6"><div class="vazio"><span class="vazio-icone" aria-hidden="true">{{ icone("caixa") }}</span><p>Sem movimentações.</p></div></td></tr>
+{% endfor %}

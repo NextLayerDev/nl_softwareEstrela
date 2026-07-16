@@ -2,11 +2,22 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.core.security import hash_senha, senha_fraca
 from app.models.usuario import Usuario
 from app.repositories.usuario_repo import usuario_repo
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+
+
+def _dados_usuario(usuario: Usuario) -> dict:
+    """Payload dos eventos de usuário. Jamais inclui senha_hash."""
+    return {
+        "usuario_id": usuario.id,
+        "nome": usuario.nome,
+        "perfil": usuario.perfil,
+        "ativo": usuario.ativo,
+    }
 
 
 class UsuarioService:
@@ -31,7 +42,9 @@ class UsuarioService:
             perfil=str(dados.perfil),
             ativo=dados.ativo,
         )
-        return usuario_repo.add(db, usuario)
+        usuario_repo.add(db, usuario)
+        eventos.emitir(db, "usuario.criado", _dados_usuario(usuario), audiencia=eventos.ADMIN_AUD)
+        return usuario
 
     def atualizar(self, db: Session, usuario_id: int, dados: UsuarioUpdate) -> Usuario:
         usuario = self.obter(db, usuario_id)
@@ -53,7 +66,25 @@ class UsuarioService:
         if desativou or trocou_perfil:
             usuario.token_version += 1
         usuario_repo.flush(db)
+        eventos.emitir(
+            db, "usuario.atualizado", _dados_usuario(usuario), audiencia=eventos.ADMIN_AUD
+        )
+        if desativou or trocou_perfil:
+            self._invalidar_sessao(db, usuario)
         return usuario
+
+    def _invalidar_sessao(self, db: Session, usuario: Usuario) -> None:
+        """Derruba os terminais abertos deste usuário — o token dele acabou de morrer.
+
+        Sem isso, a tela aberta continuaria parecendo válida até a próxima requisição HTTP.
+        """
+        eventos.emitir(
+            db,
+            "sessao.invalidada",
+            {"usuario_id": usuario.id, "token_version": usuario.token_version},
+            audiencia=(),
+            target_usuario_id=usuario.id,
+        )
 
     def resetar_senha(self, db: Session, usuario_id: int, nova_senha: str) -> Usuario:
         erro = senha_fraca(nova_senha)
@@ -64,6 +95,7 @@ class UsuarioService:
         # Reset de senha invalida sessões antigas (token roubado/compartilhado).
         usuario.token_version += 1
         usuario_repo.flush(db)
+        self._invalidar_sessao(db, usuario)
         return usuario
 
 

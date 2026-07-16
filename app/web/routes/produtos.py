@@ -80,6 +80,29 @@ def busca_produtos(
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
 
 
+# Antes de qualquer rota /produtos/{produto_id}: senão o FastAPI casaria "linha" como id (422).
+@router.get("/produtos/linha/{produto_id}", response_class=HTMLResponse)
+def fragmento_linha_produto(
+    request: Request,
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_current_user),
+):
+    """Uma linha da listagem, re-buscada pelo realtime quando aquele produto muda.
+
+    Troca cirúrgica: refazer a lista chamaria /produtos/busca e resetaria o scroll infinito,
+    jogando o operador de volta ao primeiro bloco.
+    """
+    produto = produto_controller.obter(db, produto_id)
+    contexto = {
+        "user": usuario,
+        "produtos": [produto],
+        "pode_editar": usuario.perfil == "admin",
+        "ver_custo": pode_ver_custo(usuario.perfil),
+    }
+    return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
+
+
 @router.get("/produtos/novo", response_class=HTMLResponse)
 def form_novo_produto(
     request: Request,

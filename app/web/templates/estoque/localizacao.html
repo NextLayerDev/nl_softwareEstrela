@@ -31,7 +31,13 @@
     <span id="local-load" class="carregando mt-2 block text-center" role="status">buscando…</span>
   </div>
 
-  <div id="cartoes-local" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  {# Troca só o cartão que se mexeu: refazer a busca chamaria /estoque/localizacao, que
+     devolve vazio com a caixa em branco — e limparia a tela do tablet. #}
+  <div id="cartoes-local" class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+       data-rt-linha="estoque.movimentado,estoque.alerta_minimo"
+       data-rt-linha-key="variacao_id"
+       data-rt-linha-get="/estoque/cartao/"
+       data-rt-linha-alvo="#cartao-">
     {% include "estoque/_cartoes_local.html" %}
   </div>
 </div>

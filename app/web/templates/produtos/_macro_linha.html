@@ -1,0 +1,37 @@
+{# Macro da linha de produto, reutilizada na listagem e na troca cirúrgica do realtime. #}
+{% from "_ui.html" import confirmar_botao %}
+{% macro linha(p, ver_custo, pode_editar) %}
+{% set vimg = (p.variacoes | selectattr("imagem_url") | list | first) %}
+<tr id="linha-produto-{{ p.id }}" class="{{ '' if p.ativo else 'opacity-50' }}">
+  <td>
+    {% if vimg %}
+      <img src="{{ foto_url(vimg.imagem_url) }}" alt="{{ p.codigo }}" class="h-20 w-20 rounded object-cover" />
+    {% else %}
+      <span class="text-xs text-gray-300">—</span>
+    {% endif %}
+  </td>
+  <td class="font-mono">{{ p.codigo }}</td>
+  <td>{{ p.descricao }}</td>
+  <td>{{ p.categoria.nome if p.categoria else "—" }}</td>
+  <td class="text-right">{{ p.preco_pouca_qtd | moeda }}</td>
+  <td class="text-right">{{ p.preco_muita_qtd | moeda }}</td>
+  {% if ver_custo %}<td class="text-right">{{ p.preco_custo | moeda }}</td>{% endif %}
+  <td>
+    {% for v in p.variacoes %}
+      <span class="inline-block rounded bg-marca-fundo px-2 py-0.5 text-xs">
+        {{ v.cor or "padrão" }}
+        {% if v.estoque_modo.value == "EXATO" %}({{ v.estoque_fisico }}){% elif v.rotulo_aprox %}({{ v.rotulo_aprox.value | lower }}){% endif %}
+      </span>
+    {% else %}—{% endfor %}
+  </td>
+  {% if pode_editar %}
+  <td class="whitespace-nowrap text-right">
+    <a href="/produtos/{{ p.id }}/editar" class="btn-secundario">Editar</a>
+    {% if p.ativo %}
+    {{ confirmar_botao("/produtos/" ~ p.id ~ "/inativar", "Inativar", "Inativar produto",
+        "O produto " ~ p.codigo ~ " deixa de aparecer para novos pedidos. O estoque e o histórico são mantidos.") }}
+    {% endif %}
+  </td>
+  {% endif %}
+</tr>
+{% endmacro %}

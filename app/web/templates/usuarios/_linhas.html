@@ -1,0 +1,25 @@
+{% from "_icones.html" import icone %}
+{% for u in usuarios %}
+<tr class="{{ '' if u.ativo else 'opacity-60' }}">
+  <td>{{ u.nome }}</td>
+  <td>{{ u.email }}</td>
+  <td><span class="selo-neutro">{{ u.perfil }}</span></td>
+  <td>
+    {% if u.ativo %}<span class="selo-muito">Ativo</span>
+    {% else %}<span class="selo-neutro">Inativo</span>{% endif %}
+  </td>
+  <td class="whitespace-nowrap text-right">
+    <a href="/usuarios/{{ u.id }}/editar" class="btn-secundario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("editar") }}</span> Editar
+    </a>
+    <button type="button" class="btn-secundario" @click="abrir({{ u.id }}, $event)">Resetar senha</button>
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="5">
+  <div class="vazio">
+    <span class="vazio-icone" aria-hidden="true">{{ icone("usuarios") }}</span>
+    <p>Nenhum usuário cadastrado.</p>
+  </div>
+</td></tr>
+{% endfor %}

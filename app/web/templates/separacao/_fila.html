@@ -1,0 +1,24 @@
+{% from "_icones.html" import icone %}
+{% for p in pedidos %}
+<tr>
+  <td>{{ p.numero or p.id }}</td>
+  <td>{{ p.cliente.nome }}</td>
+  <td>{{ p.itens | length }}</td>
+  <td><span class="selo-info">{{ p.status }}</span></td>
+  <td>{{ p.criado_em.strftime("%d/%m %H:%M") if p.criado_em else "" }}</td>
+  <td class="text-right">
+    <a href="/separacao/{{ p.id }}" class="btn-primario">
+      <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Separar
+    </a>
+  </td>
+</tr>
+{% else %}
+<tr>
+  <td colspan="6">
+    <div class="vazio">
+      <span class="vazio-icone" aria-hidden="true">{{ icone("lista") }}</span>
+      <p>Fila vazia.</p>
+    </div>
+  </td>
+</tr>
+{% endfor %}

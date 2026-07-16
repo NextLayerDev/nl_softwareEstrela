@@ -145,6 +145,32 @@
     @apply alerta border-ok/30 bg-ok-bg text-ok;
   }
 
+  /* ---------- Toasts do tempo real ---------- */
+  /* Reusa .alerta-ok / .alerta-erro; aqui só a sombra, a entrada e o clique para fechar. */
+  .rt-toast {
+    @apply pointer-events-auto cursor-pointer shadow-drawer;
+    animation: rt-entra 0.2s ease-out;
+  }
+  .rt-toast-saindo {
+    @apply opacity-0 transition-opacity duration-200;
+  }
+  @keyframes rt-entra {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  /* Quem prefere menos movimento não recebe a animação de entrada. */
+  @media (prefers-reduced-motion: reduce) {
+    .rt-toast {
+      animation: none;
+    }
+  }
+
   /* ---------- Skip link (acessibilidade) ---------- */
   .skip-link {
     @apply sr-only;

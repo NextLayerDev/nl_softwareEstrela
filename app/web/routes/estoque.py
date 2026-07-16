@@ -58,6 +58,44 @@ def busca_estoque(
     return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
 
 
+@router.get("/estoque/linha/{variacao_id}", response_class=HTMLResponse)
+def fragmento_linha(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
+):
+    """Uma linha do estoque, re-buscada pelo realtime quando aquela variação se mexe.
+
+    Troca cirúrgica: quem está na tela vê só a linha afetada mudar, sem perder a busca.
+    """
+    variacao = estoque_repo.get_variacao(db, variacao_id)
+    if variacao is None:
+        raise NaoEncontradoError("Variação não encontrada.")
+    contexto = {
+        "user": usuario,
+        "variacoes": [variacao],
+        "pode_entrada": usuario.perfil in ("admin", "funcionario"),
+        "pode_ajuste": usuario.perfil == "admin",
+    }
+    return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
+
+
+@router.get("/estoque/cartao/{variacao_id}", response_class=HTMLResponse)
+def fragmento_cartao(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
+):
+    """Um cartão da tela de localização, re-buscado pelo realtime quando a variação se mexe."""
+    variacao = estoque_repo.get_variacao(db, variacao_id)
+    if variacao is None:
+        raise NaoEncontradoError("Variação não encontrada.")
+    contexto = {"user": usuario, "variacoes": [variacao]}
+    return templates.TemplateResponse(request, "estoque/_cartoes_local.html", contexto)
+
+
 @router.get("/estoque/localizacao", response_class=HTMLResponse)
 def localizacao(
     request: Request,
@@ -91,6 +129,21 @@ def movimentacoes(
         "movimentacoes": movs,
     }
     return templates.TemplateResponse(request, "estoque/movimentacoes.html", contexto)
+
+
+@router.get("/estoque/{variacao_id}/movimentacoes/fragmento", response_class=HTMLResponse)
+def fragmento_movimentacoes(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
+):
+    """Corpo da tabela do histórico, re-buscado pelo realtime a cada movimentação."""
+    variacao = estoque_repo.get_variacao(db, variacao_id)
+    if variacao is None:
+        raise NaoEncontradoError("Variação de produto não encontrada.")
+    contexto = {"user": usuario, "movimentacoes": estoque_controller.historico(db, variacao_id)}
+    return templates.TemplateResponse(request, "estoque/_linhas_mov.html", contexto)
 
 
 # ============================================================ ENTRADA / AJUSTE

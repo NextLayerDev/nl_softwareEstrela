@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ENV: str = "dev"
 
+    # Realtime (WebSocket). O barramento é o próprio Postgres via LISTEN/NOTIFY: funciona
+    # entre os workers do Gunicorn e sobrevive ao job/importador, que commitam fora do request.
+    REALTIME_ENABLED: bool = True
+    REALTIME_CHANNEL: str = "estrela_eventos"
+
     # Hosts aceitos pelo TrustedHostMiddleware em produção (barra Host-header spoofing).
     # Em dev não é aplicado (o TestClient usa "testserver"). Aceita curingas (*.easypanel.host).
     # "*" = desliga a checagem (qualquer host). Por ora liberado; dá pra restringir depois
@@ -51,6 +56,20 @@ class Settings(BaseSettings):
     @property
     def allowed_hosts_list(self) -> list[str]:
         return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+
+    @property
+    def libpq_url(self) -> str:
+        """DATABASE_URL sem o dialeto do SQLAlchemy, para o psycopg cru do listener.
+
+        O DATABASE_URL é 'postgresql+psycopg://…' e o psycopg não entende o '+psycopg'.
+        """
+        from sqlalchemy.engine import make_url
+
+        return (
+            make_url(self.DATABASE_URL)
+            .set(drivername="postgresql")
+            .render_as_string(hide_password=False)
+        )
 
     @model_validator(mode="after")
     def _exige_segredos_fortes_em_prod(self) -> Settings:

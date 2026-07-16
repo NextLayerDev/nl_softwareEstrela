@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,9 +50,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         scheduler = iniciar_scheduler()
         logger.info("Agendador de jobs iniciado.")
+
+    # Listener de realtime: um por worker, escutando o canal do Postgres. Roda também em dev
+    # (ao contrário do agendador), senão não dá para testar o realtime na LAN. Fica fora dos
+    # testes: a suíte não sobe banco para o listener e não precisa dele.
+    parar_listener: asyncio.Event | None = None
+    task_listener: asyncio.Task | None = None
+    if settings.REALTIME_ENABLED and "pytest" not in sys.modules:
+        from app.realtime.listener import supervisionar
+
+        parar_listener = asyncio.Event()
+        task_listener = asyncio.create_task(supervisionar(parar_listener))
     try:
         yield
     finally:
+        if task_listener is not None and parar_listener is not None:
+            parar_listener.set()
+            task_listener.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task_listener
         if scheduler is not None:
             scheduler.shutdown(wait=False)
 
@@ -152,6 +171,7 @@ def _registrar_routers() -> None:
         "importacao",
         "empresa",
         "guia",
+        "realtime",
     ]
     for nome in web_modulos:
         caminho = f"app.web.routes.{nome}"

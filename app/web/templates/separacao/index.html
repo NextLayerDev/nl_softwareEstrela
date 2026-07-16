@@ -20,30 +20,12 @@
           <th scope="col"></th>
         </tr>
       </thead>
-      <tbody>
-        {% for p in pedidos %}
-        <tr>
-          <td>{{ p.numero or p.id }}</td>
-          <td>{{ p.cliente.nome }}</td>
-          <td>{{ p.itens | length }}</td>
-          <td><span class="selo-info">{{ p.status }}</span></td>
-          <td>{{ p.criado_em.strftime("%d/%m %H:%M") if p.criado_em else "" }}</td>
-          <td class="text-right">
-            <a href="/separacao/{{ p.id }}" class="btn-primario">
-              <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Separar
-            </a>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="6">
-            <div class="vazio">
-              <span class="vazio-icone" aria-hidden="true">{{ icone("lista") }}</span>
-              <p>Fila vazia.</p>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
+      {# A fila se refaz sozinha quando um pedido entra (confirmado) ou sai (cancelado,
+         separado, faturado) — o funcionário não precisa recarregar a tela. #}
+      <tbody id="fila-tbody"
+             data-rt="pedido.confirmado,pedido.cancelado,pedido.faturado,separacao.concluida,pedido.status_alterado"
+             data-rt-get="/separacao/fila">
+        {% include "separacao/_fila.html" %}
       </tbody>
     </table>
   </div>

@@ -1,5 +1,10 @@
-{# Fragmento HTMX: barra de progresso + botão concluir. Trocado a cada item conferido. #}
-<div id="progresso" class="card">
+{# Fragmento HTMX: barra de progresso + botão concluir. Trocado a cada item conferido —
+   pelo próprio operador (hx-post) ou pelo realtime, se outro tablet conferir este pedido. #}
+<div id="progresso" class="card"
+     data-rt="separacao.item_conferido"
+     data-rt-se="pedido_id={{ pedido.id }}"
+     data-rt-get="/separacao/{{ pedido.id }}/progresso"
+     data-rt-swap="outerHTML">
   {% set pct = (feitos * 100 // total) if total else 0 %}
   <div class="mb-2 flex items-center justify-between text-sm">
     <span>Conferidos: <strong>{{ feitos }}</strong> de {{ total }}</span>

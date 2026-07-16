@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.models.auditoria import Auditoria
 from app.models.conta_receber import ContaReceber
@@ -59,6 +60,18 @@ class FinanceiroService:
             )
         )
         db.flush()
+        eventos.emitir(
+            db,
+            "conta.baixada",
+            {
+                "conta_id": conta.id,
+                "pedido_id": conta.pedido_id,
+                "parcela": conta.parcela,
+                "valor": str(conta.valor),
+                "forma_pagamento": conta.forma_pagamento,
+            },
+            audiencia=eventos.FIN_AUD,
+        )
         return conta
 
     def marcar_atrasados(self, db: Session, hoje: date | None = None) -> int:
@@ -72,6 +85,14 @@ class FinanceiroService:
             conta.status = StatusConta.ATRASADO
         if contas:
             db.flush()
+            # Um resumo, não um evento por conta: o job noturno pode marcar centenas.
+            # Emitir aqui (e não na rota) cobre também o APScheduler, que commita sozinho.
+            eventos.emitir(
+                db,
+                "conta.atrasada",
+                {"quantidade": len(contas)},
+                audiencia=eventos.FIN_AUD,
+            )
         return len(contas)
 
 

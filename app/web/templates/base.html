@@ -15,6 +15,7 @@
   <script src="/static/js/ui.js?v={{ asset_version }}"></script>
   <script defer src="/static/js/alpine.min.js"></script>
   <script src="/static/js/htmx.min.js"></script>
+  <script src="/static/js/realtime.js?v={{ asset_version }}"></script>
 </head>
 {% from "_icones.html" import icone %}
 <body x-data="{ sidebarAberta: false }" class="min-h-screen bg-marca-fundo font-sans text-sidebar">
@@ -95,6 +96,18 @@
         </div>
         <div class="flex items-center gap-2">{% block acoes %}{% endblock %}</div>
         {% if user %}
+        {# Estado do tempo real: só aparece quando cai (silencioso enquanto tudo está bem) #}
+        <div class="flex items-center gap-2">
+          <button type="button" x-show="$store.rt && $store.rt.naoLidos > 0" x-cloak
+                  @click="$store.rt.limpar()" class="selo-tem !py-1"
+                  :aria-label="`${$store.rt.naoLidos} novidades. Clique para limpar.`">
+            <span aria-hidden="true">●</span> <span x-text="$store.rt.naoLidos"></span>
+          </button>
+          <span x-show="$store.rt && !$store.rt.conectado" x-cloak role="status"
+                class="selo-acabou !py-1" title="Sem conexão com o servidor; reconectando…">
+            Offline
+          </span>
+        </div>
         <div class="ml-1 hidden items-center gap-3 border-l border-marca-borda pl-3 text-sm sm:flex">
           <span class="text-gold-700">{{ user.nome }} <span class="text-gray-400">({{ user.perfil }})</span></span>
           <a href="/logout" class="btn-secundario !py-1.5">
@@ -110,6 +123,10 @@
       </main>
     </div>
   </div>
+
+  {# Toasts do tempo real. Fora do #flash de propósito: aquele é da navegação (PRG). #}
+  <div id="rt-toasts" aria-live="polite"
+       class="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"></div>
 
   <script>
     if ("serviceWorker" in navigator) {

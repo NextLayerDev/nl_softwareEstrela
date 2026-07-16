@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.models.enums import EstoqueModo, OrigemMov, StatusInventario
 from app.models.inventario import Inventario, InventarioItem
@@ -44,6 +45,12 @@ class InventarioService:
                 )
             )
         db.flush()
+        eventos.emitir(
+            db,
+            "inventario.aberto",
+            {"inventario_id": inv.id, "descricao": inv.descricao, "itens": len(variacoes)},
+            audiencia=eventos.SEP_AUD,
+        )
         return inv
 
     def registrar_contagem(
@@ -62,6 +69,19 @@ class InventarioService:
             raise RegraNegocioError("A quantidade contada não pode ser negativa.")
         item.qtd_contada = qtd_contada
         db.flush()
+        # Contagem em vários tablets ao mesmo tempo: cada um vê o avanço do outro.
+        eventos.emitir(
+            db,
+            "inventario.contagem_registrada",
+            {
+                "inventario_id": inv.id,
+                "item_id": item.id,
+                "variacao_id": item.produto_variacao_id,
+                "qtd_contada": item.qtd_contada,
+            },
+            audiencia=eventos.SEP_AUD,
+            silencioso=True,
+        )
         return item
 
     def aplicar(self, db: Session, inventario_id: int, usuario_id: int) -> Inventario:
@@ -95,6 +115,13 @@ class InventarioService:
         inv.aplicado_por = usuario_id
         inv.aplicado_em = datetime.now(UTC)
         db.flush()
+        # Cada ajustar() acima já emitiu estoque.movimentado; aqui é o fecho do inventário.
+        eventos.emitir(
+            db,
+            "inventario.aplicado",
+            {"inventario_id": inv.id, "itens_ajustados": len(itens_contados)},
+            audiencia=eventos.SEP_AUD,
+        )
         return inv
 
 

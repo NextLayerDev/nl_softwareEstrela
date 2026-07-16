@@ -2,12 +2,34 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.models.enums import EstoqueModo, OrigemMov
 from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
 from app.repositories.produto_repo import produto_repo
 from app.schemas.produto import ProdutoCreate, ProdutoUpdate, VariacaoCreate
 from app.services.estoque_service import estoque_service
+
+
+def _dados_produto(produto: Produto) -> dict:
+    """Payload dos eventos de produto. Jamais inclui preco_custo nem margem."""
+    return {
+        "produto_id": produto.id,
+        "codigo": produto.codigo,
+        "descricao": produto.descricao,
+        "ativo": produto.ativo,
+    }
+
+
+def _dados_variacao(variacao: ProdutoVariacao) -> dict:
+    """Payload dos eventos de variação. Jamais inclui preco_custo nem margem."""
+    return {
+        "variacao_id": variacao.id,
+        "produto_id": variacao.produto_id,
+        "codigo": variacao.produto.codigo if variacao.produto else None,
+        "cor": variacao.cor,
+        "ativo": variacao.ativo,
+    }
 
 
 class ProdutoService:
@@ -63,7 +85,9 @@ class ProdutoService:
             produto.codigos_alt.append(
                 ProdutoCodigoAlt(codigo_alt=c.codigo_alt, fornecedor_id=c.fornecedor_id)
             )
-        return produto_repo.add(db, produto)
+        produto_repo.add(db, produto)
+        eventos.emitir(db, "produto.criado", _dados_produto(produto), audiencia=eventos.TODOS)
+        return produto
 
     def atualizar(self, db: Session, produto_id: int, dados: ProdutoUpdate) -> Produto:
         produto = self.obter(db, produto_id)
@@ -94,6 +118,7 @@ class ProdutoService:
             if codigo_alt not in existentes:
                 produto.codigos_alt.append(ProdutoCodigoAlt(codigo_alt=codigo_alt))
         db.flush()
+        eventos.emitir(db, "produto.atualizado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
@@ -101,6 +126,7 @@ class ProdutoService:
         produto = self.obter(db, produto_id)
         produto.ativo = False
         db.flush()
+        eventos.emitir(db, "produto.inativado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
 
     def obter_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
@@ -113,6 +139,7 @@ class ProdutoService:
         variacao = self.obter_variacao(db, variacao_id)
         variacao.cor = cor
         db.flush()
+        eventos.emitir(db, "variacao.renomeada", _dados_variacao(variacao), audiencia=eventos.TODOS)
         return variacao
 
     def adicionar_variacao(
@@ -141,7 +168,11 @@ class ProdutoService:
         )
         produto.variacoes.append(variacao)
         db.flush()
+        eventos.emitir(
+            db, "variacao.adicionada", _dados_variacao(variacao), audiencia=eventos.TODOS
+        )
         if dados.estoque_fisico and dados.estoque_fisico > 0:
+            # entrada() emite estoque.movimentado por conta própria — não duplicar aqui.
             estoque_service.entrada(
                 db, variacao, dados.estoque_fisico, usuario_id, origem=OrigemMov.MANUAL
             )
@@ -165,10 +196,20 @@ class ProdutoService:
         if produto_repo.variacao_tem_historico(db, variacao_id):
             variacao.ativo = False
             db.flush()
+            eventos.emitir(
+                db,
+                "variacao.removida",
+                {**_dados_variacao(variacao), "acao": "inativada"},
+                audiencia=eventos.TODOS,
+            )
             return variacao, "inativada"
         # Limpa: hard-delete. Os bytes da foto vão junto com a linha (bytea no Postgres).
+        # O payload é montado antes do delete: depois do flush a instância está expirada
+        # e ler os atributos dispararia um SELECT da linha que já não existe.
+        dados_evento = {**_dados_variacao(variacao), "acao": "deletada"}
         db.delete(variacao)
         db.flush()
+        eventos.emitir(db, "variacao.removida", dados_evento, audiencia=eventos.TODOS)
         return variacao, "deletada"
 
 
