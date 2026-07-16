@@ -45,6 +45,21 @@ def index_pedidos(
     return templates.TemplateResponse(request, "pedidos/index.html", contexto)
 
 
+# Fragmento da lista, re-buscado pelo realtime a cada mudança de status.
+# Antes de /pedidos/{pedido_id}: aquela rota casa por ordem e tentaria ler "lista" como int.
+# Reusa o controller da listagem, então o vendedor continua vendo só os pedidos dele.
+@router.get("/pedidos/lista", response_class=HTMLResponse)
+def fragmento_lista(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    pedidos = pedido_controller.listar(db, usuario)
+    return templates.TemplateResponse(
+        request, "pedidos/_linhas.html", {"user": usuario, "pedidos": pedidos}
+    )
+
+
 # ===================================================================== NOVO
 @router.get("/pedidos/novo", response_class=HTMLResponse)
 def novo_pedido(
@@ -99,6 +114,27 @@ def detalhe_pedido(
         "editavel": pedido.status == StatusPedido.RASCUNHO,
     }
     return templates.TemplateResponse(request, "pedidos/detalhe.html", contexto)
+
+
+@router.get("/pedidos/{pedido_id}/estado", response_class=HTMLResponse)
+def fragmento_estado(
+    request: Request,
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Selo de status + botões do pedido, re-buscados quando ele muda em outro terminal.
+
+    Passa pelo mesmo `pedido_controller.get`, então o vendedor segue sem enxergar pedido
+    de outro vendedor.
+    """
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    contexto = {
+        "user": usuario,
+        "pedido": pedido,
+        "editavel": pedido.status == StatusPedido.RASCUNHO,
+    }
+    return templates.TemplateResponse(request, "pedidos/_estado_oob.html", contexto)
 
 
 # ===================================================================== SALDO (HTMX)

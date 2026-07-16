@@ -17,14 +17,21 @@
 {% endblock %}
 
 {% block content %}
-<div class="card mb-4 flex flex-wrap items-center justify-between gap-3">
+{# Se alguém mexer neste pedido de outro terminal (o financeiro faturar, o funcionário
+   concluir a separação), o status e os botões acompanham. A resposta é toda OOB, por isso
+   o swap é "none" — mesmo padrão do estoque/_oob.html. #}
+<div class="card mb-4 flex flex-wrap items-center justify-between gap-3"
+     data-rt="pedido.confirmado,pedido.cancelado,pedido.faturado,pedido.status_alterado,separacao.concluida"
+     data-rt-se="pedido_id={{ pedido.id }}"
+     data-rt-get="/pedidos/{{ pedido.id }}/estado"
+     data-rt-swap="none">
   <div>
     <p class="text-sm text-gray-500">Cliente</p>
     <p class="font-semibold">{{ pedido.cliente.nome }}</p>
     <p class="mt-0.5 text-xs text-gray-400">
       Vendedor: {{ pedido.vendedor.nome }} ·
       Pagamento: {{ pedido.cliente.condicao_pagto_padrao or "à vista" }} ·
-      Status: <span class="selo-neutro align-middle">{{ pedido.status.value if pedido.status.value is defined else pedido.status }}</span>
+      Status: {% include "pedidos/_status.html" %}
     </p>
   </div>
   {% include "pedidos/_acoes.html" %}

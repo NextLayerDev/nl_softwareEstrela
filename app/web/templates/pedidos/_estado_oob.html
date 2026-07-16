@@ -1,0 +1,6 @@
+{# Resposta do realtime para a tela de detalhe: troca o selo de status e os botões de ação,
+   sem recarregar a página nem perder o que o vendedor estiver digitando. #}
+{% with oob = True %}
+  {% include "pedidos/_status.html" %}
+  {% include "pedidos/_acoes.html" %}
+{% endwith %}

@@ -1,0 +1,24 @@
+{# Linhas da lista de pedidos. Fragmento: a página inclui, e o realtime re-busca em
+   /pedidos/lista quando qualquer pedido muda de status. #}
+{% from "_icones.html" import icone %}
+{% for p in pedidos %}
+<tr>
+  <td class="font-mono">{{ p.numero or "—" }}</td>
+  <td>{{ p.cliente.nome }}</td>
+  <td>{{ p.vendedor.nome }}</td>
+  <td><span class="selo-neutro">{{ p.status.value if p.status.value is defined else p.status }}</span></td>
+  <td class="text-right">{{ p.total | moeda }}</td>
+  <td>{{ p.criado_em.strftime("%d/%m/%Y %H:%M") if p.criado_em else "" }}</td>
+  <td class="text-right"><a href="/pedidos/{{ p.id }}" class="btn-secundario">Abrir</a></td>
+</tr>
+{% else %}
+<tr><td colspan="7">
+  <div class="vazio">
+    <span class="vazio-icone" aria-hidden="true">{{ icone("carrinho") }}</span>
+    <p>Nenhum pedido ainda.</p>
+    <a href="/pedidos/novo" class="btn-primario mt-1">
+      <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Criar primeiro pedido
+    </a>
+  </div>
+</td></tr>
+{% endfor %}

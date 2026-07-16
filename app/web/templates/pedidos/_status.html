@@ -1,0 +1,2 @@
+{# Selo de status do pedido. Trocado sozinho (OOB) quando o status muda em outro terminal. #}
+<span id="status-pedido" {% if oob %}hx-swap-oob="true"{% endif %} class="selo-neutro align-middle">{{ pedido.status.value if pedido.status.value is defined else pedido.status }}</span>
