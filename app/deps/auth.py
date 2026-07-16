@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import NaoAutenticadoError, PermissaoNegadaError
 from app.core.security import decodificar_token
 from app.deps.db import get_db
+from app.models.enums import tem_perfil
 from app.models.usuario import Usuario
 
 COOKIE_NOME = "estrela_token"
@@ -33,10 +34,15 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> Usuario
 
 
 def require_role(*roles: str) -> Callable[..., Usuario]:
-    """Dependency factory de RBAC: garante que o usuário tem um dos perfis."""
+    """Dependency factory de RBAC: garante que o usuário tem um dos perfis.
+
+    O perfil `dev` (manutenção) passa em qualquer conjunto — é superusuário. A exceção
+    é justamente `require_role("dev")`, usado por /deploy: como "admin" não está no
+    conjunto, o admin da empresa leva 403 mesmo sabendo a URL.
+    """
 
     def _checker(usuario: Usuario = Depends(get_current_user)) -> Usuario:
-        if usuario.perfil not in roles:
+        if not tem_perfil(usuario.perfil, *roles):
             raise PermissaoNegadaError("Você não tem permissão para acessar este recurso.")
         return usuario
 

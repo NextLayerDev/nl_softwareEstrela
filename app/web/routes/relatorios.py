@@ -8,6 +8,7 @@ from app.controllers.relatorio_controller import relatorio_controller
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
+from app.models.enums import tem_perfil
 from app.models.usuario import Usuario
 
 router = APIRouter()
@@ -40,7 +41,7 @@ def hub_relatorios(
     contexto = {
         "user": usuario,
         "titulo": "Relatórios",
-        "pode_financeiro": usuario.perfil in ("admin", "financeiro"),
+        "pode_financeiro": tem_perfil(usuario.perfil, "admin", "financeiro"),
     }
     return templates.TemplateResponse(request, "relatorios/index.html", contexto)
 

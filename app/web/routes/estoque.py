@@ -10,6 +10,7 @@ from app.core.errors import NaoEncontradoError
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
+from app.models.enums import e_admin, tem_perfil
 from app.models.usuario import Usuario
 from app.repositories.estoque_repo import estoque_repo
 from app.schemas.estoque import AjusteCreate, ContagemCreate, EntradaCreate, InventarioCreate
@@ -35,8 +36,8 @@ def index_estoque(
         "titulo": "Estoque",
         "variacoes": variacoes,
         "q": q,
-        "pode_entrada": usuario.perfil in ("admin", "funcionario"),
-        "pode_ajuste": usuario.perfil == "admin",
+        "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
+        "pode_ajuste": e_admin(usuario.perfil),
     }
     return templates.TemplateResponse(request, "estoque/index.html", contexto)
 
@@ -52,8 +53,8 @@ def busca_estoque(
     contexto = {
         "user": usuario,
         "variacoes": variacoes,
-        "pode_entrada": usuario.perfil in ("admin", "funcionario"),
-        "pode_ajuste": usuario.perfil == "admin",
+        "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
+        "pode_ajuste": e_admin(usuario.perfil),
     }
     return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
 
@@ -75,8 +76,8 @@ def fragmento_linha(
     contexto = {
         "user": usuario,
         "variacoes": [variacao],
-        "pode_entrada": usuario.perfil in ("admin", "funcionario"),
-        "pode_ajuste": usuario.perfil == "admin",
+        "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
+        "pode_ajuste": e_admin(usuario.perfil),
     }
     return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
 
@@ -161,7 +162,7 @@ def post_entrada(
         "user": usuario,
         "variacoes": [variacao],
         "pode_entrada": True,
-        "pode_ajuste": usuario.perfil == "admin",
+        "pode_ajuste": e_admin(usuario.perfil),
         "msg_ok": f"Entrada de {qtd} registrada.",
         "oob": True,
     }
@@ -202,7 +203,7 @@ def index_inventario(
         "user": usuario,
         "titulo": "Inventário",
         "inventarios": inventarios,
-        "pode_aplicar": usuario.perfil == "admin",
+        "pode_aplicar": e_admin(usuario.perfil),
     }
     return templates.TemplateResponse(request, "estoque/inventario_index.html", contexto)
 
@@ -232,7 +233,7 @@ def detalhe_inventario(
         "user": usuario,
         "titulo": f"Inventário #{inv.id}",
         "inventario": inv,
-        "pode_aplicar": usuario.perfil == "admin",
+        "pode_aplicar": e_admin(usuario.perfil),
     }
     return templates.TemplateResponse(request, "estoque/inventario_contagem.html", contexto)
 

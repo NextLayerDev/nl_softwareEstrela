@@ -44,8 +44,10 @@
 
       <nav aria-label="Navegação principal" class="flex-1 overflow-y-auto px-3 py-2 text-sm">
         {% set p = user.perfil if user else "" %}
+        {# O dev (manutenção) enxerga todos os itens: ele é superusuário. #}
+        {% set p_ve_tudo = p == "dev" %}
         {% macro item(rota, rotulo, perfis, nome_icone) %}
-          {% if p in perfis %}
+          {% if p in perfis or p_ve_tudo %}
             {% set ativo = request.url.path == rota %}
             <a href="{{ rota }}" {% if ativo %}aria-current="page"{% endif %}
                class="nav-link {{ 'nav-link-ativo' if ativo else '' }}">
@@ -58,21 +60,21 @@
         {{ item("/", "Painel", ["admin","vendedor","financeiro","funcionario"], "painel") }}
         {{ item("/guia", "Guia", ["admin","vendedor","financeiro","funcionario"], "guia") }}
 
-        {% if p in ["admin","vendedor","financeiro","funcionario"] %}
+        {% if p in ["admin","vendedor","financeiro","funcionario"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Estoque</p>
         {% endif %}
         {{ item("/estoque", "Estoque", ["admin","vendedor","financeiro","funcionario"], "caixa") }}
         {{ item("/estoque/localizacao", "Localização", ["admin","vendedor","financeiro","funcionario"], "mapa") }}
         {{ item("/produtos", "Produtos", ["admin","vendedor","financeiro","funcionario"], "etiqueta") }}
 
-        {% if p in ["admin","vendedor","financeiro","funcionario"] %}
+        {% if p in ["admin","vendedor","financeiro","funcionario"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Vendas</p>
         {% endif %}
         {{ item("/pedidos", "Pedidos", ["admin","vendedor"], "carrinho") }}
         {{ item("/separacao", "Separação", ["admin","funcionario"], "lista") }}
         {{ item("/clientes", "Clientes", ["admin","vendedor"], "usuarios") }}
 
-        {% if p in ["admin","vendedor","financeiro"] %}
+        {% if p in ["admin","vendedor","financeiro"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Gestão</p>
         {% endif %}
         {{ item("/financeiro", "Financeiro", ["admin","financeiro"], "dinheiro") }}
@@ -80,7 +82,9 @@
         {{ item("/importacao", "Importação", ["admin"], "upload") }}
         {{ item("/empresa", "Empresa", ["admin"], "engrenagem") }}
         {{ item("/usuarios", "Usuários", ["admin"], "engrenagem") }}
-        {{ item("/deploy", "Status do Deploy", ["admin"], "servidor") }}
+        {# /deploy NÃO entra no menu de propósito: é ferramenta de manutenção, acessada
+           só por URL direta, e nem o dev precisa de atalho para ela. Esconder é
+           cosmético — quem protege é o require_role("dev") nas rotas. #}
       </nav>
     </aside>
 

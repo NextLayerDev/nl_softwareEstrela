@@ -17,6 +17,8 @@ from typing import Any
 
 from starlette.websockets import WebSocket
 
+from app.models.enums import tem_perfil
+
 logger = logging.getLogger("estrela.realtime")
 
 # Código de fechamento usado quando a sessão do usuário é invalidada (troca de perfil,
@@ -54,6 +56,10 @@ class GerenciadorConexoes:
 
         Entrega dirigida a um usuário vence tudo; senão o dono do pedido recebe mesmo fora
         da audiência; senão vale o perfil.
+
+        O `dev` é superusuário e recebe qualquer audiência. A regra fica AQUI, e não
+        espalhada nas tuplas de audiência do `eventos.py`, para que uma audiência nova
+        (escrita inline num service) não esqueça dele e o deixe com a tela parada.
         """
         alvo = envelope.get("target_usuario_id")
         if alvo is not None:
@@ -61,7 +67,7 @@ class GerenciadorConexoes:
         dono = envelope.get("vendedor_id")
         if dono is not None and conexao.usuario_id == dono:
             return True
-        return conexao.perfil in envelope.get("audiencia", ())
+        return tem_perfil(conexao.perfil, *envelope.get("audiencia", ()))
 
     async def fan_out(self, envelope: dict[str, Any]) -> None:
         mortas: list[Conexao] = []

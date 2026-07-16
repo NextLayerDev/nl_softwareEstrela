@@ -38,6 +38,9 @@ USUARIOS = [
     ("Vendedor", "vendedor@estrela.local", Perfil.VENDEDOR),
     ("Financeiro", "financeiro@estrela.local", Perfil.FINANCEIRO),
     ("Funcionário", "funcionario@estrela.local", Perfil.FUNCIONARIO),
+    # Manutenção: passa em tudo e é o único que enxerga /deploy. Não é criável pela tela
+    # de usuários (ver PERFIS_ATRIBUIVEIS) — em produção, nasce aqui e tem a senha trocada.
+    ("Dev", "dev@estrela.local", Perfil.DEV),
 ]
 
 

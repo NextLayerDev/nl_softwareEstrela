@@ -26,7 +26,7 @@ router = APIRouter()
 def pagina_deploy(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role("dev")),
 ):
     contexto = {
         "user": usuario,
@@ -40,7 +40,7 @@ def pagina_deploy(
 def fragmento_status(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role("dev")),
 ):
     """Bloco do deploy em andamento. Repicado de perto (3s) durante uma atualização."""
     contexto = {"user": usuario, **deploy_controller.status(db)}
@@ -51,7 +51,7 @@ def fragmento_status(
 def fragmento_saude(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role("dev")),
 ):
     """Cadência própria (30s): as sondas de disco e backup são caras demais para 3s."""
     contexto = {"user": usuario, **deploy_controller.saude(db)}
@@ -62,7 +62,7 @@ def fragmento_saude(
 def fragmento_historico(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role("dev")),
 ):
     contexto = {"user": usuario, **deploy_controller.historico(db)}
     return templates.TemplateResponse(request, "deploy/_historico.html", contexto)
@@ -72,7 +72,7 @@ def fragmento_historico(
 def fragmento_ci(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role("dev")),
 ):
     """Só lê o cache: nunca espera a rede (ver app/integracoes/github.py)."""
     contexto = {"user": usuario, **deploy_controller.ci(db)}
@@ -84,7 +84,7 @@ def fragmento_log(
     request: Request,
     deploy_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role("dev")),
 ):
     from app.repositories.deploy_repo import deploy_repo
 

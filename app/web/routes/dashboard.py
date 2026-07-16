@@ -13,7 +13,7 @@ from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.conta_receber import ContaReceber
-from app.models.enums import StatusConta, StatusPedido
+from app.models.enums import StatusConta, StatusPedido, tem_perfil
 from app.models.pedido import Pedido
 from app.models.produto import Produto, ProdutoVariacao
 from app.models.usuario import Usuario
@@ -61,7 +61,7 @@ def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
 
     # Financeiro só para admin/financeiro.
     contas_pendentes = contas_atrasadas = 0
-    if usuario.perfil in ("admin", "financeiro"):
+    if tem_perfil(usuario.perfil, "admin", "financeiro"):
         contas_pendentes = (
             db.scalar(
                 select(func.count(ContaReceber.id)).where(
@@ -118,7 +118,7 @@ def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
         "ultimos": ultimos,
         "serie": serie,
         "max_serie": max_serie,
-        "mostra_financeiro": usuario.perfil in ("admin", "financeiro"),
+        "mostra_financeiro": tem_perfil(usuario.perfil, "admin", "financeiro"),
         # Funcionário (estoque) não vê receita — mostra a fila de separação no lugar.
         "mostra_vendas": usuario.perfil != "funcionario",
     }

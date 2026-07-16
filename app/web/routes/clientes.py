@@ -8,7 +8,7 @@ from app.controllers.cliente_controller import cliente_controller
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
-from app.models.enums import CATEGORIA_CLIENTE_INFO
+from app.models.enums import CATEGORIA_CLIENTE_INFO, e_admin, tem_perfil
 from app.models.usuario import Usuario
 from app.web.routes._flash import redirect_ok
 
@@ -29,8 +29,8 @@ def listar_clientes(
         "titulo": "Clientes",
         "clientes": clientes,
         "q": q,
-        "pode_editar": usuario.perfil in ("admin", "vendedor"),
-        "pode_excluir": usuario.perfil == "admin",
+        "pode_editar": tem_perfil(usuario.perfil, "admin", "vendedor"),
+        "pode_excluir": e_admin(usuario.perfil),
         "categorias": CATEGORIA_CLIENTE_INFO,
         "mensagem_ok": ok or None,
     }
@@ -48,8 +48,8 @@ def busca_clientes(
     contexto = {
         "user": usuario,
         "clientes": clientes,
-        "pode_editar": usuario.perfil in ("admin", "vendedor"),
-        "pode_excluir": usuario.perfil == "admin",
+        "pode_editar": tem_perfil(usuario.perfil, "admin", "vendedor"),
+        "pode_excluir": e_admin(usuario.perfil),
         "categorias": CATEGORIA_CLIENTE_INFO,
     }
     return templates.TemplateResponse(request, "clientes/_linhas.html", contexto)

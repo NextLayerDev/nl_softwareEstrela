@@ -22,7 +22,7 @@ from app.services.saude_service import (
     saude_service,
 )
 
-PERFIS = ["admin", "vendedor", "financeiro", "funcionario"]
+PERFIS = ["admin", "vendedor", "financeiro", "funcionario", "dev"]
 ROTAS = ["/deploy", "/deploy/status", "/deploy/saude", "/deploy/historico", "/deploy/ci"]
 
 
@@ -47,26 +47,100 @@ def test_deploy_exige_login(rota: str) -> None:
     assert r.headers["location"] == "/login"
 
 
-@pytest.mark.parametrize("perfil", ["vendedor", "financeiro", "funcionario"])
+@pytest.mark.parametrize("perfil", ["admin", "vendedor", "financeiro", "funcionario"])
 @pytest.mark.parametrize("rota", ROTAS)
-def test_deploy_e_somente_admin(perfil: str, rota: str) -> None:
-    """A visibilidade no menu é cosmética; quem protege é o require_role na rota."""
+def test_deploy_e_somente_dev(perfil: str, rota: str) -> None:
+    """Nem o admin entra: /deploy é manutenção, não operação da empresa.
+
+    O admin da Estrela é um usuário real e não pode alcançar a tela que mostra disco,
+    versão e (mais adiante) reinicia o sistema — nem digitando a URL.
+    """
     assert _login(perfil).get(rota).status_code == 403
 
 
 @pytest.mark.parametrize("rota", ROTAS)
-def test_admin_acessa(rota: str) -> None:
-    assert _login("admin").get(rota).status_code == 200
+def test_dev_acessa(rota: str) -> None:
+    assert _login("dev").get(rota).status_code == 200
 
 
-def test_item_do_menu_so_aparece_para_admin() -> None:
-    assert "/deploy" in _login("admin").get("/").text
-    assert "Status do Deploy" not in _login("vendedor").get("/").text
+def test_deploy_nao_aparece_no_menu_de_ninguem() -> None:
+    """Ferramenta de manutenção: só por URL direta, nem para o dev."""
+    for perfil in PERFIS:
+        assert "Status do Deploy" not in _login(perfil).get("/").text
+
+
+def test_dev_enxerga_todos_os_itens_do_menu() -> None:
+    """O dev é superusuário: sem isto ele veria uma sidebar vazia."""
+    t = _login("dev").get("/").text
+    for rota in (
+        "/estoque",
+        "/produtos",
+        "/pedidos",
+        "/separacao",
+        "/clientes",
+        "/financeiro",
+        "/relatorios",
+        "/importacao",
+        "/empresa",
+        "/usuarios",
+    ):
+        assert f'href="{rota}"' in t, rota
+
+
+@pytest.mark.parametrize(
+    "rota", ["/pedidos", "/separacao", "/financeiro", "/importacao", "/empresa", "/usuarios"]
+)
+def test_dev_passa_em_qualquer_require_role(rota: str) -> None:
+    assert _login("dev").get(rota).status_code == 200
 
 
 def test_tabelas_da_aba_tem_scope_col() -> None:
-    t = _login("admin").get("/deploy").text
+    t = _login("dev").get("/deploy").text
     assert 'scope="col"' in t
+
+
+# ------------------------------------------------- anti-escalação de privilégio
+
+
+def test_admin_nao_cria_usuario_dev() -> None:
+    """Tirar "dev" do <select> é cosmético — o guard tem que estar no POST."""
+    r = _login("admin").post(
+        "/usuarios",
+        data={
+            "nome": "Invasor",
+            "email": "invasor@estrela.local",
+            "senha": "estrela123",
+            "perfil": "dev",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 403
+
+
+def test_select_de_perfis_nao_oferece_dev_para_admin() -> None:
+    t = _login("admin").get("/usuarios/novo").text
+    assert ">dev<" not in t
+
+
+def test_admin_nao_reseta_senha_de_dev(db) -> None:
+    """Sem este guard, o admin entra como dev e a tela de manutenção cai no colo dele."""
+    from sqlalchemy import select
+
+    from app.models.usuario import Usuario as U
+
+    dev_id = db.scalar(select(U.id).where(U.perfil == "dev"))
+    assert dev_id, "o seed precisa ter um usuário dev"
+    r = _login("admin").post(
+        f"/usuarios/{dev_id}/reset-senha",
+        data={"nova_senha": "SenhaNova123!"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 404, "o admin não pode nem saber que o dev existe"
+
+
+def test_admin_nao_ve_usuario_dev_na_lista() -> None:
+    assert "dev@estrela.local" not in _login("admin").get("/usuarios").text
+    assert "dev@estrela.local" in _login("dev").get("/usuarios").text
 
 
 # ------------------------------------------------------------------ saúde

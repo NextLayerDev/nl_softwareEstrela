@@ -12,6 +12,7 @@ from app.core.templates import templates
 from app.deps.auth import get_current_user, require_role
 from app.deps.db import get_db
 from app.models.categoria import Categoria
+from app.models.enums import e_admin
 from app.models.produto import ProdutoVariacao
 from app.models.usuario import Usuario
 from app.schemas.produto import pode_ver_custo
@@ -53,7 +54,7 @@ def listar_produtos(
         "user": usuario,
         "titulo": "Produtos",
         "produtos": produtos,
-        "pode_editar": usuario.perfil == "admin",
+        "pode_editar": e_admin(usuario.perfil),
         "ver_custo": pode_ver_custo(usuario.perfil),
         "mensagem_ok": ok or None,
         **_ctx_paginacao(produtos, q, 0),
@@ -73,7 +74,7 @@ def busca_produtos(
     contexto = {
         "user": usuario,
         "produtos": produtos,
-        "pode_editar": usuario.perfil == "admin",
+        "pode_editar": e_admin(usuario.perfil),
         "ver_custo": pode_ver_custo(usuario.perfil),
         **_ctx_paginacao(produtos, q, offset),
     }
@@ -97,7 +98,7 @@ def fragmento_linha_produto(
     contexto = {
         "user": usuario,
         "produtos": [produto],
-        "pode_editar": usuario.perfil == "admin",
+        "pode_editar": e_admin(usuario.perfil),
         "ver_custo": pode_ver_custo(usuario.perfil),
     }
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)

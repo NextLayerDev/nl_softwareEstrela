@@ -8,6 +8,10 @@ class Perfil(enum.StrEnum):
     VENDEDOR = "vendedor"
     FINANCEIRO = "financeiro"
     FUNCIONARIO = "funcionario"
+    # Perfil de manutenção (quem cuida do sistema, não quem opera a empresa).
+    # Passa em qualquer require_role e é o ÚNICO que enxerga /deploy — nem o admin vê.
+    # Não é atribuível pela tela de usuários: ver PERFIS_ATRIBUIVEIS.
+    DEV = "dev"
 
 
 class EstoqueModo(enum.StrEnum):
@@ -82,3 +86,27 @@ CATEGORIA_CLIENTE_INFO: dict[str, dict[str, str]] = {
 
 # Perfis que NÃO podem ver preço de custo / margem (doc 01 §7).
 PERFIS_SEM_CUSTO = {Perfil.VENDEDOR.value, Perfil.FUNCIONARIO.value}
+
+# Perfis oferecidos na tela de usuários. `dev` fica DE FORA de propósito: se ele
+# aparecesse no select, o admin da empresa criaria um usuário dev e se auto-promoveria
+# para a tela de manutenção — que reinicia o sistema. Um dev só nasce pelo seed ou por
+# outro dev.
+PERFIS_ATRIBUIVEIS = [p.value for p in Perfil if p is not Perfil.DEV]
+
+
+def e_dev(perfil: str) -> bool:
+    return perfil == Perfil.DEV.value
+
+
+def e_admin(perfil: str) -> bool:
+    """Poder de admin. O dev tem tudo que o admin tem, e mais.
+
+    Use isto no lugar de `perfil == "admin"`: os flags de UI (pode_editar, pode_ajuste…)
+    decidem se o botão aparece, e sem isto o dev abriria as telas sem botão nenhum.
+    """
+    return perfil in (Perfil.ADMIN.value, Perfil.DEV.value)
+
+
+def tem_perfil(perfil: str, *perfis: str) -> bool:
+    """Como `perfil in perfis`, mas o dev passa em qualquer conjunto."""
+    return e_dev(perfil) or perfil in perfis

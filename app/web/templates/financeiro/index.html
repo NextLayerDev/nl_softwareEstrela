@@ -17,7 +17,7 @@
         </div>
         <div class="text-xs text-gray-400">{{ recebidas_hoje | length }} baixa(s) hoje</div>
       </div>
-      {% if user.perfil == "admin" %}
+      {% if user.perfil in ["admin", "dev"] %}
       <form method="post" action="/financeiro/marcar-atrasados">
         <button type="submit" class="btn-secundario">
           <span class="nav-icone" aria-hidden="true">{{ icone("alerta") }}</span>
