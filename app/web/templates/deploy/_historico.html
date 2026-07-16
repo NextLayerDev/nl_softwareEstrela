@@ -1,40 +1,97 @@
+{#
+  Histórico no formato da tela de Deployments da Vercel: uma linha por deploy, com selo de
+  status, ambiente, commit, quando/quem e a ação à direita.
+
+  Uma diferença que a tela precisa dizer na cara: reverter aqui NÃO é o rollback da
+  Vercel. Lá não existe banco, então voltar a imagem é reversível de graça. Aqui, se a
+  versão-alvo cruzar migration, voltar a imagem roda código velho contra o schema novo — e
+  o banco não volta junto (o agente nunca faz downgrade nem restaura backup: apagaria em
+  silêncio os pedidos feitos desde então). Nesses casos o botão fica vermelho e o modal
+  exige digitar a versão.
+#}
 {% from "_icones.html" import icone %}
+{% from "deploy/_modal.html" import gatilho_deploy %}
 {% set _selo = {
   "sucesso": "selo-muito", "executando": "selo-pouco", "solicitado": "selo-neutro",
   "falha": "selo-acabou", "falhou_revertido": "selo-acabou", "recusado": "selo-acabou",
   "cancelado": "selo-neutro"
 } %}
+{% set _rotulo = {
+  "sucesso": "Pronto", "executando": "Executando", "solicitado": "Na fila",
+  "falha": "Falhou", "falhou_revertido": "Falhou (revertido)", "recusado": "Recusado",
+  "cancelado": "Cancelado"
+} %}
 <div class="overflow-x-auto">
   <table class="tabela tabela-densa w-full" aria-label="Histórico de deploys">
     <thead>
       <tr>
-        <th scope="col" class="text-left">Quando</th>
-        <th scope="col" class="text-left">Ação</th>
         <th scope="col" class="text-left">Versão</th>
-        <th scope="col" class="text-left">Quem</th>
         <th scope="col" class="text-left">Situação</th>
-        <th scope="col" class="text-right">Duração</th>
-        <th scope="col" class="text-right">Log</th>
+        <th scope="col" class="text-left">Ambiente</th>
+        <th scope="col" class="text-left">Commit</th>
+        <th scope="col" class="text-left">Quando</th>
+        <th scope="col" class="text-left">Quem</th>
+        <th scope="col" class="text-right">Ação</th>
       </tr>
     </thead>
     <tbody>
       {% for d in deploys %}
+      {# A linha do histórico guarda a versão; quem sabe o sha e se voltar é seguro é a
+         allowlist do agente. Sem par na allowlist = versão que o agente não tem mais. #}
+      {% set _rel = por_tag.get(d.versao_nova) %}
       <tr>
-        <td class="whitespace-nowrap">{{ d.solicitado_em.strftime("%d/%m/%Y %H:%M") }}</td>
-        <td>{{ "Atualização" if d.acao == "atualizacao" else "Reversão" }}</td>
-        <td class="font-mono text-xs">
-          {% if d.versao_anterior %}{{ d.versao_anterior }} →{% endif %} {{ d.versao_nova }}
+        <td class="whitespace-nowrap font-mono text-xs">
+          {{ d.versao_nova }}
+          {% if _rel and _rel.atual %}<span class="selo-info">Atual</span>{% endif %}
+          <span class="block font-sans text-gray-500">
+            {{ "Atualização" if d.acao == "atualizacao" else "Reversão" }}
+            {% if d.versao_anterior %}de {{ d.versao_anterior }}{% endif %}
+          </span>
         </td>
-        <td>{{ d.usuario.nome if d.usuario else "agente do servidor" }}</td>
-        <td><span class="{{ _selo.get(d.status, 'selo-neutro') }}">{{ d.status }}</span></td>
-        <td class="text-right">{{ (d.duracao_seg ~ "s") if d.duracao_seg else "—" }}</td>
+        <td>
+          <span class="{{ _selo.get(d.status, 'selo-neutro') }}">
+            {{ _rotulo.get(d.status, d.status) }}
+          </span>
+        </td>
+        <td class="text-xs text-gray-500">Produção</td>
+        <td class="font-mono text-xs text-gray-500">
+          {{ _rel.git_sha_curto if _rel and _rel.git_sha_curto else "—" }}
+        </td>
+        <td class="whitespace-nowrap text-xs text-gray-500"
+            title="{{ d.solicitado_em.strftime('%d/%m/%Y %H:%M') }}">
+          {{ d.solicitado_em | desde }}
+          {% if d.duracao_seg %}<span class="block">levou {{ d.duracao_seg }}s</span>{% endif %}
+        </td>
+        <td class="text-xs">{{ d.usuario.nome if d.usuario else "agente do servidor" }}</td>
         <td class="text-right">
-          {% if d.log %}
-          {# Alvo próprio: sem isto o botão seria um no-op quando não há deploy em voo. #}
-          <button type="button" class="btn-secundario"
-                  hx-get="/deploy/{{ d.id }}/log" hx-target="#historico-log"
-                  hx-swap="innerHTML">Log</button>
-          {% else %}—{% endif %}
+          <div class="flex items-center justify-end gap-2">
+            {% if d.log %}
+            {# Alvo próprio: sem isto o botão seria um no-op quando não há deploy em voo. #}
+            <button type="button" class="btn-secundario"
+                    hx-get="/deploy/{{ d.id }}/log" hx-target="#historico-log"
+                    hx-swap="innerHTML">Log</button>
+            {% endif %}
+
+            {% if d.em_voo %}
+            {{ gatilho_deploy(
+                 "/deploy/" ~ d.id ~ "/cancelar",
+                 "Cancelar",
+                 "Cancelar o deploy #" ~ d.id,
+                 "Só destrava a fila. Se o agente já tiver começado, ele termina o que está fazendo — cancelar não desfaz nada.",
+                 d.versao_nova) }}
+
+            {% elif _rel and not _rel.atual and not execucao %}
+            {{ gatilho_deploy(
+                 "/deploy/rollback",
+                 "Reverter",
+                 "Reverter para " ~ _rel.tag,
+                 "O servidor vai voltar a imagem para a versão " ~ _rel.tag ~ ".",
+                 _rel.tag,
+                 arriscada=_rel.arriscada,
+                 motivo=_rel.motivo_risco,
+                 classe="btn-perigo" if _rel.arriscada else "btn-secundario") }}
+            {% endif %}
+          </div>
         </td>
       </tr>
       {% else %}
@@ -44,8 +101,8 @@
             <span class="vazio-icone" aria-hidden="true">{{ icone("servidor") }}</span>
             <p>Nenhum deploy registrado ainda.</p>
             <p class="text-sm text-gray-500">
-              O histórico começa a ser preenchido quando as atualizações passarem a ser
-              feitas por esta tela.
+              O histórico começa a ser preenchido na primeira atualização feita por esta
+              tela.
             </p>
           </div>
         </td>

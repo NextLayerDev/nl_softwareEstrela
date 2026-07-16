@@ -1,0 +1,71 @@
+{#
+  Confirmação das ações de deploy.
+
+  Por que não o `confirmar_botao`/`confirmar_modal` do _ui.html: aquele modal posta um
+  formulário SEM campos (só a `action`), e aqui a versão-alvo viaja no corpo do POST
+  (`name="tag"`) — e a reversão arriscada ainda precisa de um segundo campo digitado.
+  Reusa o MESMO componente Alpine `modal()` (foco preso, Esc, retorno de foco), então o
+  comportamento e a acessibilidade continuam iguais aos do resto do sistema. Segue valendo
+  a regra do projeto: nada de window.confirm.
+
+  O ANCESTRAL precisa ter x-data="modal()". O gatilho passa tudo por data-* (ver
+  gatilho_deploy) para não quebrar com aspas nas mensagens.
+#}
+
+{% macro gatilho_deploy(action, rotulo, titulo, mensagem, tag, arriscada=false, motivo="", classe="btn-secundario") -%}
+<button type="button" class="{{ classe }}"
+        data-action="{{ action }}" data-rotulo="{{ rotulo }}" data-titulo="{{ titulo }}"
+        data-mensagem="{{ mensagem }}" data-tag="{{ tag }}"
+        data-arriscada="{{ 'sim' if arriscada else 'nao' }}" data-motivo="{{ motivo }}"
+        @click="abrir({...$el.dataset}, $event)">{{ rotulo }}</button>
+{%- endmacro %}
+
+{% macro modal_deploy() -%}
+<template x-teleport="body">
+  <div x-show="aberto" x-cloak class="modal-overlay" @click="fechar()">
+    {# x-data aninhado: `digitado` é estado só do painel. O x-effect zera o campo toda vez
+       que `dados` muda — sem isso, o texto digitado para reverter a v1.0.0 continuaria lá
+       liberando o botão da v0.9.0 aberta em seguida. #}
+    <div class="modal-painel" role="dialog" aria-modal="true" aria-labelledby="deploy-modal-titulo"
+         x-ref="painel" @click.stop @keydown="trapTab($event)"
+         x-data="{ digitado: '' }" x-effect="dados; digitado = ''">
+      <h3 id="deploy-modal-titulo" class="mb-2 font-semibold" x-text="dados?.titulo"></h3>
+      <p class="text-sm text-gray-600" x-text="dados?.mensagem"></p>
+
+      <p class="mt-2 text-sm text-gray-600">
+        O sistema reinicia e fica alguns segundos fora do ar. Os 10 terminais voltam
+        sozinhos — quem estiver com um pedido aberto não perde o que digitou.
+      </p>
+
+      {# O aviso que separa esta tela da Vercel. Lá o rollback é instantâneo porque não há
+         banco; aqui, cruzar migration é código velho contra schema novo. #}
+      <div class="alerta alerta-erro mt-3" role="alert" x-show="dados?.arriscada === 'sim'" x-cloak>
+        <p class="font-semibold">Atenção: esta reversão NÃO é segura.</p>
+        <p class="mt-1 text-sm" x-text="dados?.motivo"></p>
+      </div>
+
+      <form method="post" :action="dados?.action" class="mt-4">
+        <input type="hidden" name="tag" :value="dados?.tag">
+
+        <div x-show="dados?.arriscada === 'sim'" x-cloak>
+          <label class="label" for="deploy-confirmacao">
+            Para liberar o botão, digite <span class="font-mono" x-text="dados?.tag"></span>
+          </label>
+          {# A mesma exigência existe no service: uma trava só no HTML é contornada por
+             qualquer POST direto. #}
+          <input class="input" id="deploy-confirmacao" name="confirmacao" type="text"
+                 autocomplete="off" spellcheck="false" x-model="digitado"
+                 :placeholder="dados?.tag">
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" class="btn-secundario" @click="fechar()">Cancelar</button>
+          <button type="submit" class="btn-perigo disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="dados?.arriscada === 'sim' && digitado !== dados?.tag"
+                  x-text="dados?.rotulo || 'Confirmar'"></button>
+        </div>
+      </form>
+    </div>
+  </div>
+</template>
+{%- endmacro %}

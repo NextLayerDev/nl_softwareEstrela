@@ -111,7 +111,8 @@
     if (!texto) return;
 
     const div = document.createElement("div");
-    div.className = "rt-toast " + (envelope.tipo === "estoque.alerta_minimo" ? "alerta-erro" : "alerta-ok");
+    const ruim = envelope.tipo === "estoque.alerta_minimo" || envelope.tipo === "deploy.falhou";
+    div.className = "rt-toast " + (ruim ? "alerta-erro" : "alerta-ok");
     div.setAttribute("role", "status");
     div.textContent = texto;
     area.appendChild(div);
@@ -149,6 +150,17 @@
         return `Inventário aplicado (${d.itens_ajustados} itens).`;
       case "importacao.concluida":
         return "Importação concluída.";
+      // Deploy: audiência é só o perfil `dev`, então estes toasts nunca chegam a quem
+      // opera a empresa. Quem emite `solicitado`/`cancelado` é o app; `concluido` e
+      // `falhou` vêm do agente no host, que escreve direto no Postgres.
+      case "deploy.solicitado":
+        return `${d.acao === "rollback" ? "Reversão" : "Atualização"} para ${d.versao || "—"} solicitada.`;
+      case "deploy.concluido":
+        return `Sistema no ar na versão ${d.versao || "—"}.`;
+      case "deploy.falhou":
+        return `Falha ao aplicar a versão ${d.versao || "—"}. Veja o log na aba Histórico.`;
+      case "deploy.cancelado":
+        return `Deploy de ${d.versao || "—"} cancelado.`;
       default:
         return null;
     }

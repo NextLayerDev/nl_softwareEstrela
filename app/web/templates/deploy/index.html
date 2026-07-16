@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_icones.html" import icone %}
-{% from "_ui.html" import trilha %}
+{% from "_ui.html" import trilha, tabs %}
+{% from "deploy/_modal.html" import modal_deploy %}
 {% block titulo %}Status do Deploy{% endblock %}
 {% block cabecalho %}Status do Deploy{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Status do Deploy", none)]) }}{% endblock %}
@@ -13,55 +14,80 @@
    - #deploy-ci: load + 60s, lê só o cache (nunca a rede).
   Aninhar tudo num poll só recriaria o <pre> do log a cada 3s e o operador perderia o
   scroll e a seleção justamente enquanto lê o erro.
+
+  ABAS: macro `tabs` (Alpine, x-show) e não abas-link como em relatorios/_tabs_nav.html.
+  O Relatórios usa link porque cada aba é um relatório diferente, com filtros próprios que
+  valem um deep-link. Aqui as duas abas são a MESMA máquina, e trocar de aba não pode
+  navegar: (a) o poll de 3s do #deploy-status é o que avisa que a atualização terminou —
+  uma navegação o destrói e recria; (b) durante o deploy o app está morto e quem responde
+  é o Caddy com 502, então clicar numa aba-link no pior momento jogaria o operador numa
+  página de erro do proxy, sem volta. Com x-show não há request: o documento continua vivo
+  e o aviso "Reiniciando o sistema…" abaixo cobre o buraco.
 #}
 <div x-data="{ semResposta: false }">
 
-  {# hx-on::send-error NÃO serve aqui: quando o app morre quem responde é o Caddy, com
-     502 — ou seja, a requisição "teve sucesso" em rede e o send-error jamais dispara.
-     O after-request enxerga o 502 pelo detail.successful. #}
-  <div id="deploy-status"
-       hx-get="/deploy/status"
-       hx-trigger="load, every 3s"
-       hx-swap="innerHTML"
-       @htmx:after-request="semResposta = !$event.detail.successful">
-    {% include "deploy/_status.html" %}
-  </div>
+  {# x-data="modal()" precisa ser ancestral dos gatilhos das DUAS abas (atualizar na
+     "Visão geral", reverter/cancelar no "Histórico"). Escopos do Alpine aninham: o
+     `semResposta` de fora continua visível aqui dentro. #}
+  <div x-data="modal()" @keydown.escape.window="fechar()">
 
-  <div id="deploy-saude" hx-get="/deploy/saude" hx-trigger="every 30s" hx-swap="innerHTML">
-    {% include "deploy/_saude.html" %}
-  </div>
+    {# hx-on::send-error NÃO serve aqui: quando o app morre quem responde é o Caddy, com
+       502 — ou seja, a requisição "teve sucesso" em rede e o send-error jamais dispara.
+       O after-request enxerga o 502 pelo detail.successful. #}
+    <div id="deploy-status"
+         hx-get="/deploy/status"
+         hx-trigger="load, every 3s"
+         hx-swap="innerHTML"
+         @htmx:after-request="semResposta = !$event.detail.successful">
+      {% include "deploy/_status.html" %}
+    </div>
 
-  <div class="mt-4 grid gap-4 lg:grid-cols-2">
-    <div id="deploy-ci" hx-get="/deploy/ci" hx-trigger="load, every 60s" hx-swap="innerHTML">
-      <div class="card">
-        <h2 class="mb-3 text-base font-semibold">Verificações no GitHub</h2>
-        <p class="text-sm text-gray-500">Carregando…</p>
+    {% call(aba_id) tabs([
+      {"id": "geral", "rotulo": "Visão geral"},
+      {"id": "historico", "rotulo": "Histórico"},
+    ], "geral", "Seções do deploy") %}
+
+      {% if aba_id == "geral" %}
+      <div id="deploy-saude" hx-get="/deploy/saude" hx-trigger="every 30s" hx-swap="innerHTML">
+        {% include "deploy/_saude.html" %}
       </div>
-    </div>
 
-    <div class="card">
-      <h2 class="mb-3 text-base font-semibold">Como atualizar</h2>
-      <p class="text-sm text-gray-600">
-        As atualizações ainda são aplicadas no terminal do servidor. Quando o agente de
-        deploy estiver instalado, os botões de atualizar e reverter aparecem aqui e o
-        histórico abaixo passa a ser preenchido sozinho.
-      </p>
-      <p class="mt-2 text-sm text-gray-600">
-        Nenhuma versão é publicada sem que todas as verificações do GitHub passem.
-      </p>
-    </div>
-  </div>
+      <div class="mt-4 grid gap-4 lg:grid-cols-2">
+        <div id="deploy-ci" hx-get="/deploy/ci" hx-trigger="load, every 60s" hx-swap="innerHTML">
+          <div class="card">
+            <h2 class="mb-3 text-base font-semibold">Verificações no GitHub</h2>
+            <p class="text-sm text-gray-500">Carregando…</p>
+          </div>
+        </div>
 
-  <div class="card mt-4">
-    <h2 class="mb-3 text-base font-semibold">Histórico de deploys</h2>
-    <div id="deploy-historico"
-         data-rt="deploy.solicitado,deploy.concluido,deploy.falhou"
-         data-rt-get="/deploy/historico"
-         data-rt-swap="innerHTML">
-      {% include "deploy/_historico.html" %}
-    </div>
-    {# Alvo do botão "Log" do histórico. Fica fora da região repicada para não sumir. #}
-    <div id="historico-log"></div>
+        {# Re-buscado quando um deploy muda de estado: a lista some enquanto há um em voo
+           e volta depois. #}
+        <div id="deploy-releases"
+             data-rt="deploy.solicitado,deploy.concluido,deploy.falhou,deploy.cancelado"
+             data-rt-get="/deploy/releases"
+             data-rt-swap="innerHTML">
+          {% include "deploy/_releases.html" %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if aba_id == "historico" %}
+      <div class="card">
+        <h2 class="mb-3 text-base font-semibold">Histórico de deploys</h2>
+        <div id="deploy-historico"
+             data-rt="deploy.solicitado,deploy.concluido,deploy.falhou,deploy.cancelado"
+             data-rt-get="/deploy/historico"
+             data-rt-swap="innerHTML">
+          {% include "deploy/_historico.html" %}
+        </div>
+        {# Alvo do botão "Log". Fica fora da região repicada para não sumir. #}
+        <div id="historico-log"></div>
+      </div>
+      {% endif %}
+
+    {% endcall %}
+
+    {{ modal_deploy() }}
   </div>
 </div>
 {% endblock %}

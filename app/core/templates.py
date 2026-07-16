@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -46,6 +47,36 @@ def _moeda(valor: object) -> str:
 
 
 templates.env.filters["moeda"] = _moeda
+
+
+def _desde(valor: object) -> str:
+    """Tempo relativo curto em pt-BR: 'há 8 min'. Acima de 30 dias, vira data.
+
+    Datas ingênuas são tratadas como UTC: todo timestamp do banco é timestamptz, mas um
+    naive vindo de outro caminho não pode explodir a tela de manutenção — é justamente a
+    tela que precisa continuar de pé quando o resto quebrou.
+    """
+    if not isinstance(valor, datetime):
+        return "—"
+    quando = valor if valor.tzinfo else valor.replace(tzinfo=UTC)
+    segundos = (datetime.now(UTC) - quando).total_seconds()
+    if segundos < 0:
+        return "agora mesmo"
+    if segundos < 60:
+        return "agora mesmo"
+    if segundos < 3600:
+        return f"há {int(segundos // 60)} min"
+    if segundos < 86400:
+        return f"há {int(segundos // 3600)} h"
+    dias = int(segundos // 86400)
+    if dias == 1:
+        return "ontem"
+    if dias <= 30:
+        return f"há {dias} dias"
+    return quando.strftime("%d/%m/%Y")
+
+
+templates.env.filters["desde"] = _desde
 
 
 def _foto_url(chave: object) -> str:

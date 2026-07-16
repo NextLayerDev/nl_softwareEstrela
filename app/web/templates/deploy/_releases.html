@@ -1,0 +1,74 @@
+{# Card "Atualizar o sistema" — versões que o agente já baixou e verificou. #}
+{% from "_icones.html" import icone %}
+{% from "deploy/_modal.html" import gatilho_deploy %}
+<div class="card">
+  <h2 class="mb-3 text-base font-semibold">Atualizar o sistema</h2>
+
+  {% if not releases.agente_instalado %}
+  {# Estado normal, não erro: o schema `agente` só nasce com o instalar-agente.sh. #}
+  <div class="vazio">
+    <span class="vazio-icone" aria-hidden="true">{{ icone("servidor") }}</span>
+    <p>O agente de deploy não está instalado neste servidor.</p>
+    <p class="text-sm text-gray-500">
+      Enquanto isso, as atualizações continuam sendo feitas pelo terminal do servidor.
+    </p>
+  </div>
+
+  {% elif execucao %}
+  <p class="text-sm text-gray-600">
+    Há uma {{ "atualização" if execucao.acao == "atualizacao" else "reversão" }} em
+    andamento. Os botões voltam quando ela terminar.
+  </p>
+
+  {% else %}
+  <p class="mb-3 text-sm text-gray-600">
+    Nenhuma versão é publicada sem que todas as verificações do GitHub passem.
+  </p>
+  <div class="overflow-x-auto">
+    <table class="tabela tabela-densa w-full" aria-label="Versões disponíveis">
+      <thead>
+        <tr>
+          <th scope="col" class="text-left">Versão</th>
+          <th scope="col" class="text-left">Commit</th>
+          <th scope="col" class="text-left">Publicada</th>
+          <th scope="col" class="text-right">Ação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in releases.itens %}
+        <tr>
+          <td class="whitespace-nowrap font-mono text-xs">
+            {{ r.tag }}
+            {% if r.atual %}<span class="selo-info">Atual</span>{% endif %}
+          </td>
+          <td class="font-mono text-xs text-gray-500">{{ r.git_sha_curto or "—" }}</td>
+          <td class="whitespace-nowrap text-xs text-gray-500">{{ r.publicado_em | desde }}</td>
+          <td class="text-right">
+            {% if r.atual %}
+            <span class="text-xs text-gray-500">em produção</span>
+            {% else %}
+            {{ gatilho_deploy(
+                 "/deploy/atualizar",
+                 "Atualizar",
+                 "Atualizar para " ~ r.tag,
+                 "O servidor vai baixar e subir a versão " ~ r.tag ~ ".",
+                 r.tag,
+                 classe="btn-primario") }}
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4">
+            <div class="vazio">
+              <span class="vazio-icone" aria-hidden="true">{{ icone("servidor") }}</span>
+              <p>O agente ainda não liberou nenhuma versão.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
