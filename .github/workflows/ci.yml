@@ -1,0 +1,149 @@
+# CI do Estrela Gestão — lint e testes.
+#
+# Ordem obrigatória do job `testes`: alembic upgrade head -> seed.py -> pytest.
+# O tests/conftest.py NÃO cria banco (usa o engine global + SAVEPOINT), e o
+# test_ui.py/test_rbac.py fazem login REAL com admin@estrela.local — sem o seed,
+# ~20 testes falham com "assert 303 == 401". A extensão pg_trgm NÃO precisa de
+# step: a migration inicial (ebe4f3cc404e) faz CREATE EXTENSION.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Sem paths-ignore no trigger de propósito: um workflow não-disparado deixa o
+# required check pendurado para sempre. Quem filtra é o job `mudancas`, via `if:`
+# (um job "skipped" satisfaz a branch protection; um job ausente, não).
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancelar na main deixaria commits sem run conclusivo, e o gate do release
+  # (Fase 6) depende de haver um run verde por sha.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  mudancas:
+    name: Detectar mudanças
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      codigo: ${{ steps.filtro.outputs.codigo }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filtro
+        with:
+          filters: |
+            codigo:
+              - 'app/**'
+              - 'tests/**'
+              - 'alembic/**'
+              - 'scripts/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/**'
+
+  lint:
+    name: Lint (ruff)
+    needs: mudancas
+    if: needs.mudancas.outputs.codigo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # setup-uv não publica tag móvel de major (v8 não existe como ref) — pinar exato.
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  testes:
+    name: Testes (pytest)
+    needs: mudancas
+    if: needs.mudancas.outputs.codigo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: estrela
+          POSTGRES_PASSWORD: estrela
+          POSTGRES_DB: estrela_gestao
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U estrela -d estrela_gestao"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # A env var vence o .env no pydantic-settings (e não há .env no runner).
+      DATABASE_URL: postgresql+psycopg://estrela:estrela@localhost:5432/estrela_gestao
+      # ENV=dev de propósito: com prod, o validator de segredos derruba o startup
+      # e o TrustedHostMiddleware recusa o "testserver" do TestClient.
+      ENV: dev
+      # S3_ACCESS_KEY fica VAZIA: a migration b7e2c9f4a1d8 só tenta alcançar o
+      # MinIO se ela estiver preenchida. Vazia = zero egress no CI.
+      S3_ACCESS_KEY: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      # Sem libs nativas do WeasyPrint: nada em app/ ou tests/ o importa (só os
+      # 3 geradores de PDF, com import lazy). Instalá-las custa ~30s por run à toa.
+      - run: uv sync --frozen
+
+      - name: Aplicar migrations
+        run: uv run alembic upgrade head
+
+      - name: Popular dados (obrigatório antes do pytest)
+        run: uv run python scripts/seed.py
+
+      - name: Rodar testes
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=json
+
+      - name: Publicar cobertura no summary
+        if: always()
+        run: |
+          if [ -f coverage.json ]; then
+            PCT=$(python -c "import json;print(f\"{json.load(open('coverage.json'))['totals']['percent_covered']:.1f}\")")
+            echo "## Cobertura: ${PCT}%" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Número medido **no runner** — é ele que calibra o \`fail_under\` da Fase 2." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  ci-ok:
+    name: ci-ok
+    # Agregador: é ESTE o nome a marcar como required check na Fase 5. Os nomes
+    # dos jobs acima podem mudar; este não.
+    if: always()
+    needs: [mudancas, lint, testes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Conferir resultado dos jobs
+        # Passado por env, não interpolado dentro da string do shell.
+        env:
+          RESULTADOS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTADOS"
+          if echo "$RESULTADOS" | grep -qE '"result": *"(failure|cancelled)"'; then
+            echo "::error::Algum job da CI falhou ou foi cancelado."
+            exit 1
+          fi
+          echo "CI OK."
