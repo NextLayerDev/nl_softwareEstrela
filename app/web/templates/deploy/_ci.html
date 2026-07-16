@@ -1,0 +1,72 @@
+{# Estado do CI no GitHub. Lê SÓ o cache do Postgres — nunca espera a rede.
+   Carregado à parte (hx-trigger="load") para a página não depender dele. #}
+{% set _conc = {
+  "success": ("selo-muito", "passou"),
+  "failure": ("selo-acabou", "falhou"),
+  "cancelled": ("selo-neutro", "cancelado"),
+  "timed_out": ("selo-acabou", "estourou o tempo"),
+  "skipped": ("selo-neutro", "pulado"),
+} %}
+
+<div class="card">
+  <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+    <h2 class="text-base font-semibold">Verificações no GitHub</h2>
+    {% if ci and ci.consultado_em %}
+    <span class="text-xs text-gray-500">
+      consultado {{ ci.consultado_em.strftime("%d/%m %H:%M") }}
+    </span>
+    {% endif %}
+  </div>
+
+  {% if not ci or not ci.consultado_em %}
+  <div class="vazio">
+    <p>Ainda não consultado.</p>
+    <p class="text-sm text-gray-500">
+      O sistema consulta o GitHub em segundo plano; isso não afeta o funcionamento local.
+    </p>
+  </div>
+  {% else %}
+
+  {% if ci.erro %}
+  {# Offline é o estado NORMAL deste servidor: aviso, nunca erro vermelho. #}
+  <div class="alerta {{ 'alerta-erro' if ci.falhas_seguidas > 3 else '' }} mb-3" role="status">
+    {{ ci.erro }}
+    {% if ci.runs %}<br><span class="text-sm">Mostrando a última informação conhecida.</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if ci.release_tag %}
+  <p class="mb-3 text-sm">
+    Última versão publicada:
+    <strong class="font-mono">{{ ci.release_tag }}</strong>
+    {% if ci.release_em %}<span class="text-gray-500">({{ ci.release_em.strftime("%d/%m/%Y") }})</span>{% endif %}
+  </p>
+  {% endif %}
+
+  {% if ci.runs %}
+  <div class="overflow-x-auto">
+    <table class="tabela tabela-densa w-full" aria-label="Últimas verificações do GitHub">
+      <thead>
+        <tr>
+          <th scope="col" class="text-left">Verificação</th>
+          <th scope="col" class="text-left">Commit</th>
+          <th scope="col" class="text-left">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in ci.runs %}
+        {% set _s = _conc.get(r.conclusion, ("selo-pouco", r.status or "em andamento")) %}
+        <tr>
+          <td class="font-medium">{{ r.workflow }}</td>
+          <td class="font-mono text-xs">{{ r.sha }}</td>
+          <td><span class="{{ _s[0] }}">{{ _s[1] }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif not ci.erro %}
+  <div class="vazio"><p>Nenhuma verificação registrada ainda.</p></div>
+  {% endif %}
+  {% endif %}
+</div>

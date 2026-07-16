@@ -8,6 +8,7 @@ dependencies = [
     "boto3>=1.43.38",
     "fastapi>=0.138.0",
     "gunicorn>=26.0.0",
+    "httpx>=0.28.1",
     "jinja2>=3.1.6",
     "openpyxl>=3.1.5",
     "passlib[argon2]>=1.7.4",
@@ -24,12 +25,15 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    # httpx NÃO fica aqui: virou dependência de runtime (app/integracoes/github.py) e o
+    # Dockerfile roda `uv sync --no-dev`. Como dev-dep, o import funcionaria em dev e nos
+    # testes e quebraria só em produção, no servidor da cliente.
     "markdown>=3.10.2",
     "moto[s3]>=5.2.2",
     "playwright>=1.60.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
     "ruff>=0.15.18",
 ]
 

@@ -4,6 +4,7 @@ from app.models.auditoria import Auditoria
 from app.models.categoria import Categoria
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
+from app.models.deploy import CiStatusCache, Deploy
 from app.models.empresa_config import EmpresaConfig
 from app.models.fornecedor import Fornecedor
 from app.models.inventario import Inventario, InventarioItem
@@ -16,8 +17,10 @@ from app.models.usuario import Usuario
 __all__ = [
     "Auditoria",
     "Categoria",
+    "CiStatusCache",
     "Cliente",
     "ContaReceber",
+    "Deploy",
     "EmpresaConfig",
     "Fornecedor",
     "Inventario",

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Segredos triviais/de exemplo que NUNCA podem ir para produção. Se o .env.prod não for
@@ -32,6 +33,22 @@ class Settings(BaseSettings):
     REALTIME_ENABLED: bool = True
     REALTIME_CHANNEL: str = "estrela_eventos"
 
+    # Identidade do build, injetada como build-arg na imagem (ver Dockerfile). Em dev
+    # ficam vazias e o app/core/versao.py cai no git local. NUNCA entram no validador de
+    # produção: build sem versão é feio na tela, não é motivo para o sistema não subir.
+    APP_VERSION: str = ""
+    GIT_SHA: str = ""
+    BUILD_DATE: str = ""
+    APP_TAG: str = ""
+
+    # Consulta ao CI do GitHub para o card da aba /deploy. O repositório é PÚBLICO, então
+    # o token é opcional — sem ele o limite é 60 req/h por IP, e o job consulta 1x a cada
+    # 5 min. Fixos em config (nunca vêm de input do usuário) para não virar SSRF.
+    GITHUB_OWNER: str = "NextLayerDev"
+    GITHUB_REPO: str = "nl_softwareEstrela"
+    GITHUB_TOKEN_LEITURA: str = ""
+    CI_CACHE_TTL_SEG: int = 300
+
     # Hosts aceitos pelo TrustedHostMiddleware em produção (barra Host-header spoofing).
     # Em dev não é aplicado (o TestClient usa "testserver"). Aceita curingas (*.easypanel.host).
     # "*" = desliga a checagem (qualquer host). Por ora liberado; dá pra restringir depois
@@ -56,6 +73,24 @@ class Settings(BaseSettings):
     @property
     def allowed_hosts_list(self) -> list[str]:
         return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+
+    @property
+    def github_habilitado(self) -> bool:
+        """Sem owner/repo, o card do CI nem tenta a rede (e a aba continua 100% local)."""
+        return bool(self.GITHUB_OWNER and self.GITHUB_REPO)
+
+    @field_validator("GITHUB_OWNER", "GITHUB_REPO")
+    @classmethod
+    def _github_sem_barra(cls, v: str) -> str:
+        """Anti-SSRF: owner/repo entram numa URL. Só o alfabeto que o GitHub aceita.
+
+        Sem isso, um valor como "../../algum/outro" no .env redirecionaria a consulta
+        para outro endpoint da API.
+        """
+        v = v.strip()
+        if v and not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", v):
+            raise ValueError("GITHUB_OWNER/GITHUB_REPO aceitam apenas [A-Za-z0-9._-].")
+        return v
 
     @property
     def libpq_url(self) -> str:

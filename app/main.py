@@ -8,14 +8,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.errors import DominioError, NaoAutenticadoError
 from app.core.templates import templates
+from app.deps.db import get_db
+from app.services.saude_service import saude_service
 
 logger = logging.getLogger("estrela")
 
@@ -43,9 +46,12 @@ _CSP = "; ".join(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Em produção, sobe o agendador de jobs (ex.: marcar contas a receber atrasadas).
+    # Agendador de jobs (contas atrasadas, cache do status do CI). Roda também em dev —
+    # mesma regra do listener abaixo — senão o card de CI da aba /deploy nunca popula na
+    # máquina onde ele é desenvolvido. Cada job pega um advisory lock, porque o lifespan
+    # roda uma vez POR WORKER do Gunicorn (ver app/jobs.py).
     scheduler = None
-    if settings.ENV == "prod":
+    if "pytest" not in sys.modules:
         from app.jobs import iniciar_scheduler
 
         scheduler = iniciar_scheduler()
@@ -149,7 +155,31 @@ async def erro_inesperado_handler(request: Request, exc: Exception) -> Response:
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """Liveness. Público, estático e burro de propósito — é o healthcheck do container.
+
+    NÃO adicione query de banco aqui: uma piscada do Postgres marcaria o container como
+    unhealthy e o `depends_on: service_healthy` do Caddy travaria a subida. E NÃO exponha
+    versão/sha: este é o único endpoint sem autenticação do sistema.
+    """
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready(db: Session = Depends(get_db)) -> Response:
+    """Readiness: o gate de verdade depois de um deploy.
+
+    Público porque quem consulta é o agente do host, que não tem cookie de sessão. Não
+    devolve nada além de pronto/não-pronto e um motivo curto.
+
+    Existe porque /health é estático: um app que subiu com schema incompatível responde
+    "ok" nele, o agente marcaria o deploy como sucesso e a empresa ficaria parada com
+    500 em toda página, sem rollback nenhum.
+    """
+    pronto, motivo = saude_service.pronto(db)
+    return JSONResponse(
+        status_code=200 if pronto else 503,
+        content={"pronto": pronto, "motivo": motivo},
+    )
 
 
 def _registrar_routers() -> None:
@@ -172,6 +202,7 @@ def _registrar_routers() -> None:
         "empresa",
         "guia",
         "realtime",
+        "deploy",
     ]
     for nome in web_modulos:
         caminho = f"app.web.routes.{nome}"

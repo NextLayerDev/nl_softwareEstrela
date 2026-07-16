@@ -1,0 +1,30 @@
+{# Deploy em andamento. Só este bloco é repicado de perto (3s). #}
+{% if execucao %}
+<div class="card mb-4 border-l-4 border-gold-500">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <p class="font-semibold">
+        {{ "Atualização" if execucao.acao == "atualizacao" else "Reversão" }} em andamento
+        — {{ execucao.versao_nova }}
+      </p>
+      <p class="text-sm text-gray-600">
+        Solicitada por
+        {{ execucao.usuario.nome if execucao.usuario else "agente do servidor" }},
+        {{ execucao.solicitado_em.strftime("%d/%m/%Y %H:%M") }}.
+        {% if execucao.status == "solicitado" %}Aguardando o agente do servidor.{% endif %}
+      </p>
+    </div>
+    <span class="selo-pouco">{{ execucao.status }}</span>
+  </div>
+
+  {# O sistema reinicia no meio da atualização: o Caddy passa a devolver 502 e o
+     WebSocket cai. Sem este aviso o admin fica olhando uma tela congelada. #}
+  <p class="mt-3 text-sm text-gray-600" x-show="semResposta" x-cloak>
+    <strong>Reiniciando o sistema…</strong> esta tela volta sozinha em alguns segundos.
+  </p>
+
+  {% if execucao.log %}
+  <pre class="mt-3 max-h-64 overflow-auto rounded bg-sidebar p-3 font-mono text-xs text-gray-100">{{ execucao.log }}</pre>
+  {% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,56 @@
+{% from "_icones.html" import icone %}
+{% set _selo = {
+  "sucesso": "selo-muito", "executando": "selo-pouco", "solicitado": "selo-neutro",
+  "falha": "selo-acabou", "falhou_revertido": "selo-acabou", "recusado": "selo-acabou",
+  "cancelado": "selo-neutro"
+} %}
+<div class="overflow-x-auto">
+  <table class="tabela tabela-densa w-full" aria-label="Histórico de deploys">
+    <thead>
+      <tr>
+        <th scope="col" class="text-left">Quando</th>
+        <th scope="col" class="text-left">Ação</th>
+        <th scope="col" class="text-left">Versão</th>
+        <th scope="col" class="text-left">Quem</th>
+        <th scope="col" class="text-left">Situação</th>
+        <th scope="col" class="text-right">Duração</th>
+        <th scope="col" class="text-right">Log</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in deploys %}
+      <tr>
+        <td class="whitespace-nowrap">{{ d.solicitado_em.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td>{{ "Atualização" if d.acao == "atualizacao" else "Reversão" }}</td>
+        <td class="font-mono text-xs">
+          {% if d.versao_anterior %}{{ d.versao_anterior }} →{% endif %} {{ d.versao_nova }}
+        </td>
+        <td>{{ d.usuario.nome if d.usuario else "agente do servidor" }}</td>
+        <td><span class="{{ _selo.get(d.status, 'selo-neutro') }}">{{ d.status }}</span></td>
+        <td class="text-right">{{ (d.duracao_seg ~ "s") if d.duracao_seg else "—" }}</td>
+        <td class="text-right">
+          {% if d.log %}
+          {# Alvo próprio: sem isto o botão seria um no-op quando não há deploy em voo. #}
+          <button type="button" class="btn-secundario"
+                  hx-get="/deploy/{{ d.id }}/log" hx-target="#historico-log"
+                  hx-swap="innerHTML">Log</button>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7">
+          <div class="vazio">
+            <span class="vazio-icone" aria-hidden="true">{{ icone("servidor") }}</span>
+            <p>Nenhum deploy registrado ainda.</p>
+            <p class="text-sm text-gray-500">
+              O histórico começa a ser preenchido quando as atualizações passarem a ser
+              feitas por esta tela.
+            </p>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

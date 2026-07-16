@@ -1,0 +1,61 @@
+{# Sondas de saúde. Cadência de 30s (as sondas de disco/backup são caras demais para 3s). #}
+{% set _nivel_selo = {"ok": "selo-muito", "aviso": "selo-pouco", "critico": "selo-acabou", "neutro": "selo-neutro"} %}
+
+<div class="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+  <div class="card">
+    <p class="text-xs uppercase tracking-wide text-gray-500">Versão rodando</p>
+    <p class="mt-1 text-2xl font-bold text-gold-700">{{ versao.versao }}</p>
+    <p class="mt-1 text-sm text-gray-600">
+      commit <code class="font-mono">{{ versao.git_sha_curto }}</code>
+    </p>
+    {% if versao.e_dev %}
+    <p class="mt-2 text-xs text-aviso">Build local — não veio do pipeline.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <p class="text-xs uppercase tracking-wide text-gray-500">Data do build</p>
+    <p class="mt-1 text-lg font-semibold">{{ versao.build_date }}</p>
+    <p class="mt-1 text-sm text-gray-600">imagem: <code class="font-mono">{{ versao.tag }}</code></p>
+  </div>
+
+  <div class="card">
+    <p class="text-xs uppercase tracking-wide text-gray-500">Situação geral</p>
+    {% if saude.tem_problema %}
+    <p class="mt-1 text-lg font-semibold text-critico">Requer atenção</p>
+    <p class="mt-1 text-sm text-gray-600">Veja os itens marcados abaixo.</p>
+    {% else %}
+    <p class="mt-1 text-lg font-semibold text-ok">Tudo certo</p>
+    <p class="mt-1 text-sm text-gray-600">Nenhuma verificação acusou problema.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="overflow-x-auto">
+    <table class="tabela tabela-densa w-full" aria-label="Verificações de saúde do servidor">
+      <thead>
+        <tr>
+          <th scope="col" class="text-left">Verificação</th>
+          <th scope="col" class="text-left">Situação</th>
+          <th scope="col" class="text-left">Detalhe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in saude.sondas %}
+        <tr>
+          <td class="font-medium">{{ s.rotulo }}</td>
+          <td><span class="{{ _nivel_selo.get(s.nivel, 'selo-neutro') }}">{{ s.valor }}</span></td>
+          <td class="text-sm text-gray-600">{{ s.detalhe or "—" }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3">
+            <div class="vazio"><p>Nenhuma verificação disponível.</p></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

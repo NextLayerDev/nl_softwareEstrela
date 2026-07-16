@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
+{% block titulo %}Status do Deploy{% endblock %}
+{% block cabecalho %}Status do Deploy{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Status do Deploy", none)]) }}{% endblock %}
+
+{% block content %}
+{#
+  Uma região = um poll. Regiões separadas de propósito:
+   - #deploy-status: 3s, barato, é o que muda durante uma atualização;
+   - #deploy-saude: 30s, tem glob de backups e pg_database_size;
+   - #deploy-ci: load + 60s, lê só o cache (nunca a rede).
+  Aninhar tudo num poll só recriaria o <pre> do log a cada 3s e o operador perderia o
+  scroll e a seleção justamente enquanto lê o erro.
+#}
+<div x-data="{ semResposta: false }">
+
+  {# hx-on::send-error NÃO serve aqui: quando o app morre quem responde é o Caddy, com
+     502 — ou seja, a requisição "teve sucesso" em rede e o send-error jamais dispara.
+     O after-request enxerga o 502 pelo detail.successful. #}
+  <div id="deploy-status"
+       hx-get="/deploy/status"
+       hx-trigger="load, every 3s"
+       hx-swap="innerHTML"
+       @htmx:after-request="semResposta = !$event.detail.successful">
+    {% include "deploy/_status.html" %}
+  </div>
+
+  <div id="deploy-saude" hx-get="/deploy/saude" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "deploy/_saude.html" %}
+  </div>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <div id="deploy-ci" hx-get="/deploy/ci" hx-trigger="load, every 60s" hx-swap="innerHTML">
+      <div class="card">
+        <h2 class="mb-3 text-base font-semibold">Verificações no GitHub</h2>
+        <p class="text-sm text-gray-500">Carregando…</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="mb-3 text-base font-semibold">Como atualizar</h2>
+      <p class="text-sm text-gray-600">
+        As atualizações ainda são aplicadas no terminal do servidor. Quando o agente de
+        deploy estiver instalado, os botões de atualizar e reverter aparecem aqui e o
+        histórico abaixo passa a ser preenchido sozinho.
+      </p>
+      <p class="mt-2 text-sm text-gray-600">
+        Nenhuma versão é publicada sem que todas as verificações do GitHub passem.
+      </p>
+    </div>
+  </div>
+
+  <div class="card mt-4">
+    <h2 class="mb-3 text-base font-semibold">Histórico de deploys</h2>
+    <div id="deploy-historico"
+         data-rt="deploy.solicitado,deploy.concluido,deploy.falhou"
+         data-rt-get="/deploy/historico"
+         data-rt-swap="innerHTML">
+      {% include "deploy/_historico.html" %}
+    </div>
+    {# Alvo do botão "Log" do histórico. Fica fora da região repicada para não sumir. #}
+    <div id="historico-log"></div>
+  </div>
+</div>
+{% endblock %}

@@ -51,6 +51,8 @@
 <svg {{ attrs|safe }}><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
 {%- elif nome == "guia" -%}
 <svg {{ attrs|safe }}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg>
+{%- elif nome == "servidor" -%}
+<svg {{ attrs|safe }}><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>
 {%- else -%}
 <svg {{ attrs|safe }}><circle cx="12" cy="12" r="9"/></svg>
 {%- endif -%}

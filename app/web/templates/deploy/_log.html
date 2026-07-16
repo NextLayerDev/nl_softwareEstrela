@@ -1,0 +1,13 @@
+{# Log de um deploy do histórico. Alvo: #historico-log. #}
+{% if deploy and deploy.log %}
+<div class="mt-3">
+  <p class="mb-1 text-sm font-medium">
+    Log de {{ deploy.versao_nova }} ({{ deploy.solicitado_em.strftime("%d/%m/%Y %H:%M") }})
+  </p>
+  <pre class="max-h-80 overflow-auto rounded bg-sidebar p-3 font-mono text-xs text-gray-100">{{ deploy.log }}</pre>
+</div>
+{% elif deploy %}
+<p class="mt-3 text-sm text-gray-500">Este deploy não registrou log.</p>
+{% else %}
+<p class="mt-3 text-sm text-gray-500">Deploy não encontrado.</p>
+{% endif %}
