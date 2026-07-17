@@ -8,6 +8,7 @@ offline, que é justamente o caso normal do servidor da cliente.
 from __future__ import annotations
 
 from dataclasses import replace
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -739,3 +740,43 @@ def test_tag_movel_e_recusada() -> None:
     for movel in ("latest", "stable", "aprovado", "main"):
         with pytest.raises(RegraNegocioError, match="Versão inválida"):
             deploy_service.validar_tag(movel)
+
+
+# ------------------------------------------------ cookie de sessão / HTTPS
+
+
+def test_cookie_de_sessao_nao_e_secure_sob_http() -> None:
+    """Regressão do loop de login em produção.
+
+    O cookie era `secure=not is_dev`, então em prod saía Secure. Servido por HTTP na LAN,
+    o navegador nunca reenviava o cookie e o login entrava em loop. A flag agora segue
+    HTTPS_ENABLED (default False), não o ENV. Este teste falha se alguém reintroduzir o
+    acoplamento com is_dev.
+    """
+
+    c = TestClient(app)
+    r = c.post(
+        "/login",
+        data={"email": "dev@estrela.local", "senha": "estrela123"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "estrela_token=" in set_cookie
+    # Em dev/teste (HTTPS_ENABLED False) o cookie NÃO pode vir com o atributo Secure.
+    assert "secure" not in set_cookie.lower(), set_cookie
+
+
+def test_https_enabled_liga_o_secure() -> None:
+    """Quando há TLS de verdade na frente, o cookie precisa ser Secure."""
+    from app.core.config import settings
+
+    with patch.object(settings, "HTTPS_ENABLED", True):
+        c = TestClient(app)
+        r = c.post(
+            "/login",
+            data={"email": "dev@estrela.local", "senha": "estrela123"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert "secure" in r.headers.get("set-cookie", "").lower()
