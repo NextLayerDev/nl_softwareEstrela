@@ -42,8 +42,16 @@ DB_ROLE_AGENTE="${DB_ROLE_AGENTE:-estrela_agente}"
 # Versão e hash do cosign. O binário é BAIXADO da internet e passa a verificar tudo que
 # entra no servidor: se ele vier adulterado, a corrente de confiança inteira cai junto.
 # Por isso o sha256 é conferido e o `set -e` mata o script se não bater.
+# Conferido em 2026-07-17 contra o cosign_checksums.txt do release oficial:
+#   curl -sL https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign_checksums.txt
+# Ao trocar COSIGN_VERSAO, pegue o sha256 de LÁ — nunca do arquivo que você acabou de
+# baixar (isso só provaria que o download é igual a si mesmo).
 COSIGN_VERSAO="${COSIGN_VERSAO:-v2.4.1}"
-COSIGN_SHA256="${COSIGN_SHA256:-c37a4e8b3b0d2c9e7e01bd4a63d0dcbfe2a5c2a4c8dd0d6c1e2d3b0d5a2a7c14}"
+COSIGN_SHA256="${COSIGN_SHA256:-8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b}"
+# Só amd64 por ora: é o que o mini PC é. Num host arm64 o sha não bate e o script para —
+# fail-closed. Se um dia for arm64, o sha do cosign-linux-arm64 v2.4.1 é
+# 3b2e2e3854d0356c45fe6607047526ccd04742d20bd44afb5be91fa2a6e7cb4a.
+COSIGN_ARCH="${COSIGN_ARCH:-amd64}"
 COSIGN_BIN="${COSIGN_BIN:-/usr/local/bin/cosign}"
 
 log()  { printf '\n\033[1;33m==> %s\033[0m\n' "$*"; }
@@ -98,7 +106,7 @@ install -d -m 0750 -o "${USUARIO}" -g "${USUARIO}" "${BACKUP_DIR:-/backup/estrel
 log "cosign ${COSIGN_VERSAO}"
 instalar_cosign() {
     local url tmp sha
-    url="https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSAO}/cosign-linux-amd64"
+    url="https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSAO}/cosign-linux-${COSIGN_ARCH}"
     tmp="$(mktemp)"
     info "baixando ${url}"
     curl -fsSL --retry 3 -o "${tmp}" "${url}" || erro "falha ao baixar o cosign."
