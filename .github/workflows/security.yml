@@ -1,0 +1,166 @@
+# Segurança — o que NÃO exige buildar a imagem.
+#
+# (O Trivy roda no ci.yml, reusando a imagem que o job `docker` já buildou: em workflow
+# separado seriam dois builds completos da mesma imagem.)
+#
+# POLÍTICA DE BLOQUEIO — o que trava um merge e o que só avisa:
+#
+#   BLOQUEIA  gitleaks   determinístico e depende só do PR. O histórico está limpo
+#                        (verificado: .env nunca foi commitado, zero literais de
+#                        credencial em qualquer blob), então nasce verde por mérito.
+#   BLOQUEIA  bandit     mas só HIGH severidade + HIGH confiança (-lll -iii). Nesta base
+#                        são 0 achados hoje; os 10 restantes são todos LOW/MEDIUM e a
+#                        maioria é ruído previsível (B603 = subprocess com argv, que é
+#                        justamente a forma CORRETA e segura de chamar o docker).
+#   AVISA     pip-audit  CVE de terceiro publicado às 3h da manhã não pode travar um
+#                        hotfix do estoque da cliente. Roda também no schedule semanal.
+#   AVISA     CodeQL     idem, e só reporta alertas novos.
+#
+# O agregador `seguranca-ok` é o nome estável a marcar como required check.
+
+name: Segurança
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Segunda 06:00 UTC (03:00 em São Paulo): pega CVE publicada durante a semana em
+    # dependência que ninguém tocou.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seg-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  mudancas:
+    name: Detectar mudanças
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      codigo: ${{ steps.filtro.outputs.codigo }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filtro
+        with:
+          # No schedule não há base para comparar: o paths-filter devolve tudo `true`,
+          # que é o que queremos (a varredura semanal roda inteira).
+          filters: |
+            codigo:
+              - 'app/**'
+              - 'scripts/**'
+              - 'alembic/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/**'
+
+  segredos:
+    name: Segredos (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Histórico completo: um segredo commitado e "removido" no commit seguinte
+          # continua no histórico de um repositório PÚBLICO — e continua válido.
+          fetch-depth: 0
+      # Binário direto, não a action: gitleaks-action exige licença (GITLEAKS_LICENSE)
+      # para repositórios de organização, e este repo é da NextLayerDev.
+      - name: Instalar gitleaks
+        run: |
+          set -euo pipefail
+          VER=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Varrer o histórico
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
+
+  deps:
+    name: Dependências (pip-audit)
+    needs: mudancas
+    if: needs.mudancas.outputs.codigo == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # NÃO bloqueia: ver a política no topo. Falha vira aviso no summary.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Auditar as dependências de RUNTIME
+        # --no-dev de propósito: o que roda no servidor da cliente é a imagem, que é
+        # buildada com `uv sync --no-dev`. Um CVE em pytest não é risco de produção.
+        run: |
+          set -euo pipefail
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt > req-runtime.txt
+          uvx pip-audit -r req-runtime.txt --progress-spinner=off --desc
+
+  bandit:
+    name: Código (bandit)
+    needs: mudancas
+    if: needs.mudancas.outputs.codigo == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Varrer app/ e scripts/
+        # -lll -iii = só HIGH severidade e HIGH confiança. Hoje dá 0 achados nesta base;
+        # baixar o filtro traria 10 LOW/MEDIUM que são majoritariamente ruído
+        # (B603 = subprocess sem shell, que é a forma correta), e um gate que grita
+        # ruído é um gate que o time desliga.
+        run: uvx bandit -r app/ scripts/ -lll -iii
+
+  codeql:
+    name: CodeQL
+    needs: mudancas
+    if: needs.mudancas.outputs.codigo == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    # NÃO bloqueia: ver a política no topo. Os alertas ficam na aba Security.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v4
+
+  seguranca-ok:
+    name: seguranca-ok
+    # Agregador: é ESTE o nome a marcar como required check. Só considera o que BLOQUEIA
+    # (segredos e bandit); deps e codeql são continue-on-error e por isso reportam
+    # "success" mesmo falhando internamente — de propósito.
+    if: always()
+    needs: [mudancas, segredos, bandit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Conferir resultado dos jobs bloqueantes
+        env:
+          RESULTADOS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTADOS"
+          if echo "$RESULTADOS" | grep -qE '"result": *"(failure|cancelled)"'; then
+            echo "::error::Verificação de segurança bloqueante falhou."
+            exit 1
+          fi
+          echo "Segurança OK."
