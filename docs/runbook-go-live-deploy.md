@@ -16,13 +16,13 @@
 | CI (lint, 307 testes, guardas de migration, asserção do `.dockerignore`) | ✅ rodando, verde |
 | Segurança (gitleaks, bandit, pip-audit, CodeQL) | ✅ rodando, verde |
 | `main` protegida (PR + `ci-ok` + `seguranca-ok`, `enforce_admins: true`) | ✅ |
-| Imagem `ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1` | ✅ publicada, **assinada**, pacote público |
+| Imagem `ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2` | ✅ publicada, **assinada**, pública, **com o fix do login** |
 | Aba `/deploy` (perfil `dev`), agente, `migrar_seguro.py` | ✅ código na `main` |
 | **Compose puxando a imagem (Fase 7)** | ❌ **falta aplicar no servidor** |
 | **Agente instalado (Fase 9)** | ❌ **falta aplicar no servidor** |
 | **Botões exercitados (Fase 10)** | ❌ **falta ensaiar no servidor** |
 
-**Servidor:** `estrelaserver` via Tailscale (`100.93.92.88`). Projeto em `/opt/estrela`.
+**Servidor:** `estrelaserver` via Tailscale (`100.93.92.88`). Projeto em `/opt/estrela/nl_softwareEstrela`.
 
 ---
 
@@ -36,7 +36,7 @@
 **Por que provavelmente nunca rodou** (dois erros que se somam):
 
 1. O `backup-estrela.sh` tinha `DB_CONTAINER` fixo em `estrela_softwarelocal-db-1` — o nome do
-   diretório de **desenvolvimento**. No servidor o projeto vive em `/opt/estrela`, então o
+   diretório de **desenvolvimento**. No servidor o projeto vive em `/opt/estrela/nl_softwareEstrela`, então o
    container é `estrela-db-1`. O `docker exec` falhava toda noite contra um container inexistente.
 2. O guia mandava consertar com `export DB_CONTAINER=...` e dava a linha do cron **sem** a
    variável. `export` vale só para a sua sessão; **o cron roda com ambiente mínimo e não herda
@@ -60,12 +60,12 @@ docker ps --format '{{.Names}}'         # como o container se chama de verdade?
 #### 1.1.2 Instalar a rotina
 
 ```bash
-cd /opt/estrela
+cd /opt/estrela/nl_softwareEstrela
 git pull --ff-only origin main          # traz o script corrigido
 
 sudo mkdir -p /backup/estrela_gestao
 sudo chown estrela:estrela /backup/estrela_gestao
-chmod +x /opt/estrela/scripts/backup-estrela.sh /opt/estrela/scripts/restore-estrela.sh
+chmod +x /opt/estrela/nl_softwareEstrela/scripts/backup-estrela.sh /opt/estrela/nl_softwareEstrela/scripts/restore-estrela.sh
 sudo touch /var/log/estrela-backup.log && sudo chown estrela:estrela /var/log/estrela-backup.log
 ```
 
@@ -80,19 +80,19 @@ crontab -e
 # em silêncio, que é exatamente como este backup passou meses sem rodar.
 PATH=/usr/local/bin:/usr/bin:/bin
 
-0 2 * * * /opt/estrela/scripts/backup-estrela.sh >> /var/log/estrela-backup.log 2>&1
+0 2 * * * /opt/estrela/nl_softwareEstrela/scripts/backup-estrela.sh >> /var/log/estrela-backup.log 2>&1
 ```
 
 #### 1.1.3 Provar que funciona — três testes, não um
 
 ```bash
 # 1. roda à mão (prova que o script funciona)
-/opt/estrela/scripts/backup-estrela.sh
+/opt/estrela/nl_softwareEstrela/scripts/backup-estrela.sh
 ls -lh /backup/estrela_gestao/ | tail -2
 
 # 2. roda SEM o seu ambiente (prova que o CRON vai funcionar). Este é o que importa:
 #    o teste 1 passa mesmo quando o cron falharia.
-env -i /bin/bash -lc '/opt/estrela/scripts/backup-estrela.sh' ; echo "saida: $?"
+env -i /bin/bash -lc '/opt/estrela/nl_softwareEstrela/scripts/backup-estrela.sh' ; echo "saida: $?"
 
 # 3. o dump tem tamanho de gente? Um banco com as fotos em bytea não gera 2 KB.
 du -h /backup/estrela_gestao/*.sql.gz | tail -2
@@ -125,7 +125,7 @@ Se os números baterem com a produção, o backup **é** um backup. Só depois d
 #### 1.1.5 Offsite (opcional, só se o local tiver internet)
 
 ```cron
-30 2 * * * /opt/estrela/scripts/backup-offsite.sh >> /var/log/estrela-offsite.log 2>&1
+30 2 * * * /opt/estrela/nl_softwareEstrela/scripts/backup-offsite.sh >> /var/log/estrela-offsite.log 2>&1
 ```
 
 O `backup-offsite.sh` faz `rclone` para um remote criptografado e **sai limpo se estiver
@@ -156,7 +156,7 @@ deploy:
 
 ```bash
 curl -sI https://ghcr.io/v2/ | head -1          # espere 401 (normal, é o realm de auth)
-docker pull ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1
+docker pull ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2
 docker images | grep nl_softwareestrela
 ```
 
@@ -167,7 +167,7 @@ Se o pull funcionar **sem `docker login`**, a parte mais frágil do desenho est�
 Para saber para onde voltar se tudo der errado:
 
 ```bash
-cd /opt/estrela
+cd /opt/estrela/nl_softwareEstrela
 git rev-parse --short HEAD
 docker compose -f docker-compose.prod.yml ps
 ```
@@ -181,15 +181,15 @@ docker compose -f docker-compose.prod.yml ps
 rotação e o Postgres passa a escutar em `127.0.0.1:5432` (para o agente, que roda fora do Docker).
 
 ```bash
-cd /opt/estrela
+cd /opt/estrela/nl_softwareEstrela
 git fetch origin main && git status        # a árvore está limpa?
 git pull --ff-only origin main
 ```
 
-Acrescente ao `/opt/estrela/.env.prod` (veja `.env.prod.example`):
+Acrescente ao `/opt/estrela/nl_softwareEstrela/.env.prod` (veja `.env.prod.example`):
 
 ```bash
-APP_IMAGEM=ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1
+APP_IMAGEM=ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2
 ALLOWED_HOSTS=*
 ```
 
@@ -220,7 +220,7 @@ $COMPOSE ps
 docker inspect --format '{{.State.Health.Status}}' $($COMPOSE ps -q app)
 
 # 2. a versão certa subiu?
-$COMPOSE exec app printenv APP_VERSION      # deve ser 0.1.1, NUNCA "dev"
+$COMPOSE exec app printenv APP_VERSION      # deve ser 0.1.2, NUNCA "dev"
 
 # 3. readiness (é o gate que o agente vai usar)
 $COMPOSE exec app python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready').read().decode())"
@@ -272,7 +272,7 @@ atualizado: ele **não** se auto-atualiza, de propósito (um componente com o so
 atualiza sozinho pela rede é uma backdoor com boas intenções).
 
 ```bash
-cd /opt/estrela
+cd /opt/estrela/nl_softwareEstrela
 sudo bash deploy/instalar-agente.sh
 ```
 
@@ -293,6 +293,29 @@ O que ele monta:
 > app — e a app é justamente de quem o agente não confia. A allowlist não pode ser escrita por quem
 > pede o deploy.
 
+#### 3.2.1 Apontar o gate de saúde para um endereço que responde
+
+O agente confere `/health/ready` depois de cada deploy e reverte se falhar. O default é
+`https://sistema.local/health/ready` — que **não responde neste servidor** (o `sistema.local` não
+resolve por DNS). Com o `Caddyfile` da `v0.1.2` respondendo em qualquer host/IP na porta 80, aponte
+o gate para o loopback via HTTP, em `/etc/estrela-agente/agente.env`:
+
+```bash
+ESTRELA_SAUDE_URL=http://localhost/health/ready
+```
+
+> HTTP e não HTTPS de propósito: evita depender do cert interno do Caddy e do DNS. O gate roda no
+> host, então `localhost:80` bate no Caddy, que encaminha para o app. Se você deixar o default
+> `https://sistema.local/...`, **todo deploy vai falhar o gate e auto-reverter** — e o sintoma
+> aparece como "o sistema não sobe", não como "a URL do gate está errada".
+
+Confirme que o endereço responde antes de seguir:
+
+```bash
+curl -s http://localhost/health/ready ; echo
+# {"pronto": true, "motivo": "ok"}
+```
+
 ### 3.3 Verificar antes de deixar rodando
 
 ```bash
@@ -305,15 +328,17 @@ sudo -u estrela-agente /opt/estrela-agente/venv/bin/python \
 
 # o cosign confere a imagem que está publicada?
 cosign verify --key /etc/estrela-agente/cosign.pub \
-  ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1
+  ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2
 ```
 
 Deve terminar com *"The signatures were verified against the specified public key"*. Já foi
 conferido daqui contra esta mesma chave — se falhar no servidor, o problema é a chave que foi
 copiada, não a imagem.
 
-> ⚠️ **Use `v0.1.1` ou mais nova, nunca a `v0.1.0`.** A `v0.1.0` foi publicada antes de o pipeline
-> assinar e dá `no signatures found` — o agente a recusa (falha fechado, e está certo em recusar).
+> ⚠️ **Use a `v0.1.2` (ou mais nova). Nunca a `v0.1.0`/`v0.1.1`.** A `v0.1.0` não foi assinada
+> (`no signatures found` → o agente recusa). A `v0.1.1` está assinada, **mas não tem o fix do
+> loop de login** (cookie/HSTS Secure sobre HTTP): subir ela na LAN por HTTP trava o login. A
+> `v0.1.2` é a primeira com o `c936c42` dentro e é a que deve rodar.
 
 ### 3.4 O deploy manual de ensaio (com humano no teclado)
 
@@ -336,10 +361,11 @@ sudo journalctl -u estrela-agente -f
 ## 4. Fase 10 — ensaio dos botões (~10 min, indivisível)
 
 Só faça isto **depois** que a Fase 9 estiver verificada. Abra a aba como `dev` (ela não aparece
-para o admin da Estrela, nem digitando a URL):
+para o admin da Estrela, nem digitando a URL). Com o `Caddyfile` da `v0.1.2`, o sistema responde
+por IP tanto em HTTP quanto HTTPS — use o que os terminais usam:
 
 ```
-https://sistema.local/deploy
+http://<ip-do-servidor>/deploy      (ou https://<ip>/deploy, aceitando o cert interno)
 ```
 
 **Roteiro do ensaio — faça os três, nesta ordem:**
@@ -349,7 +375,7 @@ https://sistema.local/deploy
    inerente a qualquer self-update — o app está sendo recriado), e a tela **volta sozinha**. O log
    fica em `deploys.log`, no Postgres, que é o único container que não é recriado.
 
-2. **Reverter** para a `v0.1.1` (que é a que o servidor já estará rodando). Confirme que:
+2. **Reverter** para a versão anterior (a que o servidor estava rodando antes). Confirme que:
    - se a versão-alvo cruza migration, aparece **aviso vermelho** e ele **exige digitar a versão**;
    - o agente **não** faz downgrade do banco (deixa o schema à frente, de propósito);
    - o `migrar_seguro.py` sobe o app sem migrar nesse caso, em vez de crashloopar.
