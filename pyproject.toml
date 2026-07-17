@@ -57,3 +57,10 @@ addopts = "-q"
 
 [tool.coverage.run]
 source = ["app"]
+
+[tool.coverage.report]
+# Piso calibrado no valor MEDIDO no runner do CI (81%, run 29549785515), menos 3 de folga
+# para variação entre plataformas. Piso aspiracional só ensina o time a desligar o check.
+# Regra da catraca: este número só SOBE. Baixá-lo exige justificativa no PR.
+fail_under = 78
+show_missing = true

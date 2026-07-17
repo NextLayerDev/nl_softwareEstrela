@@ -236,12 +236,80 @@ jobs:
           fi
           echo "OK: o Dockerfile consome APP_VERSION via build-arg."
 
+  migracoes:
+    name: Guardas de migration
+    needs: mudancas
+    if: needs.mudancas.outputs.codigo == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: estrela
+          POSTGRES_PASSWORD: estrela
+          POSTGRES_DB: estrela_gestao
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U estrela -d estrela_gestao"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://estrela:estrela@localhost:5432/estrela_gestao
+      ENV: dev
+      # Vazia: a migration b7e2c9f4a1d8 só tenta alcançar o MinIO com a chave preenchida.
+      S3_ACCESS_KEY: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+
+      - name: Head única
+        # Duas heads quebram o ScriptDirectory, logo o `alembic upgrade head` do
+        # entrypoint, logo (com set -euo pipefail) o container inteiro. Só aparece no
+        # merge de dois PRs que ambos criaram migration — nenhum dos dois falha sozinho.
+        run: |
+          set -euo pipefail
+          N=$(uv run alembic heads | grep -c '(head)')
+          echo "heads encontradas: $N"
+          if [ "$N" -ne 1 ]; then
+            uv run alembic heads
+            echo "::error::Há $N heads no Alembic. Faça o merge delas antes."
+            exit 1
+          fi
+
+      - name: Upgrade em banco limpo
+        run: uv run alembic upgrade head
+
+      - name: Modelo bate com as migrations (alembic check)
+        # Pega o model alterado sem migration correspondente — que em produção viraria
+        # erro difuso de coluna inexistente, não um erro de startup.
+        run: uv run alembic check
+
+      - name: Downgrade -1 e volta
+        # Não prova que o rollback do SISTEMA é seguro (isso é outra propriedade, medida
+        # pelo agente/expand-contract) — prova só que o script de downgrade não é ficção.
+        run: |
+          set -euo pipefail
+          uv run alembic downgrade -1
+          uv run alembic upgrade head
+
+      - name: Downgrade até a base
+        # A cadeia inteira desmonta? Pega ENUM órfão (o Postgres não dropa tipo com
+        # drop_table) e FK esquecida no downgrade.
+        run: uv run alembic downgrade base
+
   ci-ok:
     name: ci-ok
     # Agregador: é ESTE o nome a marcar como required check na Fase 5. Os nomes
     # dos jobs acima podem mudar; este não.
     if: always()
-    needs: [mudancas, lint, testes, docker]
+    needs: [mudancas, lint, testes, docker, migracoes]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

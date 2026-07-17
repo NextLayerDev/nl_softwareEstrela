@@ -95,7 +95,16 @@ def consultar() -> ResultadoCi:
             # aba acusar "repositório não encontrado" num repo saudável e sem releases.
             r = c.get(
                 f"{_BASE}/repos/{repo}/actions/runs",
-                params={"branch": "main", "per_page": _MAX_RUNS, "exclude_pull_requests": "true"},
+                params={
+                    "branch": "main",
+                    "per_page": _MAX_RUNS,
+                    # event=push: o card responde "as verificações do último commit da
+                    # main passaram?", e isso é sempre um push. Sem este filtro, os runs
+                    # do Dependabot (event="dynamic", um por ecossistema, toda semana)
+                    # empurram o CI para fora da janela de _MAX_RUNS e o card passa a
+                    # mostrar "pip in /. - Update #1464469272" no lugar do que importa.
+                    "event": "push",
+                },
             )
             if (msg := _traduzir_status(r)) is not None:
                 return ResultadoCi(ok=False, erro=msg)
