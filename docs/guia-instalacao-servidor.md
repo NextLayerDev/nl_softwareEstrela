@@ -198,7 +198,7 @@ preciso rodar `alembic` à mão no fluxo normal. O `app` só sobe depois do `db`
 **Verifique o endpoint de saúde** (de dentro da rede do servidor):
 
 ```bash
-docker compose -f docker-compose.prod.yml exec app curl -s http://localhost:8000/health
+docker compose -f docker-compose.prod.yml exec app python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health').read().decode())"
 # {"status":"ok"}
 ```
 
