@@ -780,3 +780,21 @@ def test_https_enabled_liga_o_secure() -> None:
         )
         assert r.status_code == 303
         assert "secure" in r.headers.get("set-cookie", "").lower()
+
+
+def test_hsts_nao_e_enviado_sob_http() -> None:
+    """Regressão gêmea da do cookie: o HSTS seguia is_dev, então em prod (HTTP na LAN) o
+    header dizia ao navegador para exigir HTTPS — e o terminal passava a recusar o próprio
+    sistema. Agora segue HTTPS_ENABLED (default False)."""
+    r = TestClient(app).get("/login")
+    headers = {k.lower() for k in r.headers}
+    assert "strict-transport-security" not in headers
+
+
+def test_hsts_enviado_com_https_enabled() -> None:
+    from app.core.config import settings
+
+    with patch.object(settings, "HTTPS_ENABLED", True):
+        r = TestClient(app).get("/login")
+        headers = {k.lower() for k in r.headers}
+        assert "strict-transport-security" in headers
