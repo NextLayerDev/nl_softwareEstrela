@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ENV: str = "dev"
 
+    # HTTPS de verdade na frente da app (Caddy terminando TLS)? Controla a flag `Secure` do
+    # cookie de sessão. Default False porque o servidor da cliente hoje serve por HTTP na LAN
+    # — e um cookie `Secure` sobre HTTP NUNCA volta ao servidor: o login entra em loop
+    # infinito (o usuário faz login, o cookie é setado mas o navegador não o reenvia). Ligue
+    # (HTTPS_ENABLED=true) SÓ quando houver TLS de fato terminando na frente, senão o
+    # cookie de sessão trafega sem a proteção que a flag anuncia.
+    HTTPS_ENABLED: bool = False
+
     # Realtime (WebSocket). O barramento é o próprio Postgres via LISTEN/NOTIFY: funciona
     # entre os workers do Gunicorn e sobrevive ao job/importador, que commitam fora do request.
     REALTIME_ENABLED: bool = True

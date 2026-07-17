@@ -96,8 +96,11 @@ async def cabecalhos_seguranca(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Content-Security-Policy"] = _CSP
-    # HSTS só em produção (dev usa http; forçar HTTPS quebraria o fluxo local).
-    if not settings.is_dev:
+    # HSTS só quando há HTTPS de verdade na frente — NÃO baseado em is_dev. O HSTS diz ao
+    # navegador "só use HTTPS neste host para sempre"; enviado sobre a LAN em HTTP (o caso
+    # da cliente hoje), ele faz o terminal recusar o próprio sistema. Ver HTTPS_ENABLED em
+    # core/config.py — mesma flag que condiciona o Secure do cookie de sessão.
+    if settings.HTTPS_ENABLED:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 

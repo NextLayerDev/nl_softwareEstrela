@@ -77,7 +77,10 @@ def fazer_login(
         value=token,
         httponly=True,
         samesite="strict",
-        secure=not settings.is_dev,
+        # `Secure` só quando há HTTPS de verdade na frente — NÃO baseado em is_dev. Em prod
+        # sobre HTTP (o caso do servidor da cliente hoje), `Secure` marcava o cookie e o
+        # navegador nunca o reenviava: loop de login. Ver HTTPS_ENABLED em core/config.py.
+        secure=settings.HTTPS_ENABLED,
         max_age=settings.JWT_EXPIRES_MIN * 60,
         path="/",
     )

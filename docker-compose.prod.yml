@@ -46,6 +46,10 @@ services:
       # Sem esta linha a setting existe no .env.prod, o compose não a repassa, o
       # extra="ignore" do pydantic a engole e a tela mostra "não configurado" sem erro.
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      # Idem: precisa ser repassada explicitamente. Default false (a cliente serve HTTP na
+      # LAN); ligar só com TLS de fato na frente. Ver HTTPS_ENABLED em app/core/config.py —
+      # é o que evita o loop de login do cookie Secure sobre HTTP.
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
       # Storage de imagens (MinIO). Sem estas vars o upload de foto fica indisponível,
       # mas a app sobe normalmente.
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
