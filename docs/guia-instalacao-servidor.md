@@ -332,11 +332,14 @@ sudo chown estrela:estrela /backup/estrela_gestao
 chmod +x /opt/estrela/scripts/backup-estrela.sh /opt/estrela/scripts/restore-estrela.sh
 ```
 
-> O `backup-estrela.sh` usa `DB_CONTAINER=estrela_softwarelocal-db-1` por padrão. Confira o nome
-> real com `docker ps --format '{{.Names}}'` e ajuste a variável se precisar:
-> ```bash
-> export DB_CONTAINER=$(docker ps --format '{{.Names}}' | grep -i db)
-> ```
+> O `backup-estrela.sh` **descobre o container do banco sozinho** (via
+> `docker compose ps -q db`). Não é preciso configurar `DB_CONTAINER`.
+>
+> Se você viu uma versão antiga deste guia mandando `export DB_CONTAINER=...`: aquilo **não
+> funcionava**. `export` vale só para a sessão do shell, e o cron roda com ambiente mínimo — não
+> herda nada. O default antigo (`estrela_softwarelocal-db-1`) era o nome do diretório de
+> *desenvolvimento*; no servidor o projeto vive em `/opt/estrela` e o container é `estrela-db-1`.
+> A combinação fazia o backup falhar toda noite, em silêncio, contra um container inexistente.
 
 ### 9.2 Agendar no cron
 
@@ -355,6 +358,24 @@ Adicione (backup todo dia às 02:00, com retenção de 14 dias):
 /opt/estrela/scripts/backup-estrela.sh
 ls -lh /backup/estrela_gestao/
 ```
+
+O script recusa e apaga o arquivo se o dump vier vazio, truncado (`gzip -t`) ou sem o marcador
+de fim do `pg_dump`. Ou seja: se ele terminou com "Concluído", existe um dump íntegro — não só
+um arquivo com bytes dentro.
+
+### 9.3.1 Conferir que o CRON também funciona (não só o seu shell)
+
+Rodar à mão prova pouco: o cron tem `PATH` mínimo e não herda nada do seu ambiente. Force uma
+execução no ambiente dele e confira o log:
+
+```bash
+# roda o script como o cron rodaria: sem o seu ambiente
+env -i /bin/bash -lc '/opt/estrela/scripts/backup-estrela.sh' ; echo "saida: $?"
+tail -5 /var/log/estrela-backup.log
+```
+
+Se `docker` não for encontrado, ponha o caminho absoluto na linha do cron ou um
+`PATH=/usr/local/bin:/usr/bin:/bin` no topo do crontab.
 
 ### 9.4 (Opcional) Backup offsite
 

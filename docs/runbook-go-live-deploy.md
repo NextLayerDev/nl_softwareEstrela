@@ -28,41 +28,111 @@
 
 ## 1. Antes de abrir a janela (sem downtime, faça hoje)
 
-### 1.1 O backup diário provavelmente NUNCA rodou — isto é bloqueante
+### 1.1 A rotina de backup — provavelmente NUNCA rodou. É bloqueante.
 
-O `scripts/backup-estrela.sh` tem `DB_CONTAINER="${DB_CONTAINER:-estrela_softwarelocal-db-1}"`
-— o nome do diretório de **desenvolvimento**. No servidor o projeto vive em `/opt/estrela`, então
-o container se chama `estrela-db-1`. Se o cron nunca conseguiu achar o container, **não existe
-backup nenhum**.
+**Por que é bloqueante:** o agente **exige um backup bem-sucedido antes de qualquer deploy**
+(regra dura: falhou o backup, aborta). Sem esta seção resolvida, nenhum botão da aba funciona.
 
-Isso é bloqueante porque **o agente exige backup antes de qualquer deploy** (regra dura: falhou o
-backup, aborta). Sem consertar, nenhum botão vai funcionar.
+**Por que provavelmente nunca rodou** (dois erros que se somam):
+
+1. O `backup-estrela.sh` tinha `DB_CONTAINER` fixo em `estrela_softwarelocal-db-1` — o nome do
+   diretório de **desenvolvimento**. No servidor o projeto vive em `/opt/estrela`, então o
+   container é `estrela-db-1`. O `docker exec` falhava toda noite contra um container inexistente.
+2. O guia mandava consertar com `export DB_CONTAINER=...` e dava a linha do cron **sem** a
+   variável. `export` vale só para a sua sessão; **o cron roda com ambiente mínimo e não herda
+   nada**. Então mesmo seguindo o guia à risca, o cron caía no default errado.
+
+**Já corrigido no código** (não precisa configurar `DB_CONTAINER`): o script agora **descobre** o
+container via `docker compose ps -q db`, e valida o dump de verdade — `gzip -t` (pega truncado por
+disco cheio, que passava no antigo "não-vazio") e o marcador `PostgreSQL database dump complete`
+(pega dump interrompido). Se ele disser "Concluído", existe um dump íntegro.
+
+#### 1.1.1 Diagnóstico (o que está lá hoje)
 
 ```bash
 ssh estrela@estrelaserver
 ls -la /backup/estrela_gestao/          # tem algum .sql.gz? de quando?
-tail -20 /var/log/estrela-backup.log    # o que o cron reclamou?
-docker ps --format '{{.Names}}'         # qual é o nome REAL do container do banco?
+tail -20 /var/log/estrela-backup.log    # o que o cron vem reclamando?
+crontab -l                              # a linha do backup existe?
+docker ps --format '{{.Names}}'         # como o container se chama de verdade?
 ```
 
-**Se estiver quebrado**, conserte antes da janela. Não edite o script (ele é versionado): passe o
-nome certo pelo ambiente do cron.
+#### 1.1.2 Instalar a rotina
 
 ```bash
-sudo crontab -l    # veja a linha do backup
-# corrija para algo como:
-#   0 2 * * * DB_CONTAINER=estrela-db-1 /opt/estrela/scripts/backup-estrela.sh >> /var/log/estrela-backup.log 2>&1
+cd /opt/estrela
+git pull --ff-only origin main          # traz o script corrigido
+
+sudo mkdir -p /backup/estrela_gestao
+sudo chown estrela:estrela /backup/estrela_gestao
+chmod +x /opt/estrela/scripts/backup-estrela.sh /opt/estrela/scripts/restore-estrela.sh
+sudo touch /var/log/estrela-backup.log && sudo chown estrela:estrela /var/log/estrela-backup.log
 ```
 
-Depois **rode uma vez à mão** e confirme que gera um dump não-vazio:
+Agende no cron do usuário `estrela` (que está no grupo `docker`) — **não** no do root:
 
 ```bash
-sudo DB_CONTAINER=estrela-db-1 /opt/estrela/scripts/backup-estrela.sh
+crontab -e
+```
+
+```cron
+# PATH explícito: o cron não tem o seu. Sem isto o script não acha o docker — e falha
+# em silêncio, que é exatamente como este backup passou meses sem rodar.
+PATH=/usr/local/bin:/usr/bin:/bin
+
+0 2 * * * /opt/estrela/scripts/backup-estrela.sh >> /var/log/estrela-backup.log 2>&1
+```
+
+#### 1.1.3 Provar que funciona — três testes, não um
+
+```bash
+# 1. roda à mão (prova que o script funciona)
+/opt/estrela/scripts/backup-estrela.sh
 ls -lh /backup/estrela_gestao/ | tail -2
+
+# 2. roda SEM o seu ambiente (prova que o CRON vai funcionar). Este é o que importa:
+#    o teste 1 passa mesmo quando o cron falharia.
+env -i /bin/bash -lc '/opt/estrela/scripts/backup-estrela.sh' ; echo "saida: $?"
+
+# 3. o dump tem tamanho de gente? Um banco com as fotos em bytea não gera 2 KB.
+du -h /backup/estrela_gestao/*.sql.gz | tail -2
 ```
 
-> Um dump truncado por disco cheio passa na validação do script (ele só checa `-s`, "não-vazio").
-> Confira o tamanho: um banco com as fotos em `bytea` não gera um dump de 2 KB.
+Espere `saida: 0` no teste 2. Se der erro de `docker: command not found`, o `PATH` do crontab
+não está certo.
+
+#### 1.1.4 Testar o RESTORE (backup não testado não é backup)
+
+Não restaure por cima da produção. Suba um Postgres descartável e mande o dump nele:
+
+```bash
+DUMP=$(ls -t /backup/estrela_gestao/*.sql.gz | head -1)
+docker run -d --rm --name pg-teste -e POSTGRES_PASSWORD=teste -e POSTGRES_USER=estrela \
+  -e POSTGRES_DB=estrela_gestao postgres:16.4
+sleep 8
+zcat "$DUMP" | docker exec -i pg-teste psql -U estrela -d estrela_gestao > /tmp/restore.log 2>&1
+echo "saida do restore: $?"
+
+# o dado chegou? (produtos e pedidos com números plausíveis)
+docker exec -i pg-teste psql -U estrela -d estrela_gestao -c \
+  "SELECT (SELECT count(*) FROM produtos) AS produtos, (SELECT count(*) FROM pedidos) AS pedidos;"
+
+docker stop pg-teste
+```
+
+Se os números baterem com a produção, o backup **é** um backup. Só depois disso siga.
+
+#### 1.1.5 Offsite (opcional, só se o local tiver internet)
+
+```cron
+30 2 * * * /opt/estrela/scripts/backup-offsite.sh >> /var/log/estrela-offsite.log 2>&1
+```
+
+O `backup-offsite.sh` faz `rclone` para um remote criptografado e **sai limpo se estiver
+offline** (testa a conexão antes). Exige o rclone configurado; sem isso, ignore.
+
+> **Retenção:** o script apaga dumps com mais de 14 dias. Confira que `/backup` tem espaço para
+> 14 deles — e lembre que o mesmo disco guarda as imagens Docker que permitem o rollback offline.
 
 ### 1.2 Espaço em disco
 
