@@ -33,7 +33,11 @@ User=estrela-agente
 Group=estrela-agente
 # Grupo docker: é o privilégio real deste serviço. Equivale a root no host — daí todo o
 # resto do hardening abaixo.
-SupplementaryGroups=docker
+# estrela-backup: grupo compartilhado com o usuário `estrela` (que roda o cron de backup),
+# para que os dois consigam escrever/rotacionar em /backup/estrela_gestao. Sem ele, o
+# backup pré-deploy do agente bate em "Permission denied" e o deploy aborta. Declarado
+# aqui de propósito: não depende do systemd ler /etc/group na hora certa.
+SupplementaryGroups=docker estrela-backup
 
 EnvironmentFile=/etc/estrela-agente/agente.env
 ExecStart=/opt/estrela-agente/venv/bin/python /opt/estrela-agente/agente.py
@@ -105,7 +109,13 @@ SystemCallArchitectures=native
 # permissão de escrita no DIRETÓRIO. Um ReadWritePaths apontando para o arquivo env.tag
 # deixaria a gravação atômica falhar com EROFS/EACCES — e a gravação atômica é o que
 # impede um `up -d` de ler o arquivo pela metade e subir com APP_IMAGEM vazio.
-ReadWritePaths=/var/lib/estrela-agente
+#
+# /backup/estrela_gestao entra porque o agente roda o backup-estrela.sh ANTES de todo
+# deploy (é gate duro: backup falhou -> deploy aborta). Sem esta linha, o `> dump.sql.gz`
+# do script bate em "Read-only file system" e NENHUM deploy passa. Casa com a permissão
+# de grupo do diretório (ver SupplementaryGroups e o instalar-agente.sh): systemd libera
+# o CAMINHO, o grupo libera o dono — precisam dos dois.
+ReadWritePaths=/var/lib/estrela-agente /backup/estrela_gestao
 #
 # /opt/estrela NÃO entra aqui, de propósito. Dar escrita lá daria ao agente poder de
 # reescrever o próprio docker-compose.prod.yml — e um compose gravável por quem tem o

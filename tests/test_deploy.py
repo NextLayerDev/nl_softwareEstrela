@@ -621,7 +621,12 @@ def _render(nome: str, ctx: dict) -> str:
 
 
 def test_historico_renderiza_linha_com_rollback(db, usuario_admin) -> None:
-    _criar_allowlist(db, [("v1.0.0", "9c311b4bb27f", True)])
+    # A head da allowlist tem que casar com a head APLICADA no banco para o release não
+    # ser marcado como arriscado (é assim que o deploy_service decide). Deriva do banco em
+    # vez de fixar a string — senão o teste quebra a cada migration nova (foi o que
+    # aconteceu quando 9c311b4bb27f deixou de ser a head).
+    head = saude_service._head_aplicada(db)
+    _criar_allowlist(db, [("v1.0.0", head, True)])
     db.add(
         Deploy(
             acao="atualizacao",
@@ -798,3 +803,18 @@ def test_hsts_enviado_com_https_enabled() -> None:
         r = TestClient(app).get("/login")
         headers = {k.lower() for k in r.headers}
         assert "strict-transport-security" in headers
+
+
+def test_origem_aceita_caminho_de_registry_longo(db) -> None:
+    """Regressão do StringDataRightTruncation no ensaio da Fase 10.
+
+    `deploys.origem` era String(20); o agente grava o registro de origem da imagem
+    ("ghcr.io/nextlayerdev/nl_softwareestrela", 39 chars) ao registrar o desfecho, e o
+    INSERT estourava. Agora é String(200) — o teto do validar_origem do agente."""
+    origem = "ghcr.io/nextlayerdev/nl_softwareestrela"
+    assert len(origem) > 20, "o valor de teste tem que exceder a largura antiga"
+    d = Deploy(acao="atualizacao", status="sucesso", versao_nova="v0.1.3", origem=origem)
+    db.add(d)
+    db.flush()  # antes do fix, estourava StringDataRightTruncation aqui
+    db.refresh(d)
+    assert d.origem == origem

@@ -44,7 +44,12 @@ class Deploy(Base):
 
     # Somente-agente (ver docstring do módulo).
     imagem_digest: Mapped[str | None] = mapped_column(String(120))
-    origem: Mapped[str | None] = mapped_column(String(20))
+    # 200 e não 20: o agente grava aqui o registro de origem da imagem (ex.:
+    # "ghcr.io/nextlayerdev/nl_softwareestrela", 39 chars), e o validar_origem do agente
+    # aceita até 200. Com String(20) o INSERT do desfecho do deploy estourava com
+    # StringDataRightTruncation — a coluna tem de ser >= o teto do validador, senão trunca
+    # de novo no dia em que o registro tiver um caminho mais longo.
+    origem: Mapped[str | None] = mapped_column(String(200))
 
     # Copiados dos labels OCI da imagem: alimentam o aviso vermelho de rollback.
     alembic_head: Mapped[str | None] = mapped_column(String(40))

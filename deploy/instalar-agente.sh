@@ -27,13 +27,24 @@
 set -euo pipefail
 
 # --------------------------------------------------------------- parâmetros
-PROJETO_DIR="${PROJETO_DIR:-/opt/estrela}"
+# PROJETO_DIR se auto-localiza: o script vive em <projeto>/deploy/instalar-agente.sh, então
+# o projeto é o pai do diretório do script. Antes era fixo em /opt/estrela e quebrava — o
+# repo no servidor está em /opt/estrela/nl_softwareEstrela (git clone criou subdiretório),
+# e o COMPOSE_FILE/ENV_PROD apontavam para o lugar errado. Ainda dá para sobrescrever.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJETO_DIR="${PROJETO_DIR:-$(dirname "${_SCRIPT_DIR}")}"
 AGENTE_DIR="${AGENTE_DIR:-/opt/estrela-agente}"
 CONF_DIR="${CONF_DIR:-/etc/estrela-agente}"
 ESTADO_DIR="${ESTADO_DIR:-/var/lib/estrela-agente}"
 USUARIO="${USUARIO:-estrela-agente}"
 COMPOSE_FILE="${COMPOSE_FILE:-${PROJETO_DIR}/docker-compose.prod.yml}"
 ENV_PROD="${ENV_PROD:-${PROJETO_DIR}/.env.prod}"
+
+# Backup: gravável por DOIS usuários — o cron (roda como USUARIO_CRON) e o agente (USUARIO).
+# Grupo compartilhado + setgid, em vez de um dono único que trancava o outro para fora.
+BACKUP_DIR="${BACKUP_DIR:-/backup/estrela_gestao}"
+BACKUP_GRUPO="${BACKUP_GRUPO:-estrela-backup}"
+USUARIO_CRON="${USUARIO_CRON:-estrela}"  # quem roda o backup-estrela.sh no cron noturno
 
 DB_NAME="${DB_NAME:-estrela_gestao}"
 DB_SUPER="${DB_SUPER:-estrela}"          # role dono do banco (o da app)
@@ -98,9 +109,30 @@ chgrp "${USUARIO}" "${ENV_PROD}"
 chmod 0640 "${ENV_PROD}"
 info ".env.prod legível pelo agente (0640 root:${USUARIO})"
 
-# Backup: o diretório precisa existir e ser gravável pelo agente, senão a etapa de backup
-# aborta todo deploy — que é o comportamento correto, mas por um motivo bobo.
-install -d -m 0750 -o "${USUARIO}" -g "${USUARIO}" "${BACKUP_DIR:-/backup/estrela_gestao}"
+# Backup: gravável pelo cron (USUARIO_CRON) E pelo agente (USUARIO). A versão antiga fazia
+# `-o ${USUARIO} -g ${USUARIO} -m 0750`, tomando o diretório para o agente e trancando o
+# `estrela` do cron para fora — instalar o agente DERRUBAVA, em silêncio, o backup que o
+# próprio agente exige. Agora: grupo compartilhado + setgid, e o dono fica com root.
+#
+# Tudo idempotente e CONVERGENTE: como o dir pode já existir (criado pelo cron como
+# estrela:estrela, ou pelo stopgap manual), forçamos dono/grupo/modo toda vez — `install -d`
+# sozinho não reescreve um dir já existente.
+groupadd -f "${BACKUP_GRUPO}"
+usermod -aG "${BACKUP_GRUPO}" "${USUARIO}"
+if id -u "${USUARIO_CRON}" >/dev/null 2>&1; then
+    usermod -aG "${BACKUP_GRUPO}" "${USUARIO_CRON}"
+    info "${USUARIO_CRON} (cron) e ${USUARIO} (agente) no grupo ${BACKUP_GRUPO}"
+else
+    info "AVISO: usuário '${USUARIO_CRON}' não existe; só ${USUARIO} no grupo ${BACKUP_GRUPO}."
+    info "       Ajuste USUARIO_CRON se o backup noturno roda com outro usuário."
+fi
+install -d "${BACKUP_DIR}"
+chown root:"${BACKUP_GRUPO}" "${BACKUP_DIR}"
+# 2775 = rwxrwsr-x: setgid (o 2) faz cada dump novo nascer no grupo ${BACKUP_GRUPO}, então
+# qualquer um dos dois usuários rotaciona (find -delete) os dumps do outro — apagar é
+# operação de DIRETÓRIO, coberta pela escrita de grupo.
+chmod 2775 "${BACKUP_DIR}"
+info "backup dir ${BACKUP_DIR} -> root:${BACKUP_GRUPO} 2775 (setgid; gravável pelos dois)"
 
 # ------------------------------------------------------------------- cosign
 log "cosign ${COSIGN_VERSAO}"
