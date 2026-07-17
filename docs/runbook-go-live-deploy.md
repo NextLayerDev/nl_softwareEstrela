@@ -16,7 +16,7 @@
 | CI (lint, 307 testes, guardas de migration, asserção do `.dockerignore`) | ✅ rodando, verde |
 | Segurança (gitleaks, bandit, pip-audit, CodeQL) | ✅ rodando, verde |
 | `main` protegida (PR + `ci-ok` + `seguranca-ok`, `enforce_admins: true`) | ✅ |
-| Imagem `ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2` | ✅ publicada, **assinada**, pública, **com o fix do login** |
+| Imagem `ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.3` | ✅ publicada, **assinada**, pública, **com o fix do login** |
 | Aba `/deploy` (perfil `dev`), agente, `migrar_seguro.py` | ✅ código na `main` |
 | **Compose puxando a imagem (Fase 7)** | ❌ **falta aplicar no servidor** |
 | **Agente instalado (Fase 9)** | ❌ **falta aplicar no servidor** |
@@ -156,7 +156,7 @@ deploy:
 
 ```bash
 curl -sI https://ghcr.io/v2/ | head -1          # espere 401 (normal, é o realm de auth)
-docker pull ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2
+docker pull ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.3
 docker images | grep nl_softwareestrela
 ```
 
@@ -189,7 +189,7 @@ git pull --ff-only origin main
 Acrescente ao `/opt/estrela/nl_softwareEstrela/.env.prod` (veja `.env.prod.example`):
 
 ```bash
-APP_IMAGEM=ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2
+APP_IMAGEM=ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.3
 ALLOWED_HOSTS=*
 ```
 
@@ -271,9 +271,17 @@ Ele é **idempotente** — rodar de novo atualiza código, tabelas e a unidade. 
 atualizado: ele **não** se auto-atualiza, de propósito (um componente com o socket do Docker que se
 atualiza sozinho pela rede é uma backdoor com boas intenções).
 
+> **Se você já tinha instalado o agente numa `v0.1.2` ou anterior:** rode o instalador **de novo**
+> depois do `git pull` da `v0.1.3`. É ele que aplica os dois fixes do ensaio da Fase 10 que vivem
+> em arquivos do repo (não na imagem): o `ReadWritePaths` do systemd liberando `/backup` e o grupo
+> compartilhado `estrela-backup` no diretório de backup. Sem re-rodar, o backup pré-deploy continua
+> batendo em "Read-only file system" / "Permission denied" e nenhum deploy passa.
+
 ```bash
 cd /opt/estrela/nl_softwareEstrela
+git pull --ff-only origin main
 sudo bash deploy/instalar-agente.sh
+sudo systemctl restart estrela-agente   # pega o SupplementaryGroups e o ReadWritePaths novos
 ```
 
 O que ele monta:
@@ -297,7 +305,7 @@ O que ele monta:
 
 O agente confere `/health/ready` depois de cada deploy e reverte se falhar. O default é
 `https://sistema.local/health/ready` — que **não responde neste servidor** (o `sistema.local` não
-resolve por DNS). Com o `Caddyfile` da `v0.1.2` respondendo em qualquer host/IP na porta 80, aponte
+resolve por DNS). Com o `Caddyfile` da `v0.1.3` respondendo em qualquer host/IP na porta 80, aponte
 o gate para o loopback via HTTP, em `/etc/estrela-agente/agente.env`:
 
 ```bash
@@ -328,17 +336,19 @@ sudo -u estrela-agente /opt/estrela-agente/venv/bin/python \
 
 # o cosign confere a imagem que está publicada?
 cosign verify --key /etc/estrela-agente/cosign.pub \
-  ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.2
+  ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.3
 ```
 
 Deve terminar com *"The signatures were verified against the specified public key"*. Já foi
 conferido daqui contra esta mesma chave — se falhar no servidor, o problema é a chave que foi
 copiada, não a imagem.
 
-> ⚠️ **Use a `v0.1.2` (ou mais nova). Nunca a `v0.1.0`/`v0.1.1`.** A `v0.1.0` não foi assinada
-> (`no signatures found` → o agente recusa). A `v0.1.1` está assinada, **mas não tem o fix do
-> loop de login** (cookie/HSTS Secure sobre HTTP): subir ela na LAN por HTTP trava o login. A
-> `v0.1.2` é a primeira com o `c936c42` dentro e é a que deve rodar.
+> ⚠️ **Use a `v0.1.3` (ou mais nova).** As anteriores não servem:
+> - `v0.1.0` — não assinada (`no signatures found` → o agente recusa).
+> - `v0.1.1` — assinada, mas sem o fix do loop de login (cookie/HSTS Secure sobre HTTP).
+> - `v0.1.2` — tem o login, mas **antes** dos 3 bugs achados no ensaio da Fase 10.
+> - `v0.1.3` — login + os 3 bugs corrigidos (backup no systemd, grupo do dir de backup, `origem`
+>   varchar). É a que deve rodar.
 
 ### 3.4 O deploy manual de ensaio (com humano no teclado)
 
@@ -356,12 +366,28 @@ Acompanhe em outro terminal:
 sudo journalctl -u estrela-agente -f
 ```
 
+### 3.5 Criar o usuário `dev` (sem ele, ninguém abre a aba /deploy)
+
+A aba `/deploy` exige `require_role("dev")`, e o banco da cliente foi semeado antes de o perfil
+`dev` existir — então **não há nenhum usuário `dev`** e a aba responde 403 para todo mundo, inclusive
+para você. O `seed.py` atual já cria `dev@estrela.local`; ele é **idempotente** (get-or-create), então
+re-rodar não duplica nem toca nos dados existentes — só adiciona o que falta:
+
+```bash
+cd /opt/estrela/nl_softwareEstrela
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec app python scripts/seed.py
+```
+
+**Troque a senha na hora.** O `seed.py` cria o `dev` com a senha padrão `estrela123`, que está num
+repositório **público**. Entre uma vez como `dev@estrela.local` / `estrela123` e use a própria tela
+de usuários para redefinir — o `dev` é o único perfil que enxerga e opera o deploy.
+
 ---
 
 ## 4. Fase 10 — ensaio dos botões (~10 min, indivisível)
 
 Só faça isto **depois** que a Fase 9 estiver verificada. Abra a aba como `dev` (ela não aparece
-para o admin da Estrela, nem digitando a URL). Com o `Caddyfile` da `v0.1.2`, o sistema responde
+para o admin da Estrela, nem digitando a URL). Com o `Caddyfile` da `v0.1.3`, o sistema responde
 por IP tanto em HTTP quanto HTTPS — use o que os terminais usam:
 
 ```
@@ -370,7 +396,7 @@ http://<ip-do-servidor>/deploy      (ou https://<ip>/deploy, aceitando o cert in
 
 **Roteiro do ensaio — faça os três, nesta ordem:**
 
-1. **Atualizar** para uma versão nova (publique uma `v0.1.2` de teste antes: `git tag -a v0.1.2 -m '...' && git push origin v0.1.2`, e espere o release.yml ficar verde).
+1. **Atualizar** para uma versão nova (publique uma `v0.1.4` de teste antes: `git tag -a v0.1.4 -m '...' && git push origin v0.1.4`, e espere o release.yml ficar verde).
    Acompanhe: a tela mostra "atualizando", o WebSocket cai por ~20–60 s (isso é esperado e
    inerente a qualquer self-update — o app está sendo recriado), e a tela **volta sozinha**. O log
    fica em `deploys.log`, no Postgres, que é o único container que não é recriado.
