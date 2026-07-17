@@ -16,7 +16,7 @@
 | CI (lint, 307 testes, guardas de migration, asserção do `.dockerignore`) | ✅ rodando, verde |
 | Segurança (gitleaks, bandit, pip-audit, CodeQL) | ✅ rodando, verde |
 | `main` protegida (PR + `ci-ok` + `seguranca-ok`, `enforce_admins: true`) | ✅ |
-| Imagem `ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.0` | ✅ publicada, **pacote público** |
+| Imagem `ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1` | ✅ publicada, **assinada**, pacote público |
 | Aba `/deploy` (perfil `dev`), agente, `migrar_seguro.py` | ✅ código na `main` |
 | **Compose puxando a imagem (Fase 7)** | ❌ **falta aplicar no servidor** |
 | **Agente instalado (Fase 9)** | ❌ **falta aplicar no servidor** |
@@ -86,7 +86,7 @@ deploy:
 
 ```bash
 curl -sI https://ghcr.io/v2/ | head -1          # espere 401 (normal, é o realm de auth)
-docker pull ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.0
+docker pull ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1
 docker images | grep nl_softwareestrela
 ```
 
@@ -119,7 +119,7 @@ git pull --ff-only origin main
 Acrescente ao `/opt/estrela/.env.prod` (veja `.env.prod.example`):
 
 ```bash
-APP_IMAGEM=ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.0
+APP_IMAGEM=ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1
 ALLOWED_HOSTS=*
 ```
 
@@ -150,7 +150,7 @@ $COMPOSE ps
 docker inspect --format '{{.State.Health.Status}}' $($COMPOSE ps -q app)
 
 # 2. a versão certa subiu?
-$COMPOSE exec app printenv APP_VERSION      # deve ser 0.1.0, NUNCA "dev"
+$COMPOSE exec app printenv APP_VERSION      # deve ser 0.1.1, NUNCA "dev"
 
 # 3. readiness (é o gate que o agente vai usar)
 $COMPOSE exec app python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health/ready').read().decode())"
@@ -235,13 +235,15 @@ sudo -u estrela-agente /opt/estrela-agente/venv/bin/python \
 
 # o cosign confere a imagem que está publicada?
 cosign verify --key /etc/estrela-agente/cosign.pub \
-  ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.0
+  ghcr.io/nextlayerdev/nl_softwareestrela:v0.1.1
 ```
 
-> ⚠️ O `cosign verify` só passa em imagens publicadas **depois** do PR #7 (que adicionou a
-> assinatura). A `v0.1.0` foi publicada antes e **não está assinada** — republique uma versão
-> (ex.: tag `v0.1.1`) antes da janela, ou o agente vai recusar tudo. **Confirme isto antes de
-> abrir a janela.**
+Deve terminar com *"The signatures were verified against the specified public key"*. Já foi
+conferido daqui contra esta mesma chave — se falhar no servidor, o problema é a chave que foi
+copiada, não a imagem.
+
+> ⚠️ **Use `v0.1.1` ou mais nova, nunca a `v0.1.0`.** A `v0.1.0` foi publicada antes de o pipeline
+> assinar e dá `no signatures found` — o agente a recusa (falha fechado, e está certo em recusar).
 
 ### 3.4 O deploy manual de ensaio (com humano no teclado)
 
@@ -272,12 +274,12 @@ https://sistema.local/deploy
 
 **Roteiro do ensaio — faça os três, nesta ordem:**
 
-1. **Atualizar** para uma versão nova (publique uma `v0.1.2` de teste antes).
+1. **Atualizar** para uma versão nova (publique uma `v0.1.2` de teste antes: `git tag -a v0.1.2 -m '...' && git push origin v0.1.2`, e espere o release.yml ficar verde).
    Acompanhe: a tela mostra "atualizando", o WebSocket cai por ~20–60 s (isso é esperado e
    inerente a qualquer self-update — o app está sendo recriado), e a tela **volta sozinha**. O log
    fica em `deploys.log`, no Postgres, que é o único container que não é recriado.
 
-2. **Reverter** para a `v0.1.1`. Confirme que:
+2. **Reverter** para a `v0.1.1` (que é a que o servidor já estará rodando). Confirme que:
    - se a versão-alvo cruza migration, aparece **aviso vermelho** e ele **exige digitar a versão**;
    - o agente **não** faz downgrade do banco (deixa o schema à frente, de propósito);
    - o `migrar_seguro.py` sobe o app sem migrar nesse caso, em vez de crashloopar.
