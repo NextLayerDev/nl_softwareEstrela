@@ -226,6 +226,60 @@ jobs:
           sbom: true
           provenance: mode=max
 
+      - name: Instalar o cosign
+        # Versão EXATA: o cosign-installer não publica tag móvel de major (`@v4` é 404),
+        # mesmo caso do astral-sh/setup-uv. `cosign-release` fixa a versão do binário na
+        # mesma que o instalar-agente.sh põe no mini PC — quem assina e quem verifica
+        # precisam falar a mesma língua.
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v2.4.1
+
+      - name: Assinar a imagem (chave fixa)
+        # Esta é a ÚNICA fronteira de confiança real do deploy. O agente no mini PC roda
+        # `cosign verify --key /etc/estrela-agente/cosign.pub` e só executa o digest que o
+        # verify devolveu — a checagem de "autor é dev" e a allowlist são defesa contra
+        # atacante SEM RCE, porque a app é dona das tabelas e poderia forjá-las.
+        #
+        # Chave fixa e não keyless (Fulcio/Rekor) de propósito: a âncora de confiança de
+        # um servidor que precisa rodar sozinho por meses tem de ser um arquivo local, e
+        # não um serviço na internet que pode estar fora no dia do incidente.
+        #
+        # Assina o DIGEST, nunca a tag: tag é mutável, digest não. Assinar a tag deixaria
+        # a janela de alguém republicá-la apontando para outra imagem.
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COSIGN_PRIVATE_KEY:-}" ]; then
+            echo "::error::COSIGN_PRIVATE_KEY não configurado. Sem assinatura o agente"
+            echo "::error::recusa a imagem (falha fechado) e nenhum deploy funciona."
+            exit 1
+          fi
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${IMAGEM}@${DIGEST}"
+          echo "Imagem assinada: ${IMAGEM}@${DIGEST}"
+
+      - name: Conferir a assinatura com a chave pública
+        # Verifica com a PÚBLICA, que é a que o servidor tem. Sem este passo, um erro no
+        # par de chaves só apareceria no mini PC, na janela de manutenção, com a Estrela
+        # esperando — que é o pior lugar possível para descobrir.
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/cosign.pub <<'PUB'
+          ${{ vars.COSIGN_PUBLIC_KEY }}
+          PUB
+          if ! grep -q "BEGIN PUBLIC KEY" /tmp/cosign.pub; then
+            echo "::error::A variable COSIGN_PUBLIC_KEY não está configurada no repositório."
+            echo "::error::Ela é a mesma chave que vive em /etc/estrela-agente/cosign.pub."
+            exit 1
+          fi
+          cosign verify --key /tmp/cosign.pub "${IMAGEM}@${DIGEST}" > /dev/null
+          echo "Assinatura confere com a chave pública que o servidor usa."
+
       - name: Attestation de proveniência (assinada pelo GitHub)
         uses: actions/attest-build-provenance@v4
         with:
