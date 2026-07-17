@@ -410,12 +410,22 @@ docker compose up -d                           # postgres (+ app/caddy em prod)
 
 ## 12. Git workflow
 
-Seguir **integralmente** a skill `git-workflow`. Resumo operacional:
-- Branches a partir de `dev`: `dev/feat-*`, `dev/fix-*`, `dev/chore-*`.
-- **Conventional Commits**: `feat(estoque): adicionar reserva na confirmação do pedido`.
-- PR de `dev/*` → `dev` (squash). PR `dev` → `main` (release) + tag SemVer.
-- Nunca commitar direto em `main`/`dev`. Nunca `WIP`.
-- Abrir um PR por feature, com descrição (o que muda / por quê / como testar).
+Repositório: `NextLayerDev/nl_softwareEstrela` (**público**). Histórico **linear na `main`** —
+não existe branch `dev`, e a proteção da `main` está **ligada**.
+
+- Branch a partir da `main`: `feat/*`, `fix/*`, `chore/*`.
+- **Conventional Commits**. O **título do PR** é o que vira o commit da `main` (squash), então é
+  ele que precisa estar no formato — os commits intermediários são rascunho e somem.
+- PR obrigatório: `git push origin main` é **rejeitado pelo GitHub**. Merge só com
+  `ci-ok` e `seguranca-ok` verdes. Squash-only, histórico linear.
+- Sem revisor humano (dev solo): quem aprova são os checks. Use `gh pr merge --auto --squash`.
+- Release: tag SemVer `vX.Y.Z` na `main` → o `release.yml` publica a imagem no GHCR (só com
+  CI verde no mesmo sha). A **GitHub Release não-prerelease é o ato de aprovar** o deploy
+  para a cliente.
+- Nunca `WIP`. Um PR por feature, com o que muda / por quê / como testar.
+
+O que roda em cada PR está em `.github/workflows/` e a política de qual check bloqueia está
+documentada no topo do `security.yml`.
 
 ---
 
@@ -436,6 +446,10 @@ Seguir **integralmente** a skill `git-workflow`. Resumo operacional:
 - [ ] `ruff check` e `ruff format` limpos.
 - [ ] Sem `print` de debug; erros tratados pelo handler global.
 - [ ] Tela/HTMX funcionando (quando aplicável) e exportação/impressão se previstas.
+- [ ] **CI verde no PR** (`ci-ok` e `seguranca-ok`) — sem isso o merge é bloqueado.
+- [ ] Cobertura não caiu abaixo do piso (`fail_under` no `pyproject.toml`). O número só sobe.
+- [ ] Se mexeu no `.env.prod`/compose/migration: registrado no bloco "impacto no servidor
+      da cliente" do PR — é o que o go-live vai ler.
 
 ---
 

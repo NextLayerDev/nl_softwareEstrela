@@ -98,7 +98,7 @@ Acesse `http://localhost:8000` → login `admin@estrela.local` / `estrela123`.
 ## Comandos úteis
 
 ```bash
-uv run pytest                                   # testes (97+)
+uv run pytest                                   # testes (307)
 uv run ruff check . && uv run ruff format .     # lint + format
 uv run alembic revision --autogenerate -m "msg" # nova migration
 uv run alembic check                            # confere se o modelo bate com a última migration
