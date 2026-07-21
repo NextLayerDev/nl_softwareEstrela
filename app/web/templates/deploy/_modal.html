@@ -12,11 +12,19 @@
   gatilho_deploy) para não quebrar com aspas nas mensagens.
 #}
 
-{% macro gatilho_deploy(action, rotulo, titulo, mensagem, tag, arriscada=false, motivo="", classe="btn-secundario") -%}
+{#
+  `exige_digitar` separa o AVISO da TRAVA. Elas nasceram juntas porque na reversão andam
+  juntas: lá a exigência de digitar a versão existe também no service, então a trava é
+  real. Aplicar uma versão para a frente é outro caso — o POST /deploy/atualizar não lê
+  `confirmacao`, e um campo obrigatório só no HTML seria teatro: qualquer POST direto
+  passaria por cima. Então quem avança vê o aviso vermelho e confirma num clique.
+#}
+{% macro gatilho_deploy(action, rotulo, titulo, mensagem, tag, arriscada=false, motivo="", classe="btn-secundario", exige_digitar=true) -%}
 <button type="button" class="{{ classe }}"
         data-action="{{ action }}" data-rotulo="{{ rotulo }}" data-titulo="{{ titulo }}"
         data-mensagem="{{ mensagem }}" data-tag="{{ tag }}"
         data-arriscada="{{ 'sim' if arriscada else 'nao' }}" data-motivo="{{ motivo }}"
+        data-digitar="{{ 'sim' if exige_digitar else 'nao' }}"
         @click="abrir({...$el.dataset}, $event)">{{ rotulo }}</button>
 {%- endmacro %}
 
@@ -40,14 +48,16 @@
       {# O aviso que separa esta tela da Vercel. Lá o rollback é instantâneo porque não há
          banco; aqui, cruzar migration é código velho contra schema novo. #}
       <div class="alerta alerta-erro mt-3" role="alert" x-show="dados?.arriscada === 'sim'" x-cloak>
-        <p class="font-semibold">Atenção: esta reversão NÃO é segura.</p>
+        {# "operação" e não "reversão": o mesmo aviso serve para aplicar uma versão sem
+           volta fácil. O porquê específico vem no `motivo`, escrito pelo service. #}
+        <p class="font-semibold">Atenção: esta operação NÃO é segura.</p>
         <p class="mt-1 text-sm" x-text="dados?.motivo"></p>
       </div>
 
       <form method="post" :action="dados?.action" class="mt-4">
         <input type="hidden" name="tag" :value="dados?.tag">
 
-        <div x-show="dados?.arriscada === 'sim'" x-cloak>
+        <div x-show="dados?.arriscada === 'sim' && dados?.digitar === 'sim'" x-cloak>
           <label class="label" for="deploy-confirmacao">
             Para liberar o botão, digite <span class="font-mono" x-text="dados?.tag"></span>
           </label>
@@ -61,7 +71,7 @@
         <div class="mt-4 flex justify-end gap-2">
           <button type="button" class="btn-secundario" @click="fechar()">Cancelar</button>
           <button type="submit" class="btn-perigo disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="dados?.arriscada === 'sim' && digitado !== dados?.tag"
+                  :disabled="dados?.arriscada === 'sim' && dados?.digitar === 'sim' && digitado !== dados?.tag"
                   x-text="dados?.rotulo || 'Confirmar'"></button>
         </div>
       </form>

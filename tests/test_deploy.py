@@ -8,6 +8,7 @@ offline, que é justamente o caso normal do servidor da cliente.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import httpx
@@ -681,6 +682,189 @@ def test_releases_renderiza_agente_ausente(db) -> None:
     html = _render("deploy/_releases.html", deploy_controller.releases(db))
     assert "não está instalado" in html
     assert 'data-action="/deploy/atualizar"' not in html, "botão sem agente é botão que mente"
+
+
+# ---------------------------------------------------------------- auto-deploy
+
+
+def _criar_status_agente(
+    db,
+    *,
+    colunas_novas: bool = True,
+    ativo: bool | None = None,
+    versao: str | None = None,
+    janela: datetime | None = None,
+) -> None:
+    """Cria `agente.servidor_status` como o instalar-agente.sh cria.
+
+    `colunas_novas=False` reproduz o servidor com o agente ANTERIOR ao auto-deploy: a
+    tabela existe, as três colunas não. Esse é o estado que não pode derrubar a tela.
+
+    DDL no Postgres é transacional e o teste roda dentro de SAVEPOINT: não sobra resíduo
+    no banco de dev.
+    """
+    db.execute(text("CREATE SCHEMA IF NOT EXISTS agente"))
+    extras = (
+        ", auto_update_ativo boolean, versao_disponivel text, proxima_janela timestamptz"
+        if colunas_novas
+        else ""
+    )
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS agente.servidor_status ("
+            " id integer PRIMARY KEY, heartbeat_em timestamptz, versao_atual text" + extras + ")"
+        )
+    )
+    if colunas_novas:
+        db.execute(
+            text(
+                "INSERT INTO agente.servidor_status"
+                " (id, heartbeat_em, auto_update_ativo, versao_disponivel, proxima_janela)"
+                " VALUES (1, now(), :a, :v, :j)"
+            ),
+            {"a": ativo, "v": versao, "j": janela},
+        )
+    else:
+        db.execute(text("INSERT INTO agente.servidor_status (id, heartbeat_em) VALUES (1, now())"))
+    db.flush()
+
+
+def test_auto_deploy_com_agente_antigo_nao_quebra_a_tela(db) -> None:
+    """Colunas ausentes = agente anterior a este recurso. A tela diz que não sabe.
+
+    O erro seria escrever "desligada": é uma afirmação sobre uma decisão que ninguém
+    tomou, e o dev agiria em cima de uma tela que inventou.
+    """
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    _criar_status_agente(db, colunas_novas=False)
+
+    estado = saude_service.auto_update(db)
+    assert estado.suportado is False
+    # A consulta que falhou não pode envenenar a transação do request.
+    assert db.execute(text("SELECT 1")).scalar() == 1
+
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "não informa o estado da atualização automática" in html
+    assert "Desligada" not in html
+    # E o card de atualizar continua inteiro logo abaixo.
+    assert 'data-action="/deploy/atualizar"' in html
+
+
+def test_auto_deploy_mostra_versao_disponivel_e_janela(db) -> None:
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    janela = datetime.now(UTC) + timedelta(days=1)
+    _criar_status_agente(db, ativo=True, versao="v9.9.9", janela=janela)
+
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "Ligada" in html
+    assert "v9.9.9" in html
+    assert "disponível" in html
+    assert "amanhã às" in html
+    assert "Aplicar agora" in html
+
+
+def test_auto_deploy_dentro_da_janela_diz_que_e_iminente(db) -> None:
+    """Janela já aberta e nada em voo: a tela não pode prometer um horário que passou."""
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    _criar_status_agente(
+        db, ativo=True, versao="v9.9.9", janela=datetime.now(UTC) - timedelta(hours=1)
+    )
+
+    auto = deploy_controller.releases(db)["auto"]
+    assert auto.iminente is True
+
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "iminente" in html
+
+
+def test_auto_deploy_desligado_aparece_como_desligado(db) -> None:
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    _criar_status_agente(db, ativo=False, versao="v9.9.9")
+
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "Desligada" in html
+    assert "não será aplicada sozinha" in html
+    # Desligado não tira o botão: aplicar na mão continua sendo o caminho.
+    assert "Aplicar agora" in html
+
+
+def test_aplicar_agora_so_aparece_com_versao_disponivel(db) -> None:
+    """Sem versão esperando, o botão não teria o que fazer."""
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    _criar_status_agente(db, ativo=True)
+
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "Nenhuma versão nova esperando" in html
+    assert "Aplicar agora" not in html
+
+
+def test_aplicar_agora_some_com_deploy_em_voo(db, usuario_admin) -> None:
+    """Com um deploy em andamento, o botão só saberia dar erro: o service recusa a
+    segunda solicitação concorrente."""
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    _criar_status_agente(db, ativo=True, versao="v9.9.9")
+    deploy_service.solicitar_atualizacao(db, "v9.9.9", usuario_admin)
+
+    ctx = deploy_controller.releases(db)
+    assert ctx["auto"].pode_aplicar_agora is False
+
+    html = _render("deploy/_releases.html", ctx)
+    assert "Aplicar agora" not in html
+    assert "em andamento terminar" in html
+
+
+def test_auto_deploy_ignora_versao_que_ja_esta_rodando(db) -> None:
+    """Entre o agente reportar e o deploy terminar ele ainda anuncia o que já subiu."""
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", True)])
+    _criar_status_agente(db, ativo=True, versao="v9.9.9")
+
+    info = deploy_service.releases(db)
+    # Força a v9.9.9 a ser a que está rodando (em teste o APP_VERSION fica vazio).
+    info = replace(info, itens=[replace(r, atual=True) for r in info.itens])
+
+    auto = deploy_service.auto_deploy(db, info, False)
+    assert auto.versao is None
+    assert auto.pode_aplicar_agora is False
+
+
+def test_auto_deploy_sem_agente_instalado_nao_mente(db) -> None:
+    """Schema `agente` ausente: nem "ligada" nem "desligada" — a tela diz o que é."""
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "não está instalado" in html
+    assert "Ligada" not in html
+    assert "Aplicar agora" not in html
+
+
+def test_avanco_arriscado_nao_reusa_o_risco_do_rollback(db) -> None:
+    """Cruzar migration para a FRENTE é o caso normal de toda versão nova.
+
+    Se o aviso vermelho aparecesse em todas, ele viraria paisagem. Só pesa entrar numa
+    versão sem volta ou que não diz contra qual schema foi construída.
+    """
+    _criar_allowlist(db, [("v9.9.9", "head_de_outro_mundo", True), ("v8.8.8", None, True)])
+    itens = {r.tag: r for r in deploy_service.releases(db).itens}
+
+    cruza = itens["v9.9.9"]
+    assert cruza.arriscada is True, "voltar para ela continua sendo arriscado"
+    assert cruza.avanco_arriscado is False, "avançar cruzando migration é o normal"
+    assert cruza.motivo_avanco == ""
+
+    sem_head = itens["v8.8.8"]
+    assert sem_head.avanco_arriscado is True
+    assert "não dá para garantir" in sem_head.motivo_avanco
+
+
+def test_aplicar_agora_mostra_o_aviso_vermelho_quando_e_sem_volta(db) -> None:
+    _criar_allowlist(db, [("v9.9.9", "9c311b4bb27f", False)])
+    _criar_status_agente(db, ativo=True, versao="v9.9.9")
+
+    html = _render("deploy/_releases.html", deploy_controller.releases(db))
+    assert "Aplicar agora" in html
+    assert 'data-arriscada="sim"' in html
+    assert "btn-perigo" in html
+    # Aviso sim; campo obrigatório não: o POST /deploy/atualizar não lê `confirmacao`,
+    # e uma trava que só existe no HTML é teatro.
+    assert 'data-digitar="nao"' in html
 
 
 def test_regex_da_app_e_do_agente_concordam() -> None:

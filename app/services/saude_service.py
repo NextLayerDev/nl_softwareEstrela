@@ -36,6 +36,26 @@ SCHEMA_ATRAS = "atras"  # banco atrás do código: migration pendente
 SCHEMA_A_FRENTE = "a_frente"  # banco à frente: rollback sob expand/contract
 SCHEMA_DESCONHECIDO = "desconhecido"
 
+# Estado do auto-deploy, publicado pelo agente do host em `agente.servidor_status`.
+# Estas três colunas são MAIS NOVAS que a tabela: um servidor com o agente anterior a
+# este recurso tem a tabela mas não as colunas, e a tela precisa dizer "não sei" em vez
+# de estourar. Por isso a consulta é isolada em SAVEPOINT e qualquer erro vira
+# `suportado=False` — inclusive UndefinedColumn.
+_SQL_AUTO = text(
+    "SELECT auto_update_ativo, versao_disponivel, proxima_janela "
+    "FROM agente.servidor_status ORDER BY id LIMIT 1"
+)
+
+
+@dataclass(frozen=True)
+class EstadoAuto:
+    """O que o agente diz sobre a atualização automática. Tudo pode ser desconhecido."""
+
+    suportado: bool
+    ativo: bool = False
+    versao_disponivel: str | None = None
+    proxima_janela: datetime | None = None
+
 
 @dataclass(frozen=True)
 class Sonda:
@@ -225,6 +245,35 @@ class SaudeService:
                 "Um agente parado deixa os botões de atualizar sem efeito.",
             )
         return Sonda("Agente de deploy", "ativo", "ok")
+
+    def auto_update(self, db: Session) -> EstadoAuto:
+        """Estado da atualização automática, como o agente o reportou.
+
+        Três estados diferentes desabam no mesmo `suportado=False`, e de propósito: o
+        schema `agente` ausente (agente não instalado), as colunas ausentes (agente
+        anterior a este recurso) e a tabela sem linha (agente instalado que ainda não
+        reportou) têm a mesma consequência para quem lê a tela — não dá para afirmar
+        nada sobre o auto-deploy. Fingir "desligado" nesses casos seria mentir, e esta é
+        a tela de diagnóstico.
+        """
+        try:
+            with db.begin_nested():
+                linha = db.execute(_SQL_AUTO).mappings().first()
+        except Exception:  # noqa: BLE001 - tabela/coluna ausente é estado normal
+            logger.debug("agente.servidor_status sem o estado do auto-deploy.", exc_info=True)
+            return EstadoAuto(False)
+        if linha is None:
+            return EstadoAuto(False)
+
+        versao = linha.get("versao_disponivel")
+        return EstadoAuto(
+            suportado=True,
+            # `is True` e não bool(): NULL vira desligado, mas sem prometer que alguém
+            # desligou de fato.
+            ativo=linha.get("auto_update_ativo") is True,
+            versao_disponivel=str(versao).strip() or None if versao else None,
+            proxima_janela=linha.get("proxima_janela"),
+        )
 
     # ----------------------------------------------------------------- API
     def coletar(self, db: Session) -> Saude:
