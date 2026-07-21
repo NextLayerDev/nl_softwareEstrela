@@ -32,6 +32,19 @@ REGRAS QUE NÃO SE NEGOCIAM
   IMAGEM, uma vez.
 * NUNCA `sys.exit(1)` no laço principal. Com `Restart=always`, sair vira crashloop e o
   agente some justo quando é preciso. Erro = logar, dormir, tentar de novo.
+
+DESCOBERTA DE RELEASES E AUTO-ATUALIZAÇÃO
+-----------------------------------------
+O agente consulta a API pública do GitHub para saber que releases existem
+(`sincronizar_releases`) e, se `ESTRELA_AUTO_UPDATE` estiver ligado, ele mesmo enfileira a
+atualização (`auto_atualizar`). Duas regras dão o tom:
+
+* A allowlist continua sendo a fronteira, e o cosign continua sendo o único jeito de
+  entrar nela. O GitHub só diz "existe uma tag chamada v0.1.4"; quem decide que aquilo é
+  uma imagem legítima é `cosign verify --key /etc/estrela-agente/cosign.pub`. Uma conta do
+  GitHub comprometida consegue criar uma Release; não consegue assinar a imagem.
+* Auto-update só ANDA PARA FRENTE e só FORA DO EXPEDIENTE. Rollback continua 100% manual:
+  voltar versão é decisão de gente, porque o banco não volta junto.
 """
 
 from __future__ import annotations
@@ -51,12 +64,14 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta, timezone
+from datetime import time as hora_do_dia
 from pathlib import Path
 from types import FrameType
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
 
@@ -76,13 +91,58 @@ HEARTBEAT_SEG = 30
 TIMEOUT_COSIGN = 120
 TIMEOUT_PULL = 900
 TIMEOUT_BACKUP = 1800
+# `buildx imagetools inspect` baixa só o manifesto e o blob de config (alguns KB), nunca
+# as layers. É por isso que dá para ler os labels de uma imagem que ainda não veio.
+TIMEOUT_INSPECT = 120
+TIMEOUT_GITHUB = 10
 # As fotos são bytea; um rewrite de tabela leva minutos de verdade.
 TIMEOUT_PREFLIGHT = 1800
 TIMEOUT_UP = 600
 TIMEOUT_GATE_SEG = 180
 
+# Folga mínima de janela para ENFILEIRAR um auto-deploy: a soma dos timeouts do pior caso
+# (pull + backup + pré-flight + up + gate) mais uma reversão completa (up + gate). Sem
+# exigir isto, um deploy começado às 07:59 estaria trocando o sistema às 09:30 — com a
+# empresa vendendo, que é exatamente o que a janela existe para evitar.
+MARGEM_JANELA_SEG = (
+    TIMEOUT_PULL + TIMEOUT_BACKUP + TIMEOUT_PREFLIGHT + TIMEOUT_UP + TIMEOUT_GATE_SEG
+) + (TIMEOUT_UP + TIMEOUT_GATE_SEG)
+
 PARAR = threading.Event()
 DRY_RUN = False
+
+# --- Descoberta de releases ------------------------------------------------
+SYNC_INTERVALO_SEG = 300  # não bater na API do GitHub a cada volta de 60s
+SYNC_BACKOFF_MAX_SEG = 3600
+SYNC_MAX_RELEASES = 20  # quantas releases pedir por consulta
+# Teto de tags NOVAS verificadas por ciclo: cada uma custa um `cosign verify` (rede) e um
+# `imagetools inspect`. Sem teto, um repositório com 30 releases inéditas prenderia o laço
+# por minutos — e o laço é quem processa os deploys pedidos na tela.
+SYNC_MAX_NOVAS_POR_CICLO = 3
+SYNC_TETO_RESPOSTA = 2 * 1024 * 1024  # a resposta do GitHub é dado hostil até prova
+
+# Labels OCI de onde saem alembic_head/rollback_seguro. Hoje o Dockerfile ainda NÃO os
+# emite: nesse caso as colunas ficam NULL, e NULL já é tratado como "arriscada" pela aba
+# /deploy. O agente não inventa valor — dizer "rollback seguro" sem saber é pior do que
+# admitir que não sabe.
+LABELS_ALEMBIC = ("br.com.estrela.alembic.head", "br.com.estrela.alembic-head")
+LABELS_ROLLBACK = ("br.com.estrela.rollback.seguro", "br.com.estrela.rollback-seguro")
+LABEL_REVISION = "org.opencontainers.image.revision"
+
+# --- Auto-atualização ------------------------------------------------------
+# Anti-loop. Ver `escolher_alvo`: uma versão que já falhou (ou que alguém cancelou) não é
+# tentada de novo antes de AUTO_BACKOFF_SEG, e depois de AUTO_TENTATIVAS desfechos ruins
+# ela é abandonada de vez pelo automático — só na mão.
+AUTO_TENTATIVAS = 2
+AUTO_BACKOFF_SEG = 6 * 3600
+# Desfechos que contam como tentativa queimada. `cancelado` entra de propósito: cancelar é
+# um humano dizendo "esta versão não, agora não" — se o agente reenfileirasse 60 segundos
+# depois, o humano perderia a briga contra o próprio servidor.
+STATUS_RUINS = ("falha", "falhou_revertido", "recusado", "cancelado")
+
+_RE_REPO_GITHUB = re.compile(
+    r"\A[A-Za-z0-9][A-Za-z0-9._\-]{0,38}/[A-Za-z0-9][A-Za-z0-9._\-]{0,99}\Z"
+)
 
 
 # ===========================================================================
@@ -317,9 +377,262 @@ def disco_suficiente(livre: int, total: int, minimo_bytes: int, minimo_pct: floa
     return livre >= minimo_bytes and (livre / total * 100) >= minimo_pct
 
 
+# --- Janela de manutenção --------------------------------------------------
+# O mini PC atende 10 terminais e 80-100 pedidos por dia. Um `up -d` derruba o app por
+# alguns segundos e o pré-flight de migration pode levar minutos: no meio do expediente
+# isso é uma vendedora com o pedido pela metade e o cliente no balcão. Então o automático
+# só age quando a loja está fechada. A janela é o COMPLEMENTO do expediente — pensar
+# "quando a loja está aberta" é mais fácil de configurar certo do que enumerar madrugadas.
+
+
+@dataclass(frozen=True)
+class Janela:
+    """Configuração da janela de manutenção. Pura: dá para testar sem relógio nem banco."""
+
+    inicio_expediente: hora_do_dia = hora_do_dia(8, 0)
+    fim_expediente: hora_do_dia = hora_do_dia(19, 0)
+    # isoweekday: segunda=1 ... domingo=7. Fim de semana inteiro é janela.
+    dias_uteis: frozenset[int] = frozenset({1, 2, 3, 4, 5})
+    fuso: str = "America/Sao_Paulo"
+
+    def tz(self) -> Any:
+        """O fuso do CLIENTE, não o do servidor.
+
+        O mini PC pode estar em UTC (é o default de muita instalação de Ubuntu), e um
+        agente que pensa em UTC acharia que 19:00 de Recife é 22:00 e faria deploy às
+        16:00 do horário de quem está vendendo. Se o tzdata não existir na máquina, cai
+        para UTC-3 fixo em vez de estourar — errar por uma hora num feriado de horário de
+        verão que o Brasil não tem mais é infinitamente melhor do que o agente morrer.
+        """
+        try:
+            return ZoneInfo(self.fuso)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            log.warning("Fuso %r indisponível; usando UTC-3 fixo.", self.fuso)
+            return timezone(timedelta(hours=-3))
+
+
+def _janela_de(cfg: Any) -> Janela:
+    """Aceita tanto a `Janela` quanto a `Config` inteira — os testes usam a primeira."""
+    return cfg if isinstance(cfg, Janela) else cfg.janela
+
+
+def _no_fuso(agora: datetime, j: Janela) -> datetime:
+    """Datetime ingênuo é tratado como UTC: é o que `datetime.now(UTC)` produz aqui."""
+    if agora.tzinfo is None:
+        agora = agora.replace(tzinfo=UTC)
+    return agora.astimezone(j.tz())
+
+
+def dentro_da_janela(agora: datetime, cfg: Any) -> bool:
+    """Dá para mexer no sistema agora? True = fora do expediente (ou fim de semana)."""
+    j = _janela_de(cfg)
+    local = _no_fuso(agora, j)
+    if local.isoweekday() not in j.dias_uteis:
+        return True
+    t = local.time()
+    if j.inicio_expediente <= j.fim_expediente:
+        expediente = j.inicio_expediente <= t < j.fim_expediente
+    else:
+        # Expediente que cruza a meia-noite (turno da noite). Não é o caso da Estrela, mas
+        # a configuração aceita e o resultado precisa continuar fazendo sentido.
+        expediente = t >= j.inicio_expediente or t < j.fim_expediente
+    return not expediente
+
+
+def proxima_janela(agora: datetime, cfg: Any) -> datetime:
+    """Quando é a próxima oportunidade de mexer. É o "agendada para" que a tela mostra.
+
+    Se já estamos na janela, a resposta é "agora". Senão, testa os únicos instantes em que
+    a janela pode ABRIR (o fim do expediente e a meia-noite de cada dia) e devolve o
+    primeiro que de fato esteja dentro da janela — assim uma configuração esquisita
+    (expediente cruzando meia-noite, sexta com o fim de semana emendado) continua dando
+    uma resposta correta sem lógica especial para cada caso.
+    """
+    j = _janela_de(cfg)
+    local = _no_fuso(agora, j)
+    if dentro_da_janela(local, j):
+        return local
+    tz = local.tzinfo
+    candidatos: list[datetime] = []
+    for i in range(9):  # uma semana inteira + folga
+        d = (local + timedelta(days=i)).date()
+        candidatos.append(datetime.combine(d, j.fim_expediente, tzinfo=tz))
+        candidatos.append(datetime.combine(d, hora_do_dia(0, 0), tzinfo=tz))
+    for c in sorted(candidatos):
+        if c > local and dentro_da_janela(c, j):
+            return c
+    # Janela impossível (expediente 24h todos os dias). Devolve algo no futuro em vez de
+    # levantar: quem chama está no laço, e o laço não pode morrer.
+    return local + timedelta(days=1)
+
+
+def fim_da_janela(agora: datetime, cfg: Any) -> datetime | None:
+    """Quando a janela ATUAL fecha (o expediente volta). None = não estamos em janela.
+
+    Fim de semana pode emendar vários dias; procuramos o próximo instante em que a janela
+    deixa de valer, minuto a minuto seria caro — então testamos os únicos instantes em que
+    ela pode FECHAR: o início do expediente de cada dia.
+    """
+    j = _janela_de(cfg)
+    local = _no_fuso(agora, j)
+    if not dentro_da_janela(local, j):
+        return None
+    tz = local.tzinfo
+    for i in range(9):
+        d = (local + timedelta(days=i)).date()
+        c = datetime.combine(d, j.inicio_expediente, tzinfo=tz)
+        if c > local and not dentro_da_janela(c, j):
+            return c
+    return None  # janela sem fim previsto (nenhum dia útil configurado)
+
+
+def janela_com_folga(agora: datetime, cfg: Any, margem_seg: int) -> bool:
+    """Estamos em janela E ainda cabe um deploy inteiro antes do expediente voltar?
+
+    `dentro_da_janela` sozinha é um booleano ingênuo: às 07:59 de uma terça ela diz "pode",
+    o automático enfileira, e o pior caso do deploy (pull 900 + backup 1800 + pré-flight
+    1800 + up 600 + gate 180, mais uma reversão de 780) leva ~100 min — ou seja, o sistema
+    estaria sendo trocado às 09:30, com a loja vendendo. Que é exatamente o que a janela
+    existe para impedir.
+
+    Só vale para ENFILEIRAR o automático. O botão manual não passa por aqui: se o operador
+    está com o dedo no gatilho às 10h da manhã, ele sabe o que está fazendo.
+    """
+    fim = fim_da_janela(agora, cfg)
+    if fim is None:
+        return False
+    j = _janela_de(cfg)
+    return (fim - _no_fuso(agora, j)).total_seconds() >= margem_seg
+
+
+# --- Escolha da versão-alvo ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TentativaAuto:
+    """Histórico de desfechos ruins de uma versão (falha, recusa ou cancelamento)."""
+
+    versao: str
+    tentativas: int
+    ultima_em: datetime | None = None
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+def escolher_alvo(
+    versao_atual: str | None,
+    tags: Iterable[str],
+    falhas: Mapping[str, TentativaAuto],
+    agora: datetime,
+    tentativas_max: int = AUTO_TENTATIVAS,
+    espera_seg: int = AUTO_BACKOFF_SEG,
+) -> tuple[str | None, str]:
+    """Qual versão o automático deve instalar? Puro. :returns: (tag, motivo)
+
+    Regras, em ordem:
+
+    1. **Só sobe.** Nunca escolhe versão menor ou igual à que está rodando. Downgrade é
+       rollback, e rollback é decisão humana — o banco não volta junto com a imagem.
+    2. **Sem base, sem automático.** Se `versao_atual` é desconhecida (agente recém
+       instalado, nenhum deploy ainda), ele não age: um agente que não sabe o que está
+       rodando não tem o direito de trocar o que está rodando. Um deploy manual estabelece
+       a base e libera o automático dali em diante.
+    3. **Pré-release nunca.** `v1.2.3-rc1` só na mão.
+    4. **ANTI-LOOP.** Uma versão com desfecho ruim (falha, recusa ou cancelamento) fica de
+       quarentena por `espera_seg` — cobre a falha transitória (internet caiu no meio do
+       pull) sem transformar uma imagem quebrada em derrubada de hora em hora. Ao chegar
+       em `tentativas_max` desfechos ruins, o automático desiste DAQUELA versão para
+       sempre; a próxima release (ou um clique na tela) resolve. É por isso que o
+       automático nunca "bate a cabeça": cada ciclo ou avança, ou espera, ou desiste.
+       Sem isso, uma migration ruim viraria backup + downtime a cada 60 segundos.
+    """
+    if not versao_atual or not validar_tag(versao_atual):
+        return None, "versão atual desconhecida — o automático espera um deploy manual"
+
+    candidatos = [
+        t for t in tags if validar_tag(t) and "-" not in t and comparar_versoes(t, versao_atual) > 0
+    ]
+    if not candidatos:
+        return None, "nenhuma versão mais nova na allowlist"
+    candidatos.sort(key=chave_versao, reverse=True)
+
+    agora = _aware(agora) or datetime.now(UTC)
+    motivo = ""
+    for tag in candidatos:
+        f = falhas.get(tag)
+        if f is None:
+            return tag, "versão nova, sem tentativa anterior"
+        if f.tentativas >= tentativas_max:
+            motivo = f"{tag} foi abandonada pelo automático após {f.tentativas} tentativas"
+            continue
+        ultima = _aware(f.ultima_em)
+        if ultima is not None and (agora - ultima).total_seconds() < espera_seg:
+            motivo = f"{tag} está em quarentena após uma tentativa malsucedida"
+            continue
+        return tag, f"nova tentativa de {tag} ({f.tentativas} desfecho(s) ruim(ns) antes)"
+    return None, motivo or "nenhuma versão elegível"
+
+
 # ===========================================================================
 # Configuração
 # ===========================================================================
+
+
+def _inteiro(chave: str, padrao: int) -> int:
+    """Config malformada NÃO derruba o agente.
+
+    `Config.do_ambiente()` roda antes do laço; um ValueError aqui sai com código != 0 e,
+    com `Restart=always`, vira crashloop — o agente sumiria por causa de uma vírgula no
+    agente.env, justamente quando alguém precisa dele para consertar algo.
+    """
+    bruto = os.environ.get(chave, "").strip()
+    if not bruto:
+        return padrao
+    try:
+        return int(bruto)
+    except ValueError:
+        log.warning("%s=%r não é um inteiro; usando %s.", chave, bruto[:40], padrao)
+        return padrao
+
+
+def _booleano(chave: str, padrao: bool) -> bool:
+    bruto = os.environ.get(chave, "").strip().lower()
+    if not bruto:
+        return padrao
+    if bruto in ("1", "true", "sim", "yes", "on"):
+        return True
+    if bruto in ("0", "false", "nao", "não", "no", "off"):
+        return False
+    log.warning("%s=%r não é booleano; usando %s.", chave, bruto[:20], padrao)
+    return padrao
+
+
+def _hora(chave: str, padrao: hora_do_dia) -> hora_do_dia:
+    """ "HH:MM" -> time. Valor inválido cai no padrão, com aviso no journal."""
+    bruto = os.environ.get(chave, "").strip()
+    if not bruto:
+        return padrao
+    m = re.fullmatch(r"([01]?[0-9]|2[0-3]):([0-5][0-9])", bruto)
+    if not m:
+        log.warning("%s=%r não é HH:MM; usando %s.", chave, bruto[:20], padrao)
+        return padrao
+    return hora_do_dia(int(m.group(1)), int(m.group(2)))
+
+
+def _dias(chave: str, padrao: frozenset[int]) -> frozenset[int]:
+    """ "1,2,3,4,5" -> {1..5} (isoweekday: segunda=1, domingo=7)."""
+    bruto = os.environ.get(chave, "").strip()
+    if not bruto:
+        return padrao
+    dias = {int(p) for p in re.findall(r"[1-7]", bruto)}
+    if not dias or len(dias) != len([p for p in bruto.split(",") if p.strip()]):
+        log.warning("%s=%r não é uma lista de dias 1-7; usando o padrão.", chave, bruto[:30])
+        return padrao
+    return frozenset(dias)
 
 
 @dataclass
@@ -340,6 +653,17 @@ class Config:
     disco_path: Path
     disco_min_bytes: int
     disco_min_pct: float
+    # --- descoberta de releases ---
+    github_repo: str = ""
+    github_api: str = "https://api.github.com"
+    github_token: str = ""
+    imagem_origem: str = ""
+    sync_intervalo_seg: int = SYNC_INTERVALO_SEG
+    # --- auto-atualização ---
+    auto_update: bool = False
+    janela: Janela = field(default_factory=Janela)
+    auto_tentativas: int = AUTO_TENTATIVAS
+    auto_backoff_seg: int = AUTO_BACKOFF_SEG
     segredos: tuple[str, ...] = ()
 
     @staticmethod
@@ -365,9 +689,44 @@ class Config:
             saude_insecure=g("ESTRELA_SAUDE_TLS_INSECURE", "").strip() in ("1", "true", "sim"),
             alerta_url=g("ESTRELA_ALERTA_URL", "").strip(),
             disco_path=Path(g("ESTRELA_DISCO_PATH", "/var/lib")),
-            disco_min_bytes=int(g("ESTRELA_DISCO_MIN_BYTES", str(3 * 1024**3))),
-            disco_min_pct=float(g("ESTRELA_DISCO_MIN_PCT", "10")),
+            disco_min_bytes=_inteiro("ESTRELA_DISCO_MIN_BYTES", 3 * 1024**3),
+            disco_min_pct=float(g("ESTRELA_DISCO_MIN_PCT", "10") or 10),
+            github_repo=g("ESTRELA_GITHUB_REPO", "NextLayerDev/nl_softwareEstrela").strip(),
+            github_api=(g("ESTRELA_GITHUB_API", "https://api.github.com").strip().rstrip("/")),
+            github_token=g("ESTRELA_GITHUB_TOKEN", "").strip(),
+            imagem_origem=g(
+                "ESTRELA_IMAGEM_ORIGEM", "ghcr.io/nextlayerdev/nl_softwareestrela"
+            ).strip(),
+            sync_intervalo_seg=max(60, _inteiro("ESTRELA_SYNC_INTERVALO_SEG", SYNC_INTERVALO_SEG)),
+            # Default DESLIGADO no código, LIGADO no agente.env que o instalador gera.
+            # Um agente que sobe sem configuração não pode decidir sozinho trocar a versão
+            # do sistema que a empresa usa para vender: se o arquivo de config sumiu ou
+            # não foi lido, o comportamento seguro é ficar parado esperando um clique.
+            auto_update=_booleano("ESTRELA_AUTO_UPDATE", False),
+            janela=Janela(
+                inicio_expediente=_hora("ESTRELA_EXPEDIENTE_INICIO", hora_do_dia(8, 0)),
+                fim_expediente=_hora("ESTRELA_EXPEDIENTE_FIM", hora_do_dia(19, 0)),
+                dias_uteis=_dias("ESTRELA_DIAS_UTEIS", frozenset({1, 2, 3, 4, 5})),
+                fuso=g("ESTRELA_FUSO", "America/Sao_Paulo").strip() or "America/Sao_Paulo",
+            ),
+            auto_tentativas=max(1, _inteiro("ESTRELA_AUTO_TENTATIVAS", AUTO_TENTATIVAS)),
+            auto_backoff_seg=max(60, _inteiro("ESTRELA_AUTO_BACKOFF_SEG", AUTO_BACKOFF_SEG)),
         )
+
+        # DEAD-MAN'S SWITCH OBRIGATÓRIO: auto-update sem canal de alerta fora de banda é um
+        # servidor que se atualiza sozinho às 23h, quebra, e só é descoberto quando a loja
+        # abre às 8h — porque o único lugar que contaria a falha é a própria aba /deploy,
+        # que está fora do ar junto. Recusamos ligar o automático em vez de fingir que ele
+        # está seguro. O manual (botão da aba, com humano olhando) segue funcionando.
+        if cfg.auto_update and not cfg.alerta_url:
+            log.error(
+                "AUTO-UPDATE DESLIGADO: ESTRELA_AUTO_UPDATE=true exige ESTRELA_ALERTA_URL. "
+                "Sem canal fora de banda, uma falha de madrugada só aparece quando a loja "
+                "abre. Preencha a URL do ntfy em %s e reinicie o agente.",
+                cfg.env_file.parent / "agente.env",
+            )
+            cfg.auto_update = False
+
         cfg.segredos = cfg._coletar_segredos()
         return cfg
 
@@ -391,6 +750,10 @@ class Config:
             m = re.search(r"://[^\s:/@]+:([^\s@]+)@", self.dsn)
             if m:
                 valores.append(m.group(1))
+        # O token do GitHub (opcional) vira header Authorization; um erro de urllib pode
+        # ecoar a requisição inteira no log — que a aba /deploy renderiza no navegador.
+        if self.github_token:
+            valores.append(self.github_token)
         return tuple(valores)
 
 
@@ -813,6 +1176,55 @@ def ler_labels(imagem: str, diario: Diario) -> dict[str, str] | None:
     return {str(k): str(v) for k, v in labels.items()}
 
 
+def _labels_de_config(bruto: object) -> dict[str, str] | None:
+    """Extrai `config.Labels` do JSON do `imagetools inspect`, sem confiar no formato.
+
+    Imagem de uma plataforma só devolve o objeto do config; imagem multiplataforma devolve
+    um mapa `plataforma -> config`. Aceitamos os dois, e preferimos linux/amd64 (o mini PC).
+    """
+    if not isinstance(bruto, dict):
+        return None
+    if "config" in bruto or "Config" in bruto:
+        cfg_img = bruto.get("config") or bruto.get("Config") or {}
+        if not isinstance(cfg_img, dict):
+            return None
+        labels = cfg_img.get("Labels") or cfg_img.get("labels") or {}
+        if not isinstance(labels, dict):
+            return None
+        return {str(k): str(v) for k, v in labels.items()}
+    ordem = sorted(bruto, key=lambda p: (p != "linux/amd64", str(p)))
+    for plataforma in ordem:
+        achado = _labels_de_config(bruto[plataforma])
+        if achado:
+            return achado
+    return None
+
+
+def labels_remotos(imagem: str, diario: Diario) -> dict[str, str] | None:
+    """Labels da imagem SEM baixar as layers (só manifesto + blob de config, uns KB).
+
+    Serve à sincronização da allowlist: cadastrar 5 releases não pode significar baixar 5
+    imagens de centenas de MB num link doméstico que também precisa atender a loja.
+
+    Diferente de `ler_labels`, aqui `None` NÃO aborta nada: significa "não sei", e não
+    saber é gravado como NULL — que a aba /deploy já mostra como versão arriscada. O
+    fail-closed continua valendo onde importa, na hora de trocar a imagem de verdade.
+    """
+    r = executar(
+        ["docker", "buildx", "imagetools", "inspect", "--format", "{{json .Image}}", imagem],
+        timeout=TIMEOUT_INSPECT,
+    )
+    if not r.ok:
+        diario.linha("Não consegui ler os labels remotos (seguindo com NULL).")
+        log.debug("imagetools inspect falhou: %s", r.tudo[:500])
+        return None
+    try:
+        return _labels_de_config(json.loads(r.saida.strip() or "null"))
+    except json.JSONDecodeError:
+        diario.linha("Labels remotos não vieram em JSON (seguindo com NULL).")
+        return None
+
+
 def podar_imagens(cfg: Config, origem: str, manter: Sequence[str], diario: Diario) -> None:
     """Apaga imagens antigas do repositório, PRESERVANDO a atual e a anterior.
 
@@ -971,10 +1383,30 @@ def reverter(
 def processar(cfg: Config, conn: psycopg.Connection, deploy_id: int) -> None:
     """Executa um deploy do começo ao fim. Nunca levanta para fora."""
     linha = conn.execute(
-        "SELECT id, acao, versao_nova, status FROM deploys WHERE id = %s", (deploy_id,)
+        "SELECT id, acao, versao_nova, status, solicitado_por_id FROM deploys WHERE id = %s",
+        (deploy_id,),
     ).fetchone()
     if linha is None or linha[3] != "solicitado":
         return
+
+    # A janela é reconferida AQUI, não só na hora de enfileirar. Cenário real: o automático
+    # insere às 07:58, o mini PC reinicia, e a linha 'solicitado' sobrevive (a reconciliação
+    # só limpa 'executando'). Sem esta checagem o agente pegaria essa linha às 9h da manhã e
+    # trocaria o sistema no meio do expediente — a janela teria sido respeitada no papel e
+    # violada na prática.
+    #
+    # `solicitado_por_id IS NULL` identifica a origem automática. É leitura usada APENAS
+    # para ADIAR, nunca para escolher imagem: a regra de nunca confiar em `deploys` para
+    # decidir o que executar continua valendo.
+    automatico = linha[4] is None
+    if automatico and not janela_com_folga(datetime.now(UTC), cfg, MARGEM_JANELA_SEG):
+        log.info(
+            "Deploy automático #%s adiado: fora da janela (ou sem folga). "
+            "Fica 'solicitado' e será executado na próxima janela.",
+            deploy_id,
+        )
+        return
+
     sol = Solicitacao(id=linha[0], acao=linha[1], versao_nova=linha[2])
 
     diario = Diario(cfg, sol.id)
@@ -1148,12 +1580,43 @@ def _executar_deploy(
     if labels is None:
         return "falha", "", False
     versao_label = labels.get("org.opencontainers.image.version", "")
-    if versao_label:
+
+    # 4b. A TAG TEM DE CASAR COM O CONTEÚDO. O cosign prova que ALGUM digest foi assinado
+    # pela nossa chave; NÃO prova que aquele digest é o da versão pedida. Sem esta
+    # comparação, quem controlasse o registry (ou a resolução de tag) poderia apontar
+    # `v9.9.9` para o conteúdo de uma release ANTIGA — legitimamente assinada — e o agente
+    # aplicaria um downgrade achando que avançou, inclusive furando o piso de versão.
+    #
+    # O release.yml grava org.opencontainers.image.version com a tag SEM o "v", dentro da
+    # imagem que assina — então o label é conteúdo assinado, não metadado do registry.
+    esperada = sol.versao_nova.lstrip("v")
+    if not versao_label:
         diario.linha(
-            "Imagem declara versão %s (revision %s).",
-            versao_label,
-            labels.get("org.opencontainers.image.revision", "?")[:7],
+            "ABORTADO: a imagem não declara org.opencontainers.image.version, então não há "
+            "como provar que este conteúdo é a versão %s. Falha fechado.",
+            sol.versao_nova,
         )
+        return "falha", "", False
+    if versao_label.lstrip("v") != esperada:
+        diario.linha(
+            "ABORTADO: pedi %s, mas a imagem assinada declara ser a versão %s. Tag e "
+            "conteúdo não batem — possível retag/downgrade forçado.",
+            sol.versao_nova,
+            versao_label,
+        )
+        alertar(
+            cfg,
+            "Estrela: tag não bate com o conteúdo da imagem",
+            f"O deploy #{sol.id} pediu {sol.versao_nova} e recebeu uma imagem que se declara "
+            f"{versao_label}. Nada foi trocado. Investigue o registry antes de tentar de novo.",
+            prioridade="urgent",
+        )
+        return "falha", "", False
+    diario.linha(
+        "Versão confirmada: a imagem assinada declara %s (revision %s).",
+        versao_label,
+        labels.get("org.opencontainers.image.revision", "?")[:7],
+    )
 
     # 5. Backup — falhou, aborta.
     if not etapa_backup(cfg, diario):
@@ -1212,6 +1675,413 @@ def _executar_deploy(
 
 
 # ===========================================================================
+# Descoberta de releases (allowlist) e auto-atualização
+# ===========================================================================
+
+
+class _FalhaSync(Exception):
+    """Sinaliza ao `Manutencao` que vale a pena esperar mais antes de tentar de novo."""
+
+
+def buscar_releases_github(cfg: Config) -> list[dict[str, Any]] | None:
+    """Releases publicadas no GitHub. NUNCA levanta. `None` = não deu para consultar.
+
+    Repositório público: o token é opcional e só serve para o limite de requisições. Sem
+    internet é estado NORMAL neste servidor (é um sistema offline-first que fica meses
+    sozinho), então "não consegui consultar" é rotina, não incidente.
+
+    O que volta daqui é dado HOSTIL, mesmo vindo do GitHub: só o `tag_name` é aproveitado,
+    e só depois de passar pelo `validar_tag`. Nada da resposta vira argumento de comando
+    nem escolhe imagem — quem escolhe imagem é o cosign.
+    """
+    if not _RE_REPO_GITHUB.fullmatch(cfg.github_repo or ""):
+        log.warning("ESTRELA_GITHUB_REPO inválido; sincronização desligada.")
+        return None
+    if not cfg.github_api.startswith("https://"):
+        log.warning("ESTRELA_GITHUB_API precisa ser https; sincronização desligada.")
+        return None
+
+    url = f"{cfg.github_api}/repos/{cfg.github_repo}/releases?per_page={SYNC_MAX_RELEASES}"
+    cabecalhos = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "estrela-agente",
+    }
+    if cfg.github_token:
+        cabecalhos["Authorization"] = f"Bearer {cfg.github_token}"
+    try:
+        req = urllib.request.Request(url, headers=cabecalhos, method="GET")  # noqa: S310
+        with urllib.request.urlopen(req, timeout=TIMEOUT_GITHUB) as r:  # noqa: S310
+            bruto = r.read(SYNC_TETO_RESPOSTA)
+        dados = json.loads(bruto.decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as e:
+        log.debug("Consulta de releases falhou: %s", redigir(e, cfg.segredos))
+        return None
+    if not isinstance(dados, list):
+        return None
+    return [d for d in dados if isinstance(d, dict)]
+
+
+def _publicado_em(release: Mapping[str, Any]) -> datetime | None:
+    bruto = release.get("published_at") or release.get("created_at")
+    if not isinstance(bruto, str):
+        return None
+    try:
+        return datetime.fromisoformat(bruto.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _rollback_do_label(valor: str | None) -> bool | None:
+    """NULL quando o label não existe ou não é claramente booleano. Nada de chute."""
+    if valor is None:
+        return None
+    v = valor.strip().lower()
+    if v in ("1", "true", "sim", "yes"):
+        return True
+    if v in ("0", "false", "nao", "não", "no"):
+        return False
+    return None
+
+
+def _primeiro_label(labels: Mapping[str, str], chaves: Sequence[str]) -> str | None:
+    for c in chaves:
+        valor = labels.get(c)
+        if valor:
+            return valor
+    return None
+
+
+def sincronizar_releases(cfg: Config, conn: psycopg.Connection) -> int:
+    """Descobre releases no GitHub e cadastra na allowlist as que o cosign aprovar.
+
+    CONSERTA O BUG DE ORIGEM: nada populava `agente.releases_disponiveis`, então até o
+    botão manual da aba /deploy recusava qualquer tag como "fora da allowlist".
+
+    A fronteira de confiança continua exatamente onde estava. O GitHub só sugere nomes de
+    tags; a tag só entra na allowlist se `cosign verify --key` aceitar a assinatura da
+    imagem correspondente no GHCR. Uma conta do GitHub comprometida cria Releases à
+    vontade — sem a chave privada, nenhuma delas atravessa.
+
+    :returns: quantas tags novas entraram (0 também é sucesso).
+    """
+    if not validar_origem(cfg.imagem_origem):
+        log.warning("ESTRELA_IMAGEM_ORIGEM inválida; sincronização desligada.")
+        return 0
+    if not tem_internet("api.github.com", 443):
+        log.debug("Sem internet; sincronização de releases adiada (estado normal).")
+        return 0
+
+    dados = buscar_releases_github(cfg)
+    if dados is None:
+        raise _FalhaSync("não foi possível consultar as releases do GitHub")
+
+    conhecidas = carregar_releases(conn)
+    # deploy_id 0: o Diário aqui só existe para reaproveitar o log das funções de cosign e
+    # de labels. Ele nunca é gravado em `deploys` — não há deploy nenhum acontecendo.
+    diario = Diario(cfg, 0)
+    novas = 0
+    # Orçamento de VERIFICAÇÕES, não de sucessos: uma release sem assinatura válida também
+    # custou um `cosign verify`. Contar só os acertos deixaria o laço preso verificando as
+    # mesmas tags recusadas a cada ciclo, e o laço é quem atende o botão da tela.
+    orcamento = SYNC_MAX_NOVAS_POR_CICLO
+    for item in dados:
+        if PARAR.is_set() or orcamento <= 0:
+            break
+        if item.get("draft") or item.get("prerelease"):
+            continue
+        tag = item.get("tag_name")
+        if not isinstance(tag, str) or not validar_tag(tag):
+            continue
+        ja = conhecidas.get(tag)
+        if ja is not None and ja.imagem_digest:
+            # Já verificada uma vez, e o que está gravado é um DIGEST — conteúdo imutável.
+            # Reverificar a cada 5 minutos só gastaria rede: o caminho do deploy roda o
+            # cosign de novo, na hora, antes de trocar qualquer coisa.
+            continue
+
+        orcamento -= 1
+        digest = digest_por_cosign(cfg, cfg.imagem_origem, tag, diario)
+        if digest is None:
+            log.warning("Release %s ignorada: assinatura não confere (ou não existe).", tag)
+            continue
+
+        labels = labels_remotos(ref_imagem(cfg.imagem_origem, digest), diario) or {}
+        alembic_head = _primeiro_label(labels, LABELS_ALEMBIC)
+        rollback_seguro = _rollback_do_label(_primeiro_label(labels, LABELS_ROLLBACK))
+        git_sha = labels.get(LABEL_REVISION) or None
+
+        if DRY_RUN:
+            print(f"[dry-run] allowlist += {tag} ({digest[:19]})")
+            novas += 1
+            continue
+        try:
+            conn.execute(
+                # COALESCE do lado do que JÁ ESTÁ GRAVADO: a allowlist é write-once por
+                # campo. Se o digest gravado mudasse, uma tag reapontada para outra imagem
+                # entraria por aqui com cara de atualização de rotina — exatamente o ataque
+                # que o `_executar_deploy` compara depois.
+                # O alias `AS r` existe para o DO UPDATE poder falar da linha ANTIGA sem
+                # ambiguidade: com a tabela qualificada por schema, escrever
+                # `agente.releases_disponiveis.origem` aqui é pedir para o Postgres
+                # reclamar de referência à cláusula FROM.
+                "INSERT INTO agente.releases_disponiveis AS r "
+                "  (tag, origem, imagem_digest, git_sha, alembic_head, rollback_seguro, "
+                "   publicado_em) "
+                "VALUES (%s, %s, %s, %s, %s, %s, coalesce(%s, now())) "
+                "ON CONFLICT (tag) DO UPDATE SET "
+                "  origem = coalesce(r.origem, EXCLUDED.origem), "
+                "  imagem_digest = coalesce(r.imagem_digest, EXCLUDED.imagem_digest), "
+                "  git_sha = coalesce(r.git_sha, EXCLUDED.git_sha), "
+                "  alembic_head = coalesce(r.alembic_head, EXCLUDED.alembic_head), "
+                "  rollback_seguro = coalesce(r.rollback_seguro, EXCLUDED.rollback_seguro)",
+                (
+                    tag,
+                    cfg.imagem_origem,
+                    digest,
+                    git_sha,
+                    alembic_head,
+                    rollback_seguro,
+                    _publicado_em(item),
+                ),
+            )
+        except psycopg.Error:
+            log.warning("Não foi possível gravar %s na allowlist.", tag, exc_info=True)
+            continue
+        novas += 1
+        log.info("Allowlist: %s cadastrada (digest %s).", tag, digest[:19])
+    return novas
+
+
+def falhas_automaticas(conn: psycopg.Connection) -> dict[str, TentativaAuto]:
+    """Desfechos ruins por versão — a memória que impede o loop de retentativa.
+
+    Conta tentativa de QUALQUER origem, não só as do agente. Se uma pessoa tentou a
+    v0.1.5 na mão e ela falhou, o automático repetir a mesma coisa dez minutos depois não
+    ajuda ninguém.
+    """
+    linhas = conn.execute(
+        "SELECT versao_nova, count(*), max(coalesce(concluido_em, solicitado_em)) "
+        "FROM deploys WHERE acao = 'atualizacao' AND status = ANY(%s) "
+        "GROUP BY versao_nova",
+        (list(STATUS_RUINS),),
+    ).fetchall()
+    return {
+        str(versao): TentativaAuto(str(versao), int(qtd), ultima) for versao, qtd, ultima in linhas
+    }
+
+
+def ha_deploy_em_voo(conn: psycopg.Connection) -> bool:
+    linha = conn.execute(
+        "SELECT 1 FROM deploys WHERE status IN ('solicitado', 'executando') LIMIT 1"
+    ).fetchone()
+    return linha is not None
+
+
+def anotar_disponibilidade(
+    conn: psycopg.Connection,
+    ativo: bool,
+    tag: str | None,
+    agendada_para: datetime | None,
+) -> None:
+    """Publica em `agente.servidor_status` o estado do automático, para a aba /deploy.
+
+    Nomes das colunas (`auto_update_ativo`, `versao_disponivel`, `proxima_janela`) são os
+    que o app/services/deploy_service.py consulta — a app é a parte já escrita; quem se
+    adapta é o agente, exatamente como já acontece com `publicado_em`/`git_sha`.
+
+    Tolera as colunas não existirem: quem copiou o agente.py novo e não rodou o
+    instalar-agente.sh de novo fica com agente novo contra schema velho, e aí a resposta
+    certa é reclamar no journal — não parar de fazer deploy.
+    """
+    try:
+        conn.execute(
+            "UPDATE agente.servidor_status SET auto_update_ativo = %s, "
+            "versao_disponivel = %s, proxima_janela = %s, releases_sync_em = now() "
+            "WHERE id = 1",
+            (ativo, tag, agendada_para),
+        )
+    except psycopg.Error:
+        log.warning(
+            "Não foi possível publicar o estado do auto-update — as colunas novas de "
+            "agente.servidor_status podem não existir. Rode deploy/instalar-agente.sh "
+            "(ele é idempotente) para criá-las.",
+            exc_info=True,
+        )
+
+
+@dataclass(frozen=True)
+class ResultadoAuto:
+    """O que o automático decidiu neste ciclo. `estado` é o que vai para o journal."""
+
+    estado: str
+    tag: str | None = None
+    quando: datetime | None = None
+    detalhe: str = ""
+
+
+def auto_atualizar(
+    cfg: Config, conn: psycopg.Connection, agora: datetime | None = None
+) -> ResultadoAuto:
+    """Decide (e enfileira) a atualização automática. NÃO executa deploy: só pede.
+
+    Enfileirar em vez de executar é o ponto do desenho: a linha em `deploys` passa pelo
+    MESMO `processar` do botão da tela — mesma allowlist, mesmo cosign, mesmo backup, mesmo
+    pré-flight, mesmo gate de saúde, mesma auto-reversão. O automático não ganha nenhum
+    atalho; ele só aperta o botão sozinho, e só quando a loja está fechada.
+    """
+    agora = agora or datetime.now(UTC)
+    status = status_servidor(conn)
+    releases = carregar_releases(conn)
+    falhas = falhas_automaticas(conn)
+    alvo, motivo = escolher_alvo(
+        status.get("versao_atual"),
+        releases.keys(),
+        falhas,
+        agora,
+        tentativas_max=cfg.auto_tentativas,
+        espera_seg=cfg.auto_backoff_seg,
+    )
+    na_janela = dentro_da_janela(agora, cfg)
+    # Publica ANTES de qualquer decisão: mesmo com o automático desligado, a tela ganha o
+    # "existe a versão X" — e o botão manual passa a ter o que fazer. `proxima_janela` só
+    # é preenchida quando o automático está ligado; senão a tela prometeria um horário em
+    # que nada vai acontecer.
+    quando = None if (na_janela or not cfg.auto_update) else proxima_janela(agora, cfg)
+    if cfg.auto_update:
+        publicada = alvo
+    else:
+        # Com o automático desligado, a quarentena não vem ao caso (ela é uma regra do
+        # automático). O que a tela precisa mostrar é simplesmente "existe versão nova" —
+        # quem decide o que fazer com ela é a pessoa no botão.
+        publicada, _ = escolher_alvo(status.get("versao_atual"), releases.keys(), {}, agora)
+    anotar_disponibilidade(conn, cfg.auto_update, publicada, quando)
+
+    if not cfg.auto_update:
+        return ResultadoAuto("desligado", tag=publicada, detalhe=motivo)
+    if alvo is None:
+        return ResultadoAuto("sem_novidade", detalhe=motivo)
+    if ha_deploy_em_voo(conn):
+        return ResultadoAuto(
+            "em_voo", tag=alvo, detalhe="já existe um deploy pendente ou em execução"
+        )
+    if not na_janela:
+        return ResultadoAuto("agendado", tag=alvo, quando=quando, detalhe=motivo)
+    # Estar na janela não basta: tem de CABER. Às 07:59 a janela ainda vale, mas o pior
+    # caso do deploy (~100 min com reversão) terminaria depois das 9h, com a loja aberta.
+    # Sem esta folga, a janela viraria teatro — ver janela_com_folga().
+    if not janela_com_folga(agora, cfg, MARGEM_JANELA_SEG):
+        return ResultadoAuto(
+            "agendado",
+            tag=alvo,
+            quando=proxima_janela(agora, cfg),
+            detalhe="a janela atual não tem folga suficiente para um deploy inteiro",
+        )
+
+    if DRY_RUN:
+        print(f"[dry-run] INSERT deploys (atualizacao, {alvo}, automático)")
+        return ResultadoAuto("solicitado", tag=alvo, detalhe="dry-run")
+
+    try:
+        linha = conn.execute(
+            # solicitado_por_id NULL = originado pelo agente. É o que a tela usa para
+            # escrever "automático" em vez de um nome de pessoa.
+            "INSERT INTO deploys (acao, status, versao_nova, versao_anterior, "
+            "                     solicitado_por_id, solicitado_em) "
+            "VALUES ('atualizacao', 'solicitado', %s, %s, NULL, now()) RETURNING id",
+            (alvo, status.get("versao_atual")),
+        ).fetchone()
+    except psycopg.Error:
+        log.warning("Não foi possível enfileirar a atualização automática.", exc_info=True)
+        return ResultadoAuto("erro", tag=alvo, detalhe="INSERT em deploys falhou")
+    deploy_id = int(linha[0]) if linha else 0
+
+    emitir_evento(
+        conn,
+        "deploy.solicitado",
+        {"id": deploy_id, "acao": "atualizacao", "versao": alvo, "automatico": True},
+    )
+    alertar(
+        cfg,
+        "Estrela: atualização automática iniciada",
+        f"O servidor está aplicando sozinho a versão {alvo} (deploy #{deploy_id}), dentro "
+        f"da janela de manutenção. Backup, pré-flight de migration e gate de saúde valem "
+        f"igual ao botão manual: se algo falhar, ele volta sozinho para a versão anterior "
+        f"e avisa aqui.",
+        prioridade="default",
+    )
+    log.info("Auto-update: deploy #%s enfileirado para %s (%s).", deploy_id, alvo, motivo)
+    return ResultadoAuto("solicitado", tag=alvo, detalhe=motivo)
+
+
+class Manutencao:
+    """Tarefas periódicas do laço: sincronizar a allowlist e decidir o auto-update.
+
+    Guarda o instante da última sincronização (relógio MONOTÔNICO — `time.time()` daria
+    salto se alguém acertasse a hora do mini PC) e faz backoff exponencial quando a API do
+    GitHub não responde. O laço roda a cada 60s; a sincronização, a cada 5 minutos.
+    """
+
+    def __init__(self, cfg: Config) -> None:
+        self.cfg = cfg
+        self._proxima_sync = 0.0
+        self._falhas = 0
+        self._ultimo_estado: tuple[str, str | None] = ("", None)
+
+    def rodar(self, conn: psycopg.Connection) -> None:
+        """Um ciclo. Só deixa passar erro de BANCO, que é assunto do laço (ele reconecta).
+
+        Se houver deploy na fila, a sincronização é adiada: cada tag nova custa um `cosign
+        verify` e um `imagetools inspect`, e ninguém quer clicar em "atualizar" e esperar
+        minutos porque o agente escolheu conversar com o GitHub primeiro.
+        """
+        if ha_deploy_em_voo(conn):
+            return
+        try:
+            self._sincronizar(conn)
+        except psycopg.Error:
+            raise
+        except Exception:  # noqa: BLE001 - rede/JSON/docker; nada aqui derruba o agente
+            log.warning("Sincronização de releases falhou (seguindo).", exc_info=True)
+        try:
+            self._auto(conn)
+        except psycopg.Error:
+            raise
+        except Exception:  # noqa: BLE001
+            log.warning("Auto-atualização falhou (seguindo).", exc_info=True)
+
+    def _sincronizar(self, conn: psycopg.Connection) -> None:
+        agora = time.monotonic()
+        if agora < self._proxima_sync:
+            return
+        try:
+            sincronizar_releases(self.cfg, conn)
+        except _FalhaSync as e:
+            self._falhas += 1
+            espera = min(self.cfg.sync_intervalo_seg * (2**self._falhas), SYNC_BACKOFF_MAX_SEG)
+            self._proxima_sync = time.monotonic() + espera
+            log.debug("Sincronização adiada por %ss (%s).", espera, e)
+            return
+        self._falhas = 0
+        self._proxima_sync = time.monotonic() + self.cfg.sync_intervalo_seg
+
+    def _auto(self, conn: psycopg.Connection) -> None:
+        r = auto_atualizar(self.cfg, conn)
+        chave = (r.estado, r.tag)
+        if chave == self._ultimo_estado:
+            return  # o journal não precisa da mesma linha a cada 60 segundos
+        self._ultimo_estado = chave
+        if r.estado == "agendado" and r.quando is not None:
+            log.info(
+                "Versão %s disponível; fora da janela de manutenção. Agendada para %s.",
+                r.tag,
+                r.quando.strftime("%d/%m %H:%M %Z"),
+            )
+        elif r.estado in ("sem_novidade", "em_voo"):
+            log.debug("Auto-update: %s (%s).", r.estado, r.detalhe)
+
+
+# ===========================================================================
 # Reconciliação e laço principal
 # ===========================================================================
 
@@ -1250,26 +2120,31 @@ def reconciliar(cfg: Config, conn: psycopg.Connection) -> None:
         return
 
     status = status_servidor(conn)
-    anterior = status.get("imagem_anterior")
+    # `imagem_atual` e NÃO `imagem_anterior`: um deploy órfão morreu tentando ir para B,
+    # então quem estava no ar (e é boa) é a A registrada em `imagem_atual`. A
+    # `imagem_anterior` é uma versão a MAIS para trás — reverter para ela jogaria o
+    # cliente dois passos atrás, possivelmente cruzando outra migration. É a mesma
+    # semântica que _executar_deploy usa quando reverte no gate.
+    alvo = status.get("imagem_atual")
     alertar(
         cfg,
         "Estrela: agente reiniciou no meio de um deploy",
         f"Sistema não responde ao gate ({detalhe}). "
         + (
-            "Tentando reverter para a imagem anterior."
-            if anterior
-            else "SEM imagem anterior para reverter."
+            "Tentando voltar para a última imagem boa conhecida."
+            if alvo
+            else "SEM imagem conhecida para voltar."
         ),
         prioridade="urgent",
     )
-    if not anterior:
-        log.error("Sistema não saudável e sem imagem anterior. Intervenção manual.")
+    if not alvo:
+        log.error("Sistema não saudável e sem imagem conhecida. Intervenção manual.")
         return
 
     diario = Diario(cfg, orfaos[0][0])
     diario.linha("Reconciliação no boot: sistema fora do ar (%s).", detalhe)
-    if reverter(cfg, conn, diario, anterior):
-        diario.linha("Revertido para a imagem anterior com sucesso.")
+    if reverter(cfg, conn, diario, alvo):
+        diario.linha("Voltou para a última imagem boa (%s) com sucesso.", alvo)
     else:
         diario.linha("A reversão no boot falhou. Intervenção manual necessária.")
     gravar_log(conn, orfaos[0][0], diario)
@@ -1288,6 +2163,10 @@ def _sinal(_s: int, _f: FrameType | None) -> None:
 
 
 def laco(cfg: Config, uma_vez: bool) -> None:
+    # Vive FORA do while: o intervalo de sincronização e o backoff da API do GitHub não
+    # podem ser zerados por uma reconexão ao banco, senão uma piscada do Postgres viraria
+    # uma rajada de requisições ao GitHub.
+    manutencao = Manutencao(cfg)
     while not PARAR.is_set():
         try:
             with conectar(cfg) as conn:
@@ -1309,6 +2188,10 @@ def laco(cfg: Config, uma_vez: bool) -> None:
                 bater_status(cfg, conn)
 
                 while not PARAR.is_set():
+                    # ANTES de olhar a fila, de propósito: se o automático decidir que está
+                    # na hora, a linha que ele insere é vista pelo `pendentes` logo abaixo
+                    # e o deploy começa nesta mesma volta, sem esperar mais 60 segundos.
+                    manutencao.rodar(conn)
                     for deploy_id in pendentes(conn):
                         processar(cfg, conn, deploy_id)
                     if uma_vez:
@@ -1357,6 +2240,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if DRY_RUN:
         log.info("MODO DRY-RUN: nenhum comando que altera o sistema será executado.")
+
+    j = cfg.janela
+    log.info(
+        "Auto-update: %s | expediente %s-%s nos dias %s (%s) | releases de %s a cada %ss.",
+        "LIGADO" if cfg.auto_update else "desligado",
+        j.inicio_expediente.strftime("%H:%M"),
+        j.fim_expediente.strftime("%H:%M"),
+        ",".join(str(d) for d in sorted(j.dias_uteis)),
+        j.fuso,
+        cfg.github_repo or "(não configurado)",
+        cfg.sync_intervalo_seg,
+    )
 
     laco(cfg, uma_vez=args.once)
     return 0

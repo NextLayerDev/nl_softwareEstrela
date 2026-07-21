@@ -1,0 +1,300 @@
+# Auto-release do Estrela Gestão — todo merge na `main` com CI verde vira uma release.
+#
+# O QUE ISTO FAZ
+#
+#   ci.yml termina VERDE num push da `main`  ->  este workflow calcula a próxima tag de
+#   PATCH (v0.1.3 -> v0.1.4), cria a tag ANOTADA no sha exato daquele run, empurra, e
+#   dispara o release.yml — que tem o gate próprio de "CI verde no mesmo sha", builda,
+#   publica no GHCR com tags imutáveis, assina com cosign e cria a GitHub Release.
+#
+#   Como `main` é protegida (PR obrigatório), na prática "push na main" == "merge de PR".
+#   Minor/major continuam MANUAIS: `git tag -a v0.2.0 -m ... && git push origin v0.2.0`
+#   dispara o release.yml direto, pelo trigger `push: tags` que ele já tem.
+#
+# ESCAPE HATCH — pular a release deste merge
+#
+#   Ponha `[skip release]` ou `[no release]` no TÍTULO do PR (o merge é squash com
+#   squash_merge_commit_title=PR_TITLE, então o título do PR vira a mensagem do commit)
+#   ou no corpo do PR. Aceita também `[skip-release]` / `[no-release]`, maiúsculas ou
+#   minúsculas. Serve para merges de docs/README quando não se quer queimar um patch.
+#
+# POR QUE workflow_dispatch E NÃO UM PUSH DE TAG QUE DISPARA SOZINHO
+#
+#   Regra do GitHub: eventos criados com o GITHUB_TOKEN NÃO disparam novos workflows
+#   (proteção anti-loop). Ou seja, a tag empurrada aqui NÃO acorda o release.yml pelo
+#   trigger `push: tags`. As saídas são três:
+#
+#     (a) PAT/deploy key em secret — o push da tag passa a ser "de um humano" e dispara
+#         normalmente. Custo: um segredo NOVO com poder de escrita num repo PÚBLICO,
+#         que expira, precisa de rotação e amplia a superfície de ataque do pipeline.
+#     (b) chamar o release.yml por workflow_dispatch — `workflow_dispatch` e
+#         `repository_dispatch` são as DUAS exceções documentadas da regra anti-loop:
+#         eles PODEM ser disparados com o GITHUB_TOKEN. Custo: uma linha
+#         (`workflow_dispatch:`) no `on:` do release.yml.
+#     (c) unificar tudo num workflow só — duplicaria build/cosign/Release e quebraria o
+#         caminho da tag manual.
+#
+#   Escolhemos (b): ZERO segredo novo. O trade-off é a linha a mais no release.yml e o
+#   escopo `actions: write` neste job (necessário para chamar a API de dispatch). Nada
+#   mais do release.yml muda: dispatch feito num ref de TAG faz `github.ref_name` valer
+#   `v0.1.4` e `github.sha` valer o commit da tag — exatamente o que o `push: tags`
+#   entregava. O validador de tag do release.yml (regex ancorada) continua sendo quem
+#   julga, e rejeita um dispatch feito contra `main` por engano.
+#
+# POR QUE NÃO HÁ LOOP
+#
+#   O ci.yml declara `on: push: branches: [main]` e `pull_request: branches: [main]`.
+#   O filtro `branches:` faz o trigger de push casar SÓ com refs/heads/* — push de TAG
+#   não dispara o ci.yml. Idem security.yml. Logo: tag criada aqui -> não roda ci.yml ->
+#   não gera novo workflow_run -> não roda este workflow de novo. O único disparo é o
+#   release.yml, via dispatch explícito, e ele não dispara ninguém.
+#
+# IDEMPOTÊNCIA
+#
+#   Se o sha já tem uma tag de versão apontando para ele, este workflow NÃO cria outra.
+#   Isso cobre o re-run manual do ci.yml (que reemitiria o workflow_run) e o caso de o
+#   dev já ter taggeado aquele commit a mão.
+
+name: Auto-release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+# Escopo padrão mínimo; o job pede o que precisa.
+permissions:
+  contents: read
+
+concurrency:
+  # Grupo ÚNICO (sem ${{ github.ref }}): dois merges seguidos precisam ser serializados,
+  # senão os dois leem a mesma "maior tag" e calculam a MESMA próxima versão.
+  # cancel-in-progress: false — cancelar no meio deixaria a tag criada sem release.
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  taggear:
+    name: Criar tag de patch e disparar o release
+    # Filtro do workflow_run. `conclusion` só existe em `types: [completed]`.
+    #   - event == 'push'      : descarta os runs de pull_request (num PR o head_branch
+    #                            é a branch de origem, mas é barato ser explícito).
+    #   - head_branch == 'main': só a main vira release.
+    #   - repository == ...    : num fork o pipeline não deve tentar taggear nada.
+    if: >-
+      github.repository == 'NextLayerDev/nl_softwareEstrela' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Empurrar a tag anotada. Não há tag protection nem ruleset no repo — conferido.
+      contents: write
+      # Chamar POST /actions/workflows/release.yml/dispatches. É o preço da opção (b)
+      # documentada no topo, e ainda assim é MENOS poder do que um PAT em secret:
+      # vale só para este run, expira com ele e não sai do repositório.
+      actions: write
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_CI: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Checkout no sha exato do run da CI
+        uses: actions/checkout@v7
+        with:
+          # O sha do run da CI, e NÃO o HEAD da main: se outro merge entrou enquanto
+          # este job esperava na fila do `concurrency`, a main já andou. A tag tem de
+          # cair no commit que ficou verde, que é o mesmo que o gate do release.yml
+          # vai procurar.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Histórico + tags completos: sem eles não há como calcular a maior versão
+          # existente nem checar se o sha já está taggeado.
+          fetch-depth: 0
+
+      - name: Guardas — pular?
+        id: guarda
+        run: |
+          # set -e explícito e não herdado: num step de guarda, um comando que falha no
+          # meio sem interromper nada é exatamente como a guarda passa a mentir.
+          set -euo pipefail
+
+          # As tags vêm do fetch-depth:0, mas --force garante que uma tag movida no
+          # servidor não fique cacheada errada aqui.
+          git fetch --force --tags origin
+          git fetch --force origin '+refs/heads/main:refs/remotes/origin/main'
+
+          pular() {
+            echo "pular=true" >> "$GITHUB_OUTPUT"
+            echo "motivo=$1" >> "$GITHUB_OUTPUT"
+            echo "::notice::Auto-release pulado: $1"
+            exit 0
+          }
+
+          # 1) O sha ainda pertence à main? Force-push é bloqueado na main, então isto
+          #    só dispara em cenário anômalo — mas taggear um commit órfão publicaria
+          #    uma versão que não existe em lugar nenhum.
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            pular "o commit $SHA não é ancestral de origin/main (histórico reescrito?)"
+          fi
+
+          # 2) Escape hatch. A mensagem é lida do GIT, nunca interpolada em template:
+          #    texto controlado por quem abre PR não entra no shell como código.
+          MSG=$(git log -1 --format=%B "$SHA")
+          if printf '%s' "$MSG" | grep -qiE '\[(skip|no)[ -]release\]'; then
+            pular "a mensagem do commit pede [skip release]"
+          fi
+
+          # 3) Idempotência. Qualquer tag SemVer já apontando para o sha (estável OU
+          #    pré-lançamento) barra a criação: re-run do ci.yml reemite o workflow_run,
+          #    e sem isto cada re-run queimaria um patch novo no mesmo commit.
+          JA=$(git tag --points-at "$SHA" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || true)
+          if [ -n "$JA" ]; then
+            pular "o commit já tem tag de versão: $(printf '%s' "$JA" | tr '\n' ' ')"
+          fi
+
+          echo "pular=false" >> "$GITHUB_OUTPUT"
+          echo "Nenhuma guarda acionada: seguindo para o cálculo da versão."
+
+      - name: Calcular a próxima tag de PATCH
+        id: versao
+        if: steps.guarda.outputs.pular != 'true'
+        run: |
+          set -euo pipefail
+
+          # Cálculo em Python, e não em `sort -V`, pela mesma razão do release.yml:
+          # regex ANCORADA (\A/\Z, nunca ^/$) e comparação NUMÉRICA por componente —
+          # é a mesma política de `chave_versao`/`comparar_versoes` do agente. Com
+          # ordenação textual, v0.1.10 viria antes de v0.1.9.
+          python3 - <<'PY'
+          import os, re, subprocess
+
+          saida = subprocess.run(
+              ["git", "tag", "--list", "v*"],
+              capture_output=True, text=True, check=True,
+          ).stdout
+
+          # Pré-lançamentos (com hífen) são IGNORADOS no cálculo: v0.2.0-rc1 não pode
+          # empurrar a linha estável para v0.2.1.
+          padrao = re.compile(r"\Av(\d+)\.(\d+)\.(\d+)\Z")
+          versoes = [
+              tuple(int(g) for g in m.groups())
+              for linha in saida.splitlines()
+              if (m := padrao.fullmatch(linha.strip()))
+          ]
+
+          maior = max(versoes) if versoes else (0, 0, 0)
+          proxima = f"v{maior[0]}.{maior[1]}.{maior[2] + 1}"
+
+          # Teto de 32 chars: mesma regra do release.yml e do validar_tag do agente.
+          assert len(proxima) <= 32, proxima
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"tag={proxima}\n")
+              fh.write("anterior=v{}.{}.{}\n".format(*maior))
+          print(f"maior tag estável: v{maior[0]}.{maior[1]}.{maior[2]} -> próxima: {proxima}")
+          PY
+
+      - name: Criar e empurrar a tag anotada
+        if: steps.guarda.outputs.pular != 'true'
+        env:
+          TAG: ${{ steps.versao.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Corrida: alguém pode ter empurrado esta mesma tag entre o fetch e agora.
+          # Falhar aqui é o comportamento certo — NUNCA sobrescrever uma tag publicada
+          # (o GHCR já teria uma imagem com esse nome, e tag imutável é a premissa em
+          # que o rollback do agente se apoia).
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::A tag $TAG já existe localmente. Alguém taggeou a mão? Nada foi empurrado."
+            exit 1
+          fi
+
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$TAG" "$SHA" \
+              -m "$TAG — release automática do merge na main" \
+              -m "CI verde: $RUN_CI"
+
+          # Sem --force, nunca. Se o remoto já tiver a ref, o push é recusado.
+          git push origin "refs/tags/$TAG"
+          echo "Tag $TAG criada em $SHA e empurrada."
+
+      - name: Disparar o release.yml (workflow_dispatch)
+        if: steps.guarda.outputs.pular != 'true'
+        env:
+          TAG: ${{ steps.versao.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # A tag acabou de ser empurrada com o GITHUB_TOKEN, então ela NÃO acordou o
+          # trigger `push: tags` do release.yml (proteção anti-loop do GitHub). O
+          # dispatch abaixo é a exceção documentada dessa regra.
+          #
+          # `ref` é a TAG: o release.yml roda a partir do conteúdo da tag e enxerga
+          # github.ref_name=$TAG / github.sha=<commit da tag>, igual ao caminho manual.
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches" \
+            -f "ref=${TAG}"
+          echo "Dispatch enviado para o release.yml com ref=${TAG}."
+
+      - name: Confirmar que o release.yml começou
+        if: steps.guarda.outputs.pular != 'true'
+        env:
+          TAG: ${{ steps.versao.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # O dispatch responde 204 sem dizer se um run nasceu. O pior desfecho deste
+          # workflow é "tag criada, release nenhuma, e ninguém percebeu" — então aqui
+          # confirmamos que existe um run do release.yml para esta tag, e falhamos
+          # ruidosamente se não houver.
+          URL=""
+          for _ in $(seq 1 12); do
+            URL=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?per_page=30" \
+              --jq ".workflow_runs[] | select(.head_branch==\"${TAG}\") | .html_url" \
+              | head -n1)
+            if [ -n "$URL" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ -z "$URL" ]; then
+            echo "::error::A tag ${TAG} foi criada e empurrada, mas nenhum run do release.yml apareceu em 2 min."
+            echo "::error::Nada foi publicado no GHCR. Dispare a mão com: gh workflow run release.yml --ref ${TAG}"
+            exit 1
+          fi
+          echo "Release em execução: $URL"
+          echo "url_release=$URL" >> "$GITHUB_ENV"
+
+      - name: Resumo do run
+        if: always()
+        env:
+          TAG: ${{ steps.versao.outputs.tag }}
+          PULAR: ${{ steps.guarda.outputs.pular }}
+          MOTIVO: ${{ steps.guarda.outputs.motivo }}
+          ANTERIOR: ${{ steps.versao.outputs.anterior }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Auto-release"
+            echo ""
+            if [ "$PULAR" = "true" ]; then
+              echo "**Pulado.** Motivo: $MOTIVO"
+            elif [ -n "${TAG:-}" ]; then
+              echo "| | |"
+              echo "|---|---|"
+              echo "| Commit | \`$SHA\` |"
+              echo "| Versão anterior | \`$ANTERIOR\` |"
+              echo "| Tag criada | \`$TAG\` |"
+              echo "| Release | ${url_release:-(nao confirmado)} |"
+              echo ""
+              echo "Minor/major continuam manuais: \`git tag -a v0.2.0 -m ... && git push origin v0.2.0\`."
+            else
+              echo "**Falhou antes de calcular a versão.** Nenhuma tag foi criada."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

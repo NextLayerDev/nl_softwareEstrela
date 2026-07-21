@@ -29,6 +29,16 @@ on:
       # validação de verdade é o step `versao` abaixo (regex ancorada, fullmatch, teto de
       # 32 chars) — este glob só reduz o ruído de disparo.
       - "v*.*.*"
+  # Segundo caminho de entrada, usado pelo auto-release.yml. Existe por uma regra do
+  # GitHub: eventos criados com o GITHUB_TOKEN NÃO disparam workflows, então a tag que o
+  # auto-release empurra não acorda o `push: tags` acima. `workflow_dispatch` é uma das
+  # duas exceções documentadas dessa regra — e é o que evita ter de guardar um PAT.
+  #
+  # Sem inputs de propósito: quem carrega a versão é o REF do dispatch (`refs/tags/vX.Y.Z`),
+  # de onde saem `github.ref_name` e `github.sha` exatamente como no push de tag. Um
+  # dispatch feito contra `main` por engano cai no validador do step `versao` e é
+  # rejeitado ("Tag fora do formato") antes de qualquer build.
+  workflow_dispatch:
 
 # Escopo padrão mínimo. Cada job pede o que precisa.
 permissions:

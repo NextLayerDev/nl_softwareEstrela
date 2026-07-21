@@ -82,6 +82,17 @@ TAG_MAX = 32
 _NUM = r"(?:0|[1-9][0-9]{0,3})"
 _TAG_RE = re.compile(rf"\Av{_NUM}\.{_NUM}\.{_NUM}(?:-[0-9A-Za-z][0-9A-Za-z.]{{0,15}})?\Z")
 
+# Índice = datetime.weekday() (0 = segunda).
+_DIAS_SEMANA = (
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+    "domingo",
+)
+
 _SQL_RELEASES = text(
     "SELECT tag, alembic_head, rollback_seguro, git_sha, publicado_em "
     "FROM agente.releases_disponiveis ORDER BY publicado_em DESC NULLS LAST"
@@ -142,6 +153,33 @@ class Release:
             "não dá para garantir que ela funciona com o banco atual."
         )
 
+    # ----------------------------------------------------- risco de AVANÇAR
+    # `arriscada` acima responde "voltar para cá é seguro?". Avançar é outra pergunta, e
+    # responder com a mesma propriedade seria alarme falso: toda versão nova traz uma
+    # migration nova, ou seja, `cruza_migration` é o caso NORMAL de qualquer atualização
+    # — o agente aplica a migration antes de subir. Se o aviso vermelho aparecesse em
+    # todas, ele viraria paisagem e ninguém leria o dia em que ele importa.
+
+    @property
+    def avanco_arriscado(self) -> bool:
+        """Ir PARA esta versão pede aviso vermelho."""
+        return self.rollback_seguro is False or self.alembic_head is None
+
+    @property
+    def motivo_avanco(self) -> str:
+        if not self.avanco_arriscado:
+            return ""
+        if self.rollback_seguro is False:
+            return (
+                "Esta versão foi publicada marcada como reversão insegura: depois de "
+                "aplicá-la, voltar para a anterior quebra algo. É um caminho sem volta "
+                "fácil."
+            )
+        return (
+            "Não dá para saber contra qual migration esta versão foi construída, então "
+            "não dá para garantir que ela funciona com o banco atual."
+        )
+
 
 @dataclass(frozen=True)
 class Releases:
@@ -149,6 +187,34 @@ class Releases:
     itens: list[Release]
     versao_atual: str
     head_atual: str | None
+
+
+@dataclass(frozen=True)
+class AutoDeploy:
+    """O que a tela conta sobre a atualização automática.
+
+    `suportado=False` é "não dá para saber" (agente ausente, antigo ou que ainda não
+    reportou), nunca "desligado" — ver saude_service.auto_update.
+    """
+
+    suportado: bool
+    ativo: bool
+    versao: str | None
+    janela: datetime | None
+    janela_texto: str
+    iminente: bool
+    em_voo: bool
+    release: Release | None
+
+    @property
+    def pode_aplicar_agora(self) -> bool:
+        """Só oferece o botão quando ele tem o que fazer.
+
+        Sem par na allowlist não há o que aplicar (o `_solicitar` recusaria a tag), e com
+        um deploy em voo o botão viraria a segunda solicitação concorrente que o service
+        rejeita — botão que só sabe dar erro é pior que botão nenhum.
+        """
+        return self.release is not None and not self.em_voo
 
 
 class DeployService:
@@ -216,6 +282,71 @@ class DeployService:
             for linha in linhas
         ]
         return Releases(True, itens, versao_atual, head_atual)
+
+    # ------------------------------------------------------------ auto-deploy
+    def _texto_janela(self, quando: datetime | None) -> str:
+        """ "hoje às 19:00", "amanhã às 08:00", "sábado às 08:00", "em 04/08 às 08:00".
+
+        O filtro `desde` do projeto não serve aqui: ele mede o PASSADO e devolve "agora
+        mesmo" para qualquer instante futuro — diria "agora mesmo" para uma janela que só
+        abre amanhã. Como o texto é uma afirmação do sistema sobre o que ele vai fazer,
+        ele nasce aqui, no service, e não no template.
+
+        A comparação usa o fuso do próprio timestamp (o Postgres devolve timestamptz com
+        offset): comparar contra UTC faria "hoje às 19:00" virar "amanhã" toda noite.
+        """
+        if quando is None:
+            return ""
+        # Naive tratado como UTC, pela mesma razão do filtro `desde`: um timestamp
+        # torto não pode derrubar a tela de manutenção.
+        ref = quando if quando.tzinfo else quando.replace(tzinfo=UTC)
+        agora = datetime.now(ref.tzinfo)
+        dias = (ref.date() - agora.date()).days
+        hora = ref.strftime("%H:%M")
+        if dias <= 0:
+            return f"hoje às {hora}"
+        if dias == 1:
+            return f"amanhã às {hora}"
+        if dias < 7:
+            return f"{_DIAS_SEMANA[ref.weekday()]} às {hora}"
+        return f"em {ref.strftime('%d/%m')} às {hora}"
+
+    def auto_deploy(self, db: Session, info: Releases, em_voo: bool) -> AutoDeploy:
+        """Cruza o que o agente reportou com a allowlist já carregada.
+
+        Recebe `info` e `em_voo` em vez de buscá-los: a página inteira já resolveu os
+        dois, e refazer as consultas dobraria o custo de cada F5 da tela.
+        """
+        estado = saude_service.auto_update(db)
+        if not estado.suportado:
+            return AutoDeploy(False, False, None, None, "", False, em_voo, None)
+
+        versao = estado.versao_disponivel
+        # A versão que o agente aponta só vira botão se ele mesmo a liberou na allowlist
+        # e ela não é a que já está rodando: entre o agente reportar e o deploy terminar
+        # existe uma janela em que ele ainda anuncia como "disponível" o que já subiu.
+        rel = next((r for r in info.itens if r.tag == versao), None) if versao else None
+        if rel is not None and rel.atual:
+            versao, rel = None, None
+
+        janela = estado.proxima_janela
+        return AutoDeploy(
+            suportado=True,
+            ativo=estado.ativo,
+            versao=versao,
+            janela=janela,
+            janela_texto=self._texto_janela(janela),
+            # Sem janela marcada = o agente aplica na próxima verificação; janela no
+            # passado = já estamos dentro dela. Nos dois casos a aplicação é iminente.
+            iminente=janela is None or self._ja_passou(janela),
+            em_voo=em_voo,
+            release=rel,
+        )
+
+    @staticmethod
+    def _ja_passou(quando: datetime) -> bool:
+        ref = quando if quando.tzinfo else quando.replace(tzinfo=UTC)
+        return ref <= datetime.now(UTC)
 
     # -------------------------------------------------------------- campainha
     def _tocar_campainha(self, db: Session) -> None:

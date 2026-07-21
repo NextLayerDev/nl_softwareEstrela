@@ -27,8 +27,23 @@ class DeployController:
         # o botão de reverter ofereceria versões que o agente não tem mais.
         return {"releases": info, "por_tag": {r.tag: r for r in info.itens}}
 
+    def _painel_ctx(self, db: Session) -> dict[str, Any]:
+        """Contexto do card "Atualizar o sistema" e do bloco de auto-deploy.
+
+        A allowlist e o "em voo" são resolvidos UMA vez e repassados ao `auto_deploy`:
+        os três blocos falam da mesma máquina, e refazer as consultas em cada um
+        multiplicaria o custo do fragmento sem mudar uma vírgula do que aparece.
+        """
+        info = deploy_service.releases(db)
+        st = self.status(db)
+        return {
+            **self._releases_ctx(info),
+            **st,
+            "auto": deploy_service.auto_deploy(db, info, st["execucao"] is not None),
+        }
+
     def releases(self, db: Session) -> dict[str, Any]:
-        return {**self._releases_ctx(deploy_service.releases(db)), **self.status(db)}
+        return self._painel_ctx(db)
 
     def historico(self, db: Session, limit: int = 20) -> dict[str, Any]:
         return {
@@ -49,8 +64,7 @@ class DeployController:
         # a página nunca depender do que o job já conseguiu buscar.
         return {
             **self.saude(db),
-            **self._releases_ctx(deploy_service.releases(db)),
-            **self.status(db),
+            **self._painel_ctx(db),
             "deploys": deploy_repo.listar(db),
         }
 

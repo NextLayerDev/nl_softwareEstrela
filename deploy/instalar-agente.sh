@@ -72,6 +72,13 @@ erro() { printf '\n\033[1;31mERRO: %s\033[0m\n' "$*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || erro "Rode como root (sudo)."
 command -v docker >/dev/null || erro "docker não encontrado."
 docker compose version >/dev/null 2>&1 || erro "'docker compose' (v2) não encontrado."
+# buildx é OPCIONAL de propósito: ele só serve para ler os labels da imagem sem baixar as
+# layers, ao cadastrar uma release na allowlist. Sem ele, alembic_head/rollback_seguro
+# ficam NULL — e a aba /deploy trata NULL como "arriscada", que é o comportamento
+# conservador certo. Não é motivo para abortar a instalação.
+docker buildx version >/dev/null 2>&1 || \
+    echo "    AVISO: 'docker buildx' ausente — as releases entrarão na allowlist sem os" \
+         "labels (alembic_head/rollback_seguro NULL, tratado como arriscado na tela)."
 [ -f "${COMPOSE_FILE}" ] || erro "compose não encontrado em ${COMPOSE_FILE}."
 [ -f "${ENV_PROD}" ] || erro ".env.prod não encontrado em ${ENV_PROD}."
 
@@ -250,6 +257,19 @@ ALTER TABLE agente.releases_disponiveis ADD COLUMN IF NOT EXISTS imagem_digest t
 ALTER TABLE agente.releases_disponiveis ADD COLUMN IF NOT EXISTS git_sha text;
 ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS versao_minima text;
 
+-- Estado da atualização automática, publicado pelo agente e lido pela aba /deploy
+-- (app/services/saude_service.py::auto_update). NULL em qualquer uma delas significa
+-- "não sei" — a tela mostra isso, e não "desligado".
+ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS auto_update_ativo boolean;
+-- Versão que o automático pretende instalar (maior release aprovada acima da atual).
+ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS versao_disponivel text;
+-- Quando a próxima janela de manutenção abre. É o "agendada para hoje 19:00" da tela.
+ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS proxima_janela timestamptz;
+-- Última sincronização bem-sucedida com a API do GitHub. Serve para diagnosticar
+-- "a allowlist está vazia": ou o agente nunca conseguiu falar com o GitHub, ou nenhuma
+-- release passou pelo cosign.
+ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS releases_sync_em timestamptz;
+
 -- Role DEDICADO do agente. Separado do role da app de propósito: são dois níveis de
 -- confiança diferentes, e o dia em que a app for comprometida a diferença é o que
 -- impede o atacante de cadastrar a própria imagem na allowlist.
@@ -268,7 +288,24 @@ GRANT USAGE ON SCHEMA agente TO ${DB_ROLE_AGENTE};
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA agente TO ${DB_ROLE_AGENTE};
 -- deploys mora no schema public (é model do Alembic); o agente atualiza o andamento.
 GRANT USAGE ON SCHEMA public TO ${DB_ROLE_AGENTE};
-GRANT SELECT, UPDATE ON TABLE public.deploys TO ${DB_ROLE_AGENTE};
+-- INSERT entrou com a atualização automática: fora da janela de expediente o agente
+-- enfileira ele mesmo a linha de deploy, em vez de esperar alguém clicar. Ele NÃO ganha
+-- atalho nenhum com isso — a linha que ele insere passa pelo mesmo caminho (allowlist,
+-- cosign, backup, pré-flight, gate de saúde) do botão da tela.
+GRANT SELECT, INSERT, UPDATE ON TABLE public.deploys TO ${DB_ROLE_AGENTE};
+
+-- Sem USAGE na sequence do id, o INSERT acima falha com "permission denied for sequence".
+-- Descoberta via pg_get_serial_sequence: o nome depende de como o Alembic criou a coluna
+-- (serial vs. identity) e chutar "deploys_id_seq" quebraria em silêncio no dia errado.
+DO \$\$
+DECLARE seq text;
+BEGIN
+    seq := pg_get_serial_sequence('public.deploys', 'id');
+    IF seq IS NOT NULL THEN
+        EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO %I', seq, '${DB_ROLE_AGENTE}');
+    END IF;
+END
+\$\$;
 -- Precisa ler alembic_version e produtos? NÃO: quem sonda a saúde é a app, via
 -- /health/ready. O agente só olha o resultado HTTP. Menos privilégio, menos superfície.
 
@@ -325,6 +362,20 @@ fi
 
 # ----------------------------------------------------------------- agente.env
 log "Configuração (${CONF_DIR}/agente.env)"
+
+# Acrescenta uma chave ao agente.env SE ela ainda não existir. Existe por causa da
+# atualização automática: o arquivo é PRESERVADO entre instalações, então um servidor
+# antigo continuaria sem ESTRELA_AUTO_UPDATE — e como o default no código é DESLIGADO,
+# o recurso ficaria off em silêncio, com todo mundo achando que ligou. Só acrescenta;
+# nunca reescreve valor que o operador ajustou.
+acrescentar_chave() {
+    local chave="$1" valor="$2" comentario="${3:-}"
+    grep -qE "^[[:space:]]*${chave}=" "${CONF_DIR}/agente.env" && return 0
+    { [ -n "${comentario}" ] && printf '\n# %s\n' "${comentario}"
+      printf '%s=%s\n' "${chave}" "${valor}"; } >> "${CONF_DIR}/agente.env"
+    info "agente.env: ${chave} acrescentado"
+}
+
 if [ -f "${CONF_DIR}/agente.env" ]; then
     info "agente.env já existe; preservando (edite à mão se precisar)"
 else
@@ -340,7 +391,11 @@ ESTRELA_COSIGN_PUB=${CONF_DIR}/cosign.pub
 ESTRELA_COSIGN_BIN=${COSIGN_BIN}
 ESTRELA_BACKUP_SCRIPT=${PROJETO_DIR}/scripts/backup-estrela.sh
 ESTRELA_FLAG_DOWNGRADE=${CONF_DIR}/permitir-downgrade
-ESTRELA_SAUDE_URL=https://sistema.local/health/ready
+# http://localhost e NÃO https://sistema.local: o sistema.local não resolve por DNS neste
+# servidor, e um gate contra host que não responde faz TODO deploy falhar e auto-reverter —
+# com o sintoma disfarçado de "o sistema não sobe". O Caddyfile (v0.1.2+) atende qualquer
+# host/IP na porta 80, então o loopback HTTP é o alvo mais simples e sem certificado.
+ESTRELA_SAUDE_URL=http://localhost/health/ready
 ESTRELA_SAUDE_CA=${CA_DEST}
 ESTRELA_ALERTA_URL=
 ESTRELA_DISCO_PATH=/var/lib
@@ -350,6 +405,31 @@ CONF
     umask 022
     info "agente.env criado"
 fi
+
+# Descoberta de releases + auto-update. Acrescentado sempre (idempotente), inclusive num
+# agente.env antigo: sem estas chaves o agente sobe com o automático DESLIGADO.
+acrescentar_chave ESTRELA_GITHUB_REPO "NextLayerDev/nl_softwareEstrela" \
+    "Onde procurar releases. Repo público: token é opcional (só o rate limit muda)."
+acrescentar_chave ESTRELA_IMAGEM_ORIGEM "ghcr.io/nextlayerdev/nl_softwareestrela" \
+    "Repositório da imagem. É AQUI que a tag vira imagem — nunca no que a app manda."
+acrescentar_chave ESTRELA_GITHUB_TOKEN "" \
+    "Opcional. Só para o limite de requisições da API; o repo é público."
+acrescentar_chave ESTRELA_SYNC_INTERVALO_SEG "300" \
+    "Intervalo entre consultas ao GitHub. Menos que isso só gasta rate limit."
+# DESLIGADO por padrão, de propósito. Auto-deploy sem canal de alerta fora de banda é um
+# servidor que se atualiza sozinho às 23h, quebra, e ninguém descobre até a loja abrir. O
+# agente RECUSA ligar o automático enquanto ESTRELA_ALERTA_URL estiver vazia (ver
+# Config.do_ambiente), então ligar aqui sem o ntfy só criaria a ilusão de estar ligado.
+# Para ativar: preencha ESTRELA_ALERTA_URL e troque para "true".
+acrescentar_chave ESTRELA_AUTO_UPDATE "false" \
+    "Atualizar sozinho (só fora do expediente). Exige ESTRELA_ALERTA_URL preenchida."
+acrescentar_chave ESTRELA_EXPEDIENTE_INICIO "08:00" "Início do expediente (não mexe no ar)."
+acrescentar_chave ESTRELA_EXPEDIENTE_FIM "19:00" "Fim do expediente. Depois disso, pode."
+acrescentar_chave ESTRELA_DIAS_UTEIS "1,2,3,4,5" \
+    "Dias de expediente (1=segunda ... 7=domingo). Fim de semana inteiro é janela."
+acrescentar_chave ESTRELA_FUSO "America/Sao_Paulo" \
+    "Fuso do CLIENTE. O servidor pode estar em UTC; o expediente não é em UTC."
+
 chown root:"${USUARIO}" "${CONF_DIR}/agente.env"
 chmod 0640 "${CONF_DIR}/agente.env"
 
@@ -378,9 +458,18 @@ cat <<FIM
 
   1) Chave pública do cosign em ${CONF_DIR}/cosign.pub, se ainda não estiver lá.
 
-  2) Cadastrar as versões liberadas na allowlist. A app NÃO consegue fazer isto (só tem
-     SELECT), e é esse o ponto: nada roda neste servidor sem alguém com acesso ao servidor
-     ter autorizado a versão antes.
+  2) A allowlist agora se popula sozinha: a cada 5 minutos o agente lê as releases do
+     GitHub e cadastra as que passarem no \`cosign verify\`. Tag sem assinatura
+     válida NÃO entra — a assinatura continua sendo a única fronteira de confiança.
+     Confira depois de alguns minutos:
+
+     docker exec -i ${DB_CID:0:12} psql -U ${DB_SUPER} -d ${DB_NAME} \\
+         -c 'SELECT tag, left(imagem_digest, 19), publicado_em FROM agente.releases_disponiveis ORDER BY publicado_em DESC;'
+
+     Se vier vazio: ou o servidor está sem internet, ou a chave em ${CONF_DIR}/cosign.pub
+     não é o par da que assinou as imagens. Veja \`journalctl -u estrela-agente\`.
+
+     Para cadastrar uma versão na mão (imagem construída fora do pipeline, por exemplo):
 
      docker exec -i ${DB_CID:0:12} psql -U ${DB_SUPER} -d ${DB_NAME} <<'SQL'
      INSERT INTO agente.releases_disponiveis
@@ -389,6 +478,11 @@ cat <<FIM
              '<sha do commit>', '9c311b4bb27f', true, now())
      ON CONFLICT (tag) DO UPDATE SET origem = EXCLUDED.origem;
      SQL
+
+  2b) Atualização automática: ESTRELA_AUTO_UPDATE=true e janela fora do expediente
+     (antes das 08:00, depois das 19:00 e fins de semana inteiros). Para desligar:
+     troque para false em ${CONF_DIR}/agente.env e reinicie o serviço. Rollback continua
+     100% manual, sempre.
 
   3) Alerta fora de banda: preencha ESTRELA_ALERTA_URL em ${CONF_DIR}/agente.env com um
      tópico ntfy PRIVADO (nome longo e aleatório — tópico do ntfy.sh é público para quem

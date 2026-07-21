@@ -1,6 +1,14 @@
-{# Card "Atualizar o sistema" — versões que o agente já baixou e verificou. #}
+{# Card "Atualizar o sistema" — versões que o agente já baixou e verificou.
+
+   O bloco do auto-deploy entra AQUI dentro, e não numa região própria da página, porque
+   ele fala da mesma máquina: os dois vivem da mesma allowlist e do mesmo "em voo", e a
+   região #deploy-releases já é re-buscada em deploy.solicitado/concluido/falhou/cancelado.
+   Numa região separada, o "será aplicada amanhã às 08:00" continuaria escrito na tela
+   depois que a versão já tivesse subido. #}
 {% from "_icones.html" import icone %}
 {% from "deploy/_modal.html" import gatilho_deploy %}
+<div class="grid gap-4">
+{% include "deploy/_auto.html" %}
 <div class="card">
   <h2 class="mb-3 text-base font-semibold">Atualizar o sistema</h2>
 
@@ -47,13 +55,18 @@
             {% if r.atual %}
             <span class="text-xs text-gray-500">em produção</span>
             {% else %}
+            {# arriscada/motivo precisam vir SEMPRE: sem eles a macro cai no default
+               data-arriscada="nao" e o modal deixa de exigir a versão digitada — a tela
+               diria que subir é trivial numa versão que cruza migration. #}
             {{ gatilho_deploy(
                  "/deploy/atualizar",
                  "Atualizar",
                  "Atualizar para " ~ r.tag,
                  "O servidor vai baixar e subir a versão " ~ r.tag ~ ".",
                  r.tag,
-                 classe="btn-primario") }}
+                 arriscada=r.avanco_arriscado,
+                 motivo=r.motivo_avanco,
+                 classe="btn-perigo" if r.avanco_arriscado else "btn-primario") }}
             {% endif %}
           </td>
         </tr>
@@ -71,4 +84,5 @@
     </table>
   </div>
   {% endif %}
+</div>
 </div>
