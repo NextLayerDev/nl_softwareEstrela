@@ -263,7 +263,7 @@ ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS versao_minima text;
 ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS auto_update_ativo boolean;
 -- Versão que o automático pretende instalar (maior release aprovada acima da atual).
 ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS versao_disponivel text;
--- Quando a próxima janela de manutenção abre. É o "agendada para hoje 19:00" da tela.
+-- Quando a próxima janela de manutenção abre. É o "agendada para hoje 23:00" da tela.
 ALTER TABLE agente.servidor_status ADD COLUMN IF NOT EXISTS proxima_janela timestamptz;
 -- Última sincronização bem-sucedida com a API do GitHub. Serve para diagnosticar
 -- "a allowlist está vazia": ou o agente nunca conseguiu falar com o GitHub, ou nenhuma
@@ -423,10 +423,12 @@ acrescentar_chave ESTRELA_SYNC_INTERVALO_SEG "300" \
 # Para ativar: preencha ESTRELA_ALERTA_URL e troque para "true".
 acrescentar_chave ESTRELA_AUTO_UPDATE "false" \
     "Atualizar sozinho (só fora do expediente). Exige ESTRELA_ALERTA_URL preenchida."
-acrescentar_chave ESTRELA_EXPEDIENTE_INICIO "08:00" "Início do expediente (não mexe no ar)."
-acrescentar_chave ESTRELA_EXPEDIENTE_FIM "19:00" "Fim do expediente. Depois disso, pode."
-acrescentar_chave ESTRELA_DIAS_UTEIS "1,2,3,4,5" \
-    "Dias de expediente (1=segunda ... 7=domingo). Fim de semana inteiro é janela."
+# Janela de deploy = 23:00 às 05:00, toda noite. O que se configura é o COMPLEMENTO (o
+# expediente, quando NÃO se pode mexer): 05:00–23:00.
+acrescentar_chave ESTRELA_EXPEDIENTE_INICIO "05:00" "Início do expediente (não mexe no ar)."
+acrescentar_chave ESTRELA_EXPEDIENTE_FIM "23:00" "Fim do expediente. Depois disso, pode."
+acrescentar_chave ESTRELA_DIAS_UTEIS "1,2,3,4,5,6,7" \
+    "Dias de expediente (1=seg ... 7=dom). Todos: a janela 23h–05h vale igual no fim de semana."
 acrescentar_chave ESTRELA_FUSO "America/Sao_Paulo" \
     "Fuso do CLIENTE. O servidor pode estar em UTC; o expediente não é em UTC."
 
@@ -479,8 +481,8 @@ cat <<FIM
      ON CONFLICT (tag) DO UPDATE SET origem = EXCLUDED.origem;
      SQL
 
-  2b) Atualização automática: ESTRELA_AUTO_UPDATE=true e janela fora do expediente
-     (antes das 08:00, depois das 19:00 e fins de semana inteiros). Para desligar:
+  2b) Atualização automática: ESTRELA_AUTO_UPDATE=true e a janela de deploy é 23:00–05:00,
+     toda noite (o expediente 05:00–23:00 é intocável). Para desligar:
      troque para false em ${CONF_DIR}/agente.env e reinicie o serviço. Rollback continua
      100% manual, sempre.
 

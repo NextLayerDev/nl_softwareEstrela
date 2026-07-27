@@ -51,22 +51,24 @@ def em_sp(ano: int, mes: int, dia: int, hh: int, mm: int = 0) -> datetime:
 # Janela de manutenção
 # ===========================================================================
 
+# Janela = 23:00 às 05:00, TODA noite (expediente 05:00–23:00, os 7 dias).
 # 2026-07-20 é uma segunda-feira; 2026-07-25 é sábado e 2026-07-26 é domingo.
 
 
 @pytest.mark.parametrize(
     ("quando", "esperado"),
     [
-        (em_sp(2026, 7, 20, 3, 0), True),  # madrugada de segunda: pode
-        (em_sp(2026, 7, 20, 7, 59), True),  # 1 minuto antes de abrir a loja
-        (em_sp(2026, 7, 20, 8, 0), False),  # abriu: acabou a janela
-        (em_sp(2026, 7, 20, 12, 0), False),  # meio do expediente
-        (em_sp(2026, 7, 20, 18, 59), False),  # ainda tem gente vendendo
-        (em_sp(2026, 7, 20, 19, 0), True),  # fechou: janela de novo
+        (em_sp(2026, 7, 20, 2, 0), True),  # 02:00: madrugada, pode
+        (em_sp(2026, 7, 20, 4, 59), True),  # 1 min antes de a loja abrir
+        (em_sp(2026, 7, 20, 5, 0), False),  # 05:00: expediente começa
+        (em_sp(2026, 7, 20, 12, 0), False),  # meio do dia
+        (em_sp(2026, 7, 20, 22, 59), False),  # 1 min antes de fechar a janela do dia
+        (em_sp(2026, 7, 20, 23, 0), True),  # 23:00: janela abre
         (em_sp(2026, 7, 20, 23, 59), True),
         (em_sp(2026, 7, 24, 12, 0), False),  # sexta ao meio-dia: expediente
-        (em_sp(2026, 7, 25, 12, 0), True),  # sábado inteiro é janela
-        (em_sp(2026, 7, 26, 12, 0), True),  # domingo idem
+        (em_sp(2026, 7, 25, 3, 0), True),  # sábado 03:00: dentro da janela noturna
+        (em_sp(2026, 7, 25, 14, 0), False),  # sábado 14:00: agora TAMBÉM é expediente
+        (em_sp(2026, 7, 26, 14, 0), False),  # domingo 14:00 idem
     ],
 )
 def test_dentro_da_janela_nas_bordas(quando: datetime, esperado: bool) -> None:
@@ -76,12 +78,12 @@ def test_dentro_da_janela_nas_bordas(quando: datetime, esperado: bool) -> None:
 def test_janela_respeita_o_fuso_do_cliente_e_nao_o_do_servidor() -> None:
     """14:00 em São Paulo é 17:00 UTC. Um agente que pensasse em UTC faria deploy no meio
     do expediente achando que já era noite — este é o erro que o zoneinfo evita."""
-    meio_da_tarde_utc = datetime(2026, 7, 20, 17, 0, tzinfo=UTC)
+    meio_da_tarde_utc = datetime(2026, 7, 20, 17, 0, tzinfo=UTC)  # 14:00 SP
     assert agente.dentro_da_janela(meio_da_tarde_utc, JANELA) is False
 
-    # 23:00 UTC = 20:00 em São Paulo: loja fechada, pode mexer.
-    noite_utc = datetime(2026, 7, 20, 23, 0, tzinfo=UTC)
-    assert agente.dentro_da_janela(noite_utc, JANELA) is True
+    # 03:00 UTC = 00:00 em São Paulo: madrugada, dentro da janela 23h–05h.
+    madrugada_utc = datetime(2026, 7, 20, 3, 0, tzinfo=UTC)
+    assert agente.dentro_da_janela(madrugada_utc, JANELA) is True
 
 
 def test_datetime_ingenuo_e_tratado_como_utc() -> None:
@@ -90,16 +92,17 @@ def test_datetime_ingenuo_e_tratado_como_utc() -> None:
 
 
 def test_dias_uteis_configuraveis() -> None:
-    """Loja que abre sábado: sábado deixa de ser janela."""
-    j = agente.Janela(dias_uteis=frozenset({1, 2, 3, 4, 5, 6}))
-    assert agente.dentro_da_janela(em_sp(2026, 7, 25, 12, 0), j) is False
-    assert agente.dentro_da_janela(em_sp(2026, 7, 26, 12, 0), j) is True
+    """Loja fechada domingo: dá para abrir a janela o dia inteiro nesse dia tirando-o da
+    lista de dias de expediente."""
+    j = agente.Janela(dias_uteis=frozenset({1, 2, 3, 4, 5, 6}))  # domingo fora
+    assert agente.dentro_da_janela(em_sp(2026, 7, 26, 12, 0), j) is True  # domingo: livre
+    assert agente.dentro_da_janela(em_sp(2026, 7, 25, 12, 0), j) is False  # sábado: expediente
 
 
-def test_proxima_janela_hoje_a_noite() -> None:
+def test_proxima_janela_esta_noite_as_23() -> None:
     agendada = agente.proxima_janela(em_sp(2026, 7, 20, 14, 30), JANELA)
     assert (agendada.year, agendada.month, agendada.day) == (2026, 7, 20)
-    assert agendada.hour == 19 and agendada.minute == 0
+    assert agendada.hour == 23 and agendada.minute == 0
 
 
 def test_proxima_janela_e_agora_quando_ja_esta_na_janela() -> None:
@@ -108,14 +111,14 @@ def test_proxima_janela_e_agora_quando_ja_esta_na_janela() -> None:
 
 
 def test_proxima_janela_no_ultimo_minuto_do_expediente() -> None:
-    agendada = agente.proxima_janela(em_sp(2026, 7, 20, 18, 59), JANELA)
-    assert agendada == em_sp(2026, 7, 20, 19, 0)
+    agendada = agente.proxima_janela(em_sp(2026, 7, 20, 22, 59), JANELA)
+    assert agendada == em_sp(2026, 7, 20, 23, 0)
 
 
-def test_proxima_janela_de_sexta_a_noite_e_a_propria_sexta() -> None:
-    """Sexta 18:00 -> abre às 19:00 da própria sexta, e não segunda."""
-    agendada = agente.proxima_janela(em_sp(2026, 7, 24, 18, 0), JANELA)
-    assert agendada == em_sp(2026, 7, 24, 19, 0)
+def test_proxima_janela_de_sabado_de_dia_e_a_propria_noite() -> None:
+    """Sábado agora conta como expediente: a próxima janela é 23:00 do próprio sábado."""
+    agendada = agente.proxima_janela(em_sp(2026, 7, 25, 15, 0), JANELA)
+    assert agendada == em_sp(2026, 7, 25, 23, 0)
 
 
 def test_proxima_janela_com_expediente_24h_nao_estoura() -> None:
@@ -379,10 +382,10 @@ def _sp(ano: int, mes: int, dia: int, h: int, m: int = 0) -> datetime:
 
 
 def test_fim_da_janela_e_o_proximo_inicio_de_expediente() -> None:
-    # Terça 20:00 -> a janela fecha às 08:00 de quarta.
-    fim = agente.fim_da_janela(_sp(2026, 7, 21, 20, 0), JANELA)
+    # Terça 23:30 -> a janela fecha às 05:00 de quarta.
+    fim = agente.fim_da_janela(_sp(2026, 7, 21, 23, 30), JANELA)
     assert fim is not None
-    assert (fim.hour, fim.day) == (8, 22)
+    assert (fim.hour, fim.day) == (5, 22)
 
 
 def test_fim_da_janela_none_dentro_do_expediente() -> None:
@@ -390,18 +393,19 @@ def test_fim_da_janela_none_dentro_do_expediente() -> None:
 
 
 def test_janela_com_folga_recusa_a_beira_do_expediente() -> None:
-    """O bug que isto trava: `dentro_da_janela` diz "pode" às 07:59, mas o pior caso do
-    deploy (~100 min) terminaria depois das 9h, com a loja vendendo."""
-    quase = _sp(2026, 7, 21, 7, 59)  # terça, 1 min de janela restante
+    """O bug que isto trava: `dentro_da_janela` diz "pode" às 04:59, mas o pior caso do
+    deploy (~100 min) terminaria depois das 05h, com a loja vendendo."""
+    quase = _sp(2026, 7, 22, 4, 59)  # quarta, 1 min de janela restante
     assert agente.dentro_da_janela(quase, JANELA) is True, "ainda é janela..."
     assert agente.janela_com_folga(quase, JANELA, agente.MARGEM_JANELA_SEG) is False, (
         "...mas não cabe um deploy inteiro antes do expediente"
     )
 
 
-def test_janela_com_folga_aceita_a_noite() -> None:
-    noite = _sp(2026, 7, 21, 20, 0)  # terça 20h: ~12h até as 08:00
-    assert agente.janela_com_folga(noite, JANELA, agente.MARGEM_JANELA_SEG) is True
+def test_janela_com_folga_aceita_o_comeco_da_janela() -> None:
+    # 23:30: ~5h30 até as 05:00, folga de sobra para o pior caso (~100 min).
+    inicio = _sp(2026, 7, 21, 23, 30)
+    assert agente.janela_com_folga(inicio, JANELA, agente.MARGEM_JANELA_SEG) is True
 
 
 def test_janela_com_folga_e_falsa_no_expediente() -> None:
