@@ -389,10 +389,15 @@ def disco_suficiente(livre: int, total: int, minimo_bytes: int, minimo_pct: floa
 class Janela:
     """Configuração da janela de manutenção. Pura: dá para testar sem relógio nem banco."""
 
-    inicio_expediente: hora_do_dia = hora_do_dia(8, 0)
-    fim_expediente: hora_do_dia = hora_do_dia(19, 0)
-    # isoweekday: segunda=1 ... domingo=7. Fim de semana inteiro é janela.
-    dias_uteis: frozenset[int] = frozenset({1, 2, 3, 4, 5})
+    # Janela de deploy = 23:00 às 05:00, TODA noite. Aqui guardamos o COMPLEMENTO (o
+    # "expediente", quando NÃO se pode mexer): 05:00–23:00. A janela é curta (6h) mas
+    # cabe o pior caso do deploy (~100 min) com folga larga — ver MARGEM_JANELA_SEG.
+    inicio_expediente: hora_do_dia = hora_do_dia(5, 0)
+    fim_expediente: hora_do_dia = hora_do_dia(23, 0)
+    # isoweekday: segunda=1 ... domingo=7. TODOS os dias contam como expediente, então a
+    # regra 23h–05h vale igual no fim de semana — a loja abre sábado, e "das 23 às 5" é uma
+    # janela fixa, não "a madrugada dos dias úteis + o fim de semana inteiro".
+    dias_uteis: frozenset[int] = frozenset({1, 2, 3, 4, 5, 6, 7})
     fuso: str = "America/Sao_Paulo"
 
     def tz(self) -> Any:
