@@ -46,6 +46,28 @@ _SQL_AUTO = text(
     "FROM agente.servidor_status ORDER BY id LIMIT 1"
 )
 
+# Tamanho do banco + quantos registros ele já tem, em UMA volta ao servidor.
+# `pg_database_size` é lookup de catálogo (barato); `n_live_tup` é a estimativa do
+# coletor de estatísticas (autovacuum/ANALYZE) — suficiente para "quão cheio" sem o
+# custo de um COUNT(*) por tabela a cada 30 s.
+_SQL_TAMANHO = text(
+    "SELECT pg_database_size(current_database()) AS bytes, "
+    "(SELECT coalesce(sum(n_live_tup), 0) FROM pg_stat_user_tables) AS registros"
+)
+
+
+def _tamanho_humano(n: int) -> str:
+    """Bytes em MB/GB, no mesmo estilo (ponto decimal) da sonda de Disco."""
+    mb = n / 1024**2
+    if mb < 1024:
+        return f"{mb:.1f} MB"
+    return f"{mb / 1024:.2f} GB"
+
+
+def _milhar(n: int) -> str:
+    """Separador de milhar pt-BR: 12480 -> '12.480'."""
+    return f"{n:,}".replace(",", ".")
+
 
 @dataclass(frozen=True)
 class EstadoAuto:
@@ -172,6 +194,32 @@ class SaudeService:
         nivel = "ok" if pct_livre >= 20 else ("aviso" if pct_livre >= 10 else "critico")
         return Sonda("Disco", f"{livre_gb:.1f} GB livres ({pct_livre:.0f}%)", nivel)
 
+    # ---------------------------------------------------- tamanho do banco
+    def _banco_tamanho(self, db: Session) -> Sonda:
+        """Companheira da sonda de Disco: aquela mostra o que sobra na máquina, esta
+        mostra quanto ESTE sistema já consome e quão alimentado o banco está."""
+        try:
+            with db.begin_nested():
+                linha = db.execute(_SQL_TAMANHO).mappings().first()
+            bytes_ = int(linha["bytes"])
+            registros = int(linha["registros"])
+        except Exception:
+            logger.warning("Sonda de tamanho do banco falhou.", exc_info=True)
+            return Sonda("Tamanho do banco", "não foi possível ler", "neutro")
+
+        detalhe = f"≈ {_milhar(registros)} registros alimentados"
+
+        # Fração do disco que o banco ocupa — amarra esta linha à de Disco logo acima.
+        try:
+            total = shutil.disk_usage("/").total
+            if total:
+                pct = bytes_ / total * 100
+                detalhe += f" · {'<0.1' if 0 < pct < 0.1 else f'{pct:.1f}'}% do disco"
+        except OSError:
+            pass
+
+        return Sonda("Tamanho do banco", _tamanho_humano(bytes_), "ok", detalhe)
+
     # -------------------------------------------------------------- backups
     def _backup(self) -> Sonda:
         if not DIR_BACKUP.is_dir():
@@ -288,6 +336,7 @@ class SaudeService:
                 self._agente(db),
                 self._backup(),
                 self._disco(),
+                self._banco_tamanho(db),
                 self._uptime(),
             ],
         )

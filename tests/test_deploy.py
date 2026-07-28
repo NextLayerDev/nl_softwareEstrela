@@ -166,8 +166,27 @@ def test_admin_nao_ve_usuario_dev_na_lista() -> None:
 def test_saude_coleta_todas_as_sondas(db) -> None:
     s = saude_service.coletar(db)
     rotulos = {x.rotulo for x in s.sondas}
-    assert {"Banco de dados", "Migrations", "Agente de deploy"} <= rotulos
+    assert {"Banco de dados", "Migrations", "Agente de deploy", "Tamanho do banco"} <= rotulos
     assert all(x.nivel in ("ok", "aviso", "critico", "neutro") for x in s.sondas)
+
+
+def test_sonda_de_tamanho_do_banco_reporta_uso_e_registros(db) -> None:
+    """A linha mostra quanto o banco ocupa (MB/GB) e quão alimentado ele está."""
+    sonda = saude_service._banco_tamanho(db)
+    assert sonda.rotulo == "Tamanho do banco"
+    assert sonda.nivel == "ok"
+    assert sonda.valor.endswith(("MB", "GB"))
+    assert "registros alimentados" in (sonda.detalhe or "")
+
+
+def test_tamanho_do_banco_nao_envenena_a_transacao(db) -> None:
+    """Regressão do SAVEPOINT: uma sonda anterior que falha não pode contaminar esta,
+    e esta não pode contaminar as seguintes."""
+    saude_service._agente(db)  # falha (schema agente não existe) e faz rollback do savepoint
+    sonda = saude_service._banco_tamanho(db)
+    assert sonda.nivel == "ok", "a sonda de tamanho mentiu depois de outra falhar"
+    banco, _ = saude_service._banco(db)
+    assert banco.nivel == "ok", "a sonda de tamanho envenenou a transação"
 
 
 def test_migration_em_dia_no_banco_de_teste(db) -> None:
