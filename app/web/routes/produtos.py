@@ -24,10 +24,16 @@ router = APIRouter()
 _BLOCO = 50
 
 
-def _ctx_paginacao(produtos: list, q: str, offset: int) -> dict:
+def _ctx_paginacao(produtos: list, q: str, offset: int, categoria_id: int | None = None) -> dict:
     """Contexto de paginação para o fragmento de linhas (scroll infinito)."""
     tem_mais = (not q) and (len(produtos) == _BLOCO)
-    return {"q": q, "offset": offset, "tem_mais": tem_mais, "proximo_offset": offset + _BLOCO}
+    return {
+        "q": q,
+        "offset": offset,
+        "tem_mais": tem_mais,
+        "proximo_offset": offset + _BLOCO,
+        "categoria_id": categoria_id,
+    }
 
 
 def _categorias(db: Session) -> list[Categoria]:
@@ -46,10 +52,13 @@ def listar_produtos(
     request: Request,
     q: str = "",
     ok: str = "",
+    categoria_id: int | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
-    produtos = produto_controller.listar(db, q or None, limit=_BLOCO, offset=0)
+    produtos = produto_controller.listar(
+        db, q or None, limit=_BLOCO, offset=0, categoria_id=categoria_id
+    )
     contexto = {
         "user": usuario,
         "titulo": "Produtos",
@@ -57,7 +66,9 @@ def listar_produtos(
         "pode_editar": e_admin(usuario.perfil),
         "ver_custo": pode_ver_custo(usuario.perfil),
         "mensagem_ok": ok or None,
-        **_ctx_paginacao(produtos, q, 0),
+        "categorias": _categorias(db),
+        "categoria_id": categoria_id,
+        **_ctx_paginacao(produtos, q, 0, categoria_id),
     }
     return templates.TemplateResponse(request, "produtos/index.html", contexto)
 
@@ -67,16 +78,19 @@ def busca_produtos(
     request: Request,
     q: str = "",
     offset: int = 0,
+    categoria_id: int | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
-    produtos = produto_controller.listar(db, q or None, limit=_BLOCO, offset=offset)
+    produtos = produto_controller.listar(
+        db, q or None, limit=_BLOCO, offset=offset, categoria_id=categoria_id
+    )
     contexto = {
         "user": usuario,
         "produtos": produtos,
         "pode_editar": e_admin(usuario.perfil),
         "ver_custo": pode_ver_custo(usuario.perfil),
-        **_ctx_paginacao(produtos, q, offset),
+        **_ctx_paginacao(produtos, q, offset, categoria_id),
     }
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
 

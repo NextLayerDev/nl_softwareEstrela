@@ -42,9 +42,16 @@ def _int_opt(valor: str | None) -> int | None:
 
 class ProdutoController:
     def listar(
-        self, db: Session, termo: str | None, limit: int = 50, offset: int = 0
+        self,
+        db: Session,
+        termo: str | None,
+        limit: int = 50,
+        offset: int = 0,
+        categoria_id: int | None = None,
     ) -> list[Produto]:
-        return produto_service.listar(db, termo, limit=limit, offset=offset)
+        return produto_service.listar(
+            db, termo, limit=limit, offset=offset, categoria_id=categoria_id
+        )
 
     def obter(self, db: Session, produto_id: int) -> Produto:
         return produto_service.obter(db, produto_id)

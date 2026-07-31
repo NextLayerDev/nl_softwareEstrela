@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.controllers.estoque_controller import estoque_controller
@@ -10,6 +11,7 @@ from app.core.errors import NaoEncontradoError
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
+from app.models.categoria import Categoria
 from app.models.enums import e_admin, tem_perfil
 from app.models.usuario import Usuario
 from app.repositories.estoque_repo import estoque_repo
@@ -20,22 +22,30 @@ router = APIRouter()
 _TODOS = ("admin", "vendedor", "financeiro", "funcionario")
 
 
+def _categorias(db: Session) -> list[Categoria]:
+    return list(db.scalars(select(Categoria).order_by(Categoria.nome)))
+
+
 # ============================================================ ESTOQUE (consulta)
 @router.get("/estoque", response_class=HTMLResponse)
 def index_estoque(
     request: Request,
     q: str = "",
+    categoria_id: int | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
-    variacoes = (
-        estoque_repo.busca_localizacao(db, q) if q else estoque_repo.listar_variacoes_ativas(db)
-    )
+    if q:
+        variacoes = estoque_repo.busca_localizacao(db, q, categoria_id=categoria_id)
+    else:
+        variacoes = estoque_repo.listar_variacoes_ativas(db, categoria_id=categoria_id)
     contexto = {
         "user": usuario,
         "titulo": "Estoque",
         "variacoes": variacoes,
         "q": q,
+        "categorias": _categorias(db),
+        "categoria_id": categoria_id,
         "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
         "pode_ajuste": e_admin(usuario.perfil),
     }
@@ -46,10 +56,16 @@ def index_estoque(
 def busca_estoque(
     request: Request,
     q: str = "",
+    categoria_id: int | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
-    variacoes = estoque_repo.busca_localizacao(db, q) if q else []
+    if q:
+        variacoes = estoque_repo.busca_localizacao(db, q, categoria_id=categoria_id)
+    elif categoria_id:
+        variacoes = estoque_repo.listar_variacoes_ativas(db, categoria_id=categoria_id)
+    else:
+        variacoes = []
     contexto = {
         "user": usuario,
         "variacoes": variacoes,

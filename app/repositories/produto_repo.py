@@ -25,33 +25,58 @@ class ProdutoRepository:
         incluir_inativos: bool = False,
         limit: int = 100,
         offset: int = 0,
+        categoria_id: int | None = None,
     ) -> list[Produto]:
         stmt = (
             select(Produto)
-            .options(selectinload(Produto.variacoes), selectinload(Produto.codigos_alt))
+            .options(
+                selectinload(Produto.variacoes),
+                selectinload(Produto.codigos_alt),
+                selectinload(Produto.categoria),
+            )
             .order_by(Produto.descricao)
             .limit(limit)
             .offset(offset)
         )
         if not incluir_inativos:
             stmt = stmt.where(Produto.ativo.is_(True))
+        if categoria_id is not None:
+            stmt = stmt.where(Produto.categoria_id == categoria_id)
         return list(db.scalars(stmt))
 
-    def busca_rapida(self, db: Session, termo: str, limit: int = 20) -> list[Produto]:
-        """Busca por pg_trgm na descrição + match de prefixo no código."""
+    def busca_rapida(
+        self, db: Session, termo: str, limit: int = 20, categoria_id: int | None = None
+    ) -> list[Produto]:
+        """Busca por pg_trgm na descrição + match de substring no código.
+
+        - Código: `ilike('%termo%')` — basta um pedaço do código (ex: `708`
+          casa com `K-708`), não precisa digitar desde o início.
+        - Descrição: trigram (ranking) + fallback `ilike('%termo%')` para garantir
+          que qualquer pedaço case, inclusive curto, mesmo quando a similaridade por
+          trigramas fica abaixo do limiar padrão (0.3) do Postgres.
+        - `categoria_id` (opcional): restringe o resultado a uma categoria, combinando
+          com a busca por texto.
+        """
         termo = termo.strip()
         stmt = (
             select(Produto)
-            .options(selectinload(Produto.variacoes), selectinload(Produto.codigos_alt))
+            .options(
+                selectinload(Produto.variacoes),
+                selectinload(Produto.codigos_alt),
+                selectinload(Produto.categoria),
+            )
             .where(
                 or_(
+                    Produto.codigo.ilike(f"%{termo}%"),
                     Produto.descricao.op("%")(termo),
-                    Produto.codigo.ilike(f"{termo}%"),
+                    Produto.descricao.ilike(f"%{termo}%"),
                 )
             )
             .order_by(func.similarity(Produto.descricao, termo).desc())
             .limit(limit)
         )
+        if categoria_id is not None:
+            stmt = stmt.where(Produto.categoria_id == categoria_id)
         return list(db.scalars(stmt))
 
     def add(self, db: Session, produto: Produto) -> Produto:

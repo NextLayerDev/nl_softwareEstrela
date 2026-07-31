@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import RegraNegocioError
 from app.main import app
+from app.models.categoria import Categoria
 from app.models.enums import EstoqueModo, TipoMov
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto, ProdutoVariacao
+from app.repositories.produto_repo import produto_repo
 from app.schemas.produto import CodigoAltCreate, ProdutoCreate, ProdutoUpdate, VariacaoCreate
 from app.services.estoque_service import estoque_service
 from app.services.produto_service import produto_service
@@ -382,6 +384,73 @@ def test_atualizar_codigos_alt_remove_todos(db: Session) -> None:
     db.flush()
     atual = produto_service.obter(db, p.id)
     assert [c.codigo_alt for c in atual.codigos_alt] == []
+
+
+def test_busca_rapida_por_parte_descricao(db: Session) -> None:
+    """Digitar só um pedaço (do meio/curto) da descrição deve encontrar o produto.
+
+    Cobertura do fallback `descricao.ilike('%termo%')`: sem ele, o trigram sozinho
+    pode não casar pedaços curtos/pouco parecidos (limiar de similaridade 0.3).
+    """
+    p = Produto(codigo=_codigo(), descricao="Boné Aba Reta Premium")
+    db.add(p)
+    db.flush()
+
+    # Pedaço do meio e palavra isolada (curtos) — casam pelo fallback ilike.
+    for termo in ("Aba Reta", "Premium", "Boné"):
+        achou = produto_repo.busca_rapida(db, termo)
+        assert any(x.id == p.id for x in achou), f"não achou com termo={termo!r}"
+
+
+def test_busca_rapida_por_parte_codigo(db: Session) -> None:
+    """Digitar só um pedaço do código (não desde o início) deve encontrar o produto.
+
+    Ex: `708` casa com `K-708`. Cobertura do `codigo.ilike('%termo%')` (substring,
+    não prefixo).
+    """
+    p = Produto(codigo="K-708", descricao="Produto Teste Parcial Codigo")
+    db.add(p)
+    db.flush()
+
+    # "708" não é prefixo de "K-708" — só casa se a busca for por substring.
+    achou = produto_repo.busca_rapida(db, "708")
+    assert any(x.id == p.id for x in achou)
+
+
+def test_listar_filtrar_por_categoria(db: Session) -> None:
+    """O filtro por categoria restringe a listagem (sem termo) aos produtos daquela categoria."""
+    cat_a = Categoria(nome=f"Canetas-{uuid.uuid4().hex[:6]}")
+    cat_b = Categoria(nome=f"Bolas-{uuid.uuid4().hex[:6]}")
+    db.add_all([cat_a, cat_b])
+    db.flush()
+    p_a = Produto(codigo=_codigo(), descricao="Caneta Azul", categoria_id=cat_a.id)
+    p_b = Produto(codigo=_codigo(), descricao="Bola Vermelha", categoria_id=cat_b.id)
+    db.add_all([p_a, p_b])
+    db.flush()
+
+    achou_a = produto_repo.listar(db, categoria_id=cat_a.id)
+    ids_a = {x.id for x in achou_a}
+    assert p_a.id in ids_a
+    assert p_b.id not in ids_a
+
+
+def test_busca_rapida_combina_categoria_e_texto(db: Session) -> None:
+    """Categoria + texto agem junto: "Azul" em cat_a retorna só o produto certo."""
+    cat_a = Categoria(nome=f"Canetas-{uuid.uuid4().hex[:6]}")
+    cat_b = Categoria(nome=f"Bolas-{uuid.uuid4().hex[:6]}")
+    db.add_all([cat_a, cat_b])
+    db.flush()
+    p_a_azul = Produto(codigo=_codigo(), descricao="Caneta Azul", categoria_id=cat_a.id)
+    p_a_verde = Produto(codigo=_codigo(), descricao="Caneta Verde", categoria_id=cat_a.id)
+    p_b_azul = Produto(codigo=_codigo(), descricao="Bola Azul", categoria_id=cat_b.id)
+    db.add_all([p_a_azul, p_a_verde, p_b_azul])
+    db.flush()
+
+    achou = produto_repo.busca_rapida(db, "Azul", categoria_id=cat_a.id)
+    ids = {x.id for x in achou}
+    assert p_a_azul.id in ids
+    assert p_a_verde.id not in ids  # não tem "Azul"
+    assert p_b_azul.id not in ids  # é "Azul" mas é de outra categoria
 
 
 def test_editar_codigo_via_rota() -> None:

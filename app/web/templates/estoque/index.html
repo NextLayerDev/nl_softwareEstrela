@@ -26,9 +26,26 @@
         hx-get="/estoque/busca"
         hx-trigger="keyup changed delay:250ms, search"
         hx-target="#tbody-estoque"
+        hx-include="[name='categoria_id']"
         hx-indicator="#busca-load"
       />
     </div>
+    <label for="f-categoria-estoque" class="sr-only">Filtrar por categoria</label>
+    <select
+      id="f-categoria-estoque"
+      name="categoria_id"
+      class="input max-w-xs"
+      hx-get="/estoque/busca"
+      hx-trigger="change"
+      hx-target="#tbody-estoque"
+      hx-include="[name='q']"
+      hx-indicator="#busca-load"
+    >
+      <option value="">Todas as categorias</option>
+      {% for c in categorias %}
+      <option value="{{ c.id }}" {{ "selected" if categoria_id == c.id else "" }}>{{ c.nome }}</option>
+      {% endfor %}
+    </select>
     <span id="busca-load" class="carregando" role="status">buscando…</span>
   </div>
 
