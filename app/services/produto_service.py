@@ -34,13 +34,18 @@ def _dados_variacao(variacao: ProdutoVariacao) -> dict:
 
 class ProdutoService:
     def listar(
-        self, db: Session, termo: str | None = None, limit: int = 50, offset: int = 0
+        self,
+        db: Session,
+        termo: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        categoria_id: int | None = None,
     ) -> list[Produto]:
         # Busca por termo usa pg_trgm (topo dos matches); navegação sem termo é paginada
-        # (scroll infinito) via limit/offset.
+        # (scroll infinito) via limit/offset. `categoria_id` combina com ambos os caminhos.
         if termo:
-            return produto_repo.busca_rapida(db, termo)
-        return produto_repo.listar(db, limit=limit, offset=offset)
+            return produto_repo.busca_rapida(db, termo, categoria_id=categoria_id)
+        return produto_repo.listar(db, limit=limit, offset=offset, categoria_id=categoria_id)
 
     def obter(self, db: Session, produto_id: int) -> Produto:
         produto = produto_repo.get(db, produto_id)

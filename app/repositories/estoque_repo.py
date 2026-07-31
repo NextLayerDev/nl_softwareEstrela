@@ -19,43 +19,58 @@ class EstoqueRepository:
             .where(ProdutoVariacao.id == variacao_id)
         )
 
-    def listar_variacoes_ativas(self, db: Session) -> list[ProdutoVariacao]:
+    def listar_variacoes_ativas(
+        self, db: Session, categoria_id: int | None = None
+    ) -> list[ProdutoVariacao]:
         stmt = (
             select(ProdutoVariacao)
             .options(joinedload(ProdutoVariacao.produto))
             .where(ProdutoVariacao.ativo.is_(True))
             .order_by(ProdutoVariacao.produto_id, ProdutoVariacao.cor)
         )
+        if categoria_id is not None:
+            stmt = stmt.join(Produto, ProdutoVariacao.produto_id == Produto.id).where(
+                Produto.categoria_id == categoria_id
+            )
         return list(db.scalars(stmt))
 
-    def busca_localizacao(self, db: Session, termo: str, limit: int = 15) -> list[ProdutoVariacao]:
+    def busca_localizacao(
+        self, db: Session, termo: str, limit: int = 15, categoria_id: int | None = None
+    ) -> list[ProdutoVariacao]:
         """Busca para o tablet: casa código, código alternativo, descrição (pg_trgm),
-        localização e cor. Retorna variações com o produto carregado."""
+        localização e cor. Retorna variações com o produto carregado.
+
+        Código e código alternativo casam por substring (`%termo%`), então basta um
+        pedaço do código (ex: `708` casa com `K-708`). `categoria_id` (opcional)
+        restringe o resultado a uma categoria, combinando com a busca por texto."""
         termo = (termo or "").strip()
-        if not termo:
+        if not termo and not categoria_id:
             return []
 
         sub_alt = select(ProdutoCodigoAlt.produto_id).where(
-            ProdutoCodigoAlt.codigo_alt.ilike(f"{termo}%")
+            ProdutoCodigoAlt.codigo_alt.ilike(f"%{termo}%")
         )
         stmt = (
             select(ProdutoVariacao)
             .join(Produto, ProdutoVariacao.produto_id == Produto.id)
             .options(joinedload(ProdutoVariacao.produto))
-            .where(
-                ProdutoVariacao.ativo.is_(True),
+            .where(ProdutoVariacao.ativo.is_(True))
+            .order_by(Produto.descricao, ProdutoVariacao.cor)
+            .limit(limit)
+        )
+        if categoria_id is not None:
+            stmt = stmt.where(Produto.categoria_id == categoria_id)
+        if termo:
+            stmt = stmt.where(
                 or_(
-                    Produto.codigo.ilike(f"{termo}%"),
+                    Produto.codigo.ilike(f"%{termo}%"),
                     Produto.descricao.op("%")(termo),
                     Produto.descricao.ilike(f"%{termo}%"),
                     Produto.localizacao.ilike(f"%{termo}%"),
                     ProdutoVariacao.cor.ilike(f"%{termo}%"),
                     Produto.id.in_(sub_alt),
-                ),
+                )
             )
-            .order_by(Produto.descricao, ProdutoVariacao.cor)
-            .limit(limit)
-        )
         return list(db.scalars(stmt))
 
     def listar_alertas(self, db: Session, limit: int = 200) -> list[ProdutoVariacao]:

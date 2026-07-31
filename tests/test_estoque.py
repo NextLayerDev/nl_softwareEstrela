@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import RegraNegocioError
+from app.models.categoria import Categoria
 from app.models.enums import EstoqueModo, RotuloAprox, StatusInventario, TipoMov
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import Produto, ProdutoVariacao
@@ -205,8 +206,41 @@ def test_busca_localizacao_por_codigo_descricao_cor(db: Session):
     por_codigo = estoque_repo.busca_localizacao(db, p.codigo[:5])
     assert any(x.produto_id == p.id for x in por_codigo)
 
+    # Pedaço do meio do código (não é prefixo) — casa por substring (ex: 708 em K-708).
+    por_meio_codigo = estoque_repo.busca_localizacao(db, p.codigo[2:6])
+    assert any(x.produto_id == p.id for x in por_meio_codigo)
+
     por_descricao = estoque_repo.busca_localizacao(db, "Boné Aba")
     assert any(x.produto_id == p.id for x in por_descricao)
 
     por_cor = estoque_repo.busca_localizacao(db, "Vermelho")
     assert any(x.produto_id == p.id for x in por_cor)
+
+    # Pedaço do meio da descrição (substring curta) também casa pelo fallback ilike.
+    por_meio = estoque_repo.busca_localizacao(db, "Aba Reta")
+    assert any(x.produto_id == p.id for x in por_meio)
+
+
+def test_busca_localizacao_filtra_por_categoria(db: Session) -> None:
+    """O filtro por categoria restringe a busca de estoque à categoria escolhida."""
+    cat_a = Categoria(nome=f"Canetas-{uuid.uuid4().hex[:6]}")
+    cat_b = Categoria(nome=f"Bolas-{uuid.uuid4().hex[:6]}")
+    db.add_all([cat_a, cat_b])
+    db.flush()
+    p_a = _produto(db, descricao="Caneta Azul")
+    p_a.categoria_id = cat_a.id
+    p_b = _produto(db, descricao="Bola Azul")
+    p_b.categoria_id = cat_b.id
+    _variacao(db, p_a, cor="Azul")
+    _variacao(db, p_b, cor="Azul")
+    db.flush()
+
+    # Sem termo, só por categoria: lista variações ativas daquela categoria.
+    so_a = estoque_repo.listar_variacoes_ativas(db, categoria_id=cat_a.id)
+    assert any(x.produto_id == p_a.id for x in so_a)
+    assert not any(x.produto_id == p_b.id for x in so_a)
+
+    # Com termo "Azul" + categoria: combina os dois (só variações de cat_a com "Azul").
+    achou = estoque_repo.busca_localizacao(db, "Azul", categoria_id=cat_a.id)
+    assert any(x.produto_id == p_a.id for x in achou)
+    assert not any(x.produto_id == p_b.id for x in achou)
