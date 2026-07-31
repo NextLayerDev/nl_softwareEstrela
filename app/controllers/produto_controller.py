@@ -91,6 +91,9 @@ class ProdutoController:
     def inativar(self, db: Session, produto_id: int) -> Produto:
         return produto_service.inativar(db, produto_id)
 
+    def reativar(self, db: Session, produto_id: int) -> Produto:
+        return produto_service.reativar(db, produto_id)
+
     def renomear_variacao(self, db: Session, variacao_id: int, form: dict) -> ProdutoVariacao:
         dados = VariacaoCorUpdate(cor=form.get("cor", ""))
         return produto_service.renomear_variacao(db, variacao_id, dados.cor)
@@ -110,6 +113,9 @@ class ProdutoController:
 
     def remover_variacao(self, db: Session, variacao_id: int) -> tuple[ProdutoVariacao, str]:
         return produto_service.remover_variacao(db, variacao_id)
+
+    def reativar_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
+        return produto_service.reativar_variacao(db, variacao_id)
 
     @staticmethod
     def _parse_variacoes(form: dict) -> list[VariacaoCreate]:

@@ -129,6 +129,14 @@ class ProdutoService:
         eventos.emitir(db, "produto.inativado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
 
+    def reativar(self, db: Session, produto_id: int) -> Produto:
+        """Reverte o soft-delete: o produto volta a aparecer em novos pedidos."""
+        produto = self.obter(db, produto_id)
+        produto.ativo = True
+        db.flush()
+        eventos.emitir(db, "produto.reativado", _dados_produto(produto), audiencia=eventos.TODOS)
+        return produto
+
     def obter_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
         variacao = produto_repo.get_variacao(db, variacao_id)
         if variacao is None:
@@ -211,6 +219,23 @@ class ProdutoService:
         db.flush()
         eventos.emitir(db, "variacao.removida", dados_evento, audiencia=eventos.TODOS)
         return variacao, "deletada"
+
+    def reativar_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
+        """Reverte a inativação de uma cor (não do hard-delete, que remove a linha).
+
+        Bloqueia se já existir outra cor ativa com o mesmo nome no mesmo produto
+        (variacao_por_cor só enxerga ativas, então qualquer hit aqui é conflito).
+        """
+        variacao = self.obter_variacao(db, variacao_id)
+        cor = variacao.cor or ""
+        conflito = produto_repo.variacao_por_cor(db, variacao.produto_id, cor)
+        if conflito is not None and conflito.id != variacao_id:
+            rotulo = f' "{cor}"' if cor else " padrão"
+            raise RegraNegocioError(f"Já existe uma cor ativa{rotulo} neste produto.")
+        variacao.ativo = True
+        db.flush()
+        eventos.emitir(db, "variacao.reativada", _dados_variacao(variacao), audiencia=eventos.TODOS)
+        return variacao
 
 
 produto_service = ProdutoService()

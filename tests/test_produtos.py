@@ -64,6 +64,16 @@ def test_inativar_e_soft_delete(db: Session) -> None:
     assert p.ativo is False
 
 
+def test_reativar_produto(db: Session) -> None:
+    p = produto_service.criar(db, ProdutoCreate(codigo=_codigo(), descricao="GIZ"))
+    db.flush()
+    produto_service.inativar(db, p.id)
+    db.flush()
+    produto_service.reativar(db, p.id)
+    assert p.ativo is True
+    assert produto_service.obter(db, p.id).ativo is True
+
+
 def test_custo_visivel_para_admin() -> None:
     client = TestClient(app)
     _login(client, "admin")
@@ -222,6 +232,43 @@ def test_remover_variacao_com_historico_inativa(db: Session, usuario_admin) -> N
     assert acao == "inativada"
     assert variacao.ativo is False
     assert db.get(ProdutoVariacao, v.id) is not None  # ainda existe (inativa)
+
+
+def test_reativar_variacao(db: Session, usuario_admin) -> None:
+    p = produto_service.criar(db, ProdutoCreate(codigo=_codigo(), descricao="PROD REAT V"))
+    db.flush()
+    v = produto_service.adicionar_variacao(
+        db, p.id, VariacaoCreate(cor="Cinza", estoque_fisico=3), usuario_id=usuario_admin.id
+    )
+    db.flush()
+    # Zera o saldo (mantém histórico) e remove -> inativa.
+    estoque_service.ajustar(db, v, novo_saldo=0, usuario_id=usuario_admin.id, motivo="zerar")
+    db.flush()
+    produto_service.remover_variacao(db, v.id)
+    assert v.ativo is False
+    # Reativa.
+    produto_service.reativar_variacao(db, v.id)
+    assert v.ativo is True
+    assert db.get(ProdutoVariacao, v.id).ativo is True
+
+
+def test_reativar_variacao_bloqueia_duplicidade(db: Session, usuario_admin) -> None:
+    p = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=_codigo(),
+            descricao="PROD DUP",
+            variacoes=[VariacaoCreate(cor="Azul")],
+        ),
+    )
+    db.flush()
+    # Uma variação "Azul" ativa já existe; cria uma segunda "Azul" inativa direto no db
+    # (adicionar_variacao bloquearia a duplicidade de cor ativa).
+    inativa = ProdutoVariacao(cor="Azul", estoque_modo=EstoqueModo.APROXIMADO, ativo=False)
+    p.variacoes.append(inativa)
+    db.flush()
+    with pytest.raises(RegraNegocioError):
+        produto_service.reativar_variacao(db, inativa.id)
 
 
 def test_vendedor_nao_adiciona_variacao() -> None:

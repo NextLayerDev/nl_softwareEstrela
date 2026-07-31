@@ -184,6 +184,17 @@ async def inativar_produto(
     return redirect_ok("/produtos", "Produto inativado.")
 
 
+@router.post("/produtos/{produto_id}/reativar", response_class=HTMLResponse)
+async def reativar_produto(
+    request: Request,
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    produto_controller.reativar(db, produto_id)
+    return redirect_ok(f"/produtos/{produto_id}/editar", "Produto reativado.")
+
+
 @router.post("/produtos/variacao/{variacao_id}/cor", response_class=HTMLResponse)
 async def renomear_cor_variacao(
     request: Request,
@@ -281,6 +292,20 @@ async def remover_variacao_produto(
         # Card removido do DOM (HTMX troca o card por um span vazio).
         return HTMLResponse("<span></span>")
     # Inativada: re-renderiza o card com selo de inativa.
+    return templates.TemplateResponse(
+        request, "produtos/_thumb_variacao.html", {"variacao": variacao}
+    )
+
+
+@router.post("/produtos/variacao/{variacao_id}/reativar", response_class=HTMLResponse)
+async def reativar_variacao_produto(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role("admin")),
+):
+    variacao = produto_controller.reativar_variacao(db, variacao_id)
+    # Re-renderiza o card já ativo (sem o selo de inativa).
     return templates.TemplateResponse(
         request, "produtos/_thumb_variacao.html", {"variacao": variacao}
     )
