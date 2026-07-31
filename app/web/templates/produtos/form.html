@@ -12,6 +12,17 @@
 {% endblock %}
 
 {% block content %}
+{% if produto and not produto.ativo %}
+{# Ação direta de reativação: form separado do form de edição (não pode aninhar). #}
+<form method="post" action="/produtos/{{ produto.id }}/reativar" class="card mb-4 flex items-center justify-between gap-4 border-amber-400 bg-amber-50">
+  <p class="text-sm text-amber-800">
+    Este produto está <strong>inativo</strong>. Reative para que volte a aparecer em novos pedidos.
+  </p>
+  <button type="submit" class="btn-primario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Reativar produto
+  </button>
+</form>
+{% endif %}
 {% set acao = "/produtos/" ~ produto.id if produto else "/produtos" %}
 <form method="post" action="{{ acao }}" class="card max-w-3xl"
       x-data="{ variacoes: [], codigos: {{ (produto.codigos_alt | map(attribute='codigo_alt') | list) | tojson if produto else '[]' }} }">
