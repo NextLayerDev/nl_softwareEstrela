@@ -3,10 +3,12 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import RegraNegocioError
+from app.main import app
 from app.models.categoria import Categoria
 from app.models.enums import EstoqueModo, RotuloAprox, StatusInventario, TipoMov
 from app.models.movimentacao import MovimentacaoEstoque
@@ -244,3 +246,28 @@ def test_busca_localizacao_filtra_por_categoria(db: Session) -> None:
     achou = estoque_repo.busca_localizacao(db, "Azul", categoria_id=cat_a.id)
     assert any(x.produto_id == p_a.id for x in achou)
     assert not any(x.produto_id == p_b.id for x in achou)
+
+
+def _login(client: TestClient, perfil: str) -> None:
+    resp = client.post(
+        "/login",
+        data={"email": f"{perfil}@estrela.local", "senha": "estrela123"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+
+
+def test_busca_estoque_categoria_vazia_nao_falha() -> None:
+    """Selecionar 'Todas as categorias' envia categoria_id='' — não pode 422, deve listar tudo."""
+    client = TestClient(app)
+    _login(client, "admin")
+    resp = client.get("/estoque/busca", params={"categoria_id": ""})
+    assert resp.status_code == 200, resp.text
+
+
+def test_pagina_estoque_categoria_vazia_nao_falha() -> None:
+    """A página inteira de estoque também aceita categoria_id='' (422 antes do fix)."""
+    client = TestClient(app)
+    _login(client, "admin")
+    resp = client.get("/estoque", params={"categoria_id": ""})
+    assert resp.status_code == 200, resp.text

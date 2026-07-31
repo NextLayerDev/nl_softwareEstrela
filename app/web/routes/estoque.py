@@ -31,21 +31,24 @@ def _categorias(db: Session) -> list[Categoria]:
 def index_estoque(
     request: Request,
     q: str = "",
-    categoria_id: int | None = None,
+    categoria_id: str | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
+    # "Todas as categorias" envia categoria_id="" (string vazia); o FastAPI rejeita
+    # "" em `int | None` (422), então recebemos como str e coerciamos vazio → None.
+    cat = int(categoria_id) if categoria_id else None
     if q:
-        variacoes = estoque_repo.busca_localizacao(db, q, categoria_id=categoria_id)
+        variacoes = estoque_repo.busca_localizacao(db, q, categoria_id=cat)
     else:
-        variacoes = estoque_repo.listar_variacoes_ativas(db, categoria_id=categoria_id)
+        variacoes = estoque_repo.listar_variacoes_ativas(db, categoria_id=cat)
     contexto = {
         "user": usuario,
         "titulo": "Estoque",
         "variacoes": variacoes,
         "q": q,
         "categorias": _categorias(db),
-        "categoria_id": categoria_id,
+        "categoria_id": cat,
         "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
         "pode_ajuste": e_admin(usuario.perfil),
     }
@@ -56,14 +59,15 @@ def index_estoque(
 def busca_estoque(
     request: Request,
     q: str = "",
-    categoria_id: int | None = None,
+    categoria_id: str | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
+    cat = int(categoria_id) if categoria_id else None
     if q:
-        variacoes = estoque_repo.busca_localizacao(db, q, categoria_id=categoria_id)
-    elif categoria_id:
-        variacoes = estoque_repo.listar_variacoes_ativas(db, categoria_id=categoria_id)
+        variacoes = estoque_repo.busca_localizacao(db, q, categoria_id=cat)
+    elif cat:
+        variacoes = estoque_repo.listar_variacoes_ativas(db, categoria_id=cat)
     else:
         variacoes = []
     contexto = {

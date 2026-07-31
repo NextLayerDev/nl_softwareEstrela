@@ -12,7 +12,7 @@
 </td></tr>
 {% endif %}
 {% if tem_mais %}
-<tr hx-get="/produtos/busca?q={{ q | default('') | urlencode }}&categoria_id={{ categoria_id | default('') | urlencode }}&offset={{ proximo_offset }}"
+<tr hx-get="/produtos/busca?q={{ q | default('') | urlencode }}&categoria_id={{ categoria_id | default('', true) | urlencode }}&offset={{ proximo_offset }}"
     hx-trigger="revealed" hx-swap="outerHTML" hx-target="this">
   <td colspan="9" class="py-3 text-center text-gray-400">carregando…</td>
 </tr>

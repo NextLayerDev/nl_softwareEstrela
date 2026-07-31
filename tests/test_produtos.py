@@ -486,3 +486,19 @@ def test_editar_codigo_via_rota() -> None:
         s.commit()
     finally:
         s.close()
+
+
+def test_busca_produtos_categoria_vazia_nao_falha() -> None:
+    """Selecionar 'Todas as categorias' envia categoria_id='' — não pode 422, deve listar tudo."""
+    client = TestClient(app)
+    _login(client, "admin")
+    resp = client.get("/produtos/busca", params={"categoria_id": "", "q": ""})
+    assert resp.status_code == 200, resp.text
+
+
+def test_pagina_produtos_categoria_vazia_nao_falha() -> None:
+    """A página inteira de produtos também aceita categoria_id='' (422 antes do fix)."""
+    client = TestClient(app)
+    _login(client, "admin")
+    resp = client.get("/produtos", params={"categoria_id": ""})
+    assert resp.status_code == 200, resp.text
