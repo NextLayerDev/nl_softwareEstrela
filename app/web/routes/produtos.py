@@ -52,13 +52,14 @@ def listar_produtos(
     request: Request,
     q: str = "",
     ok: str = "",
-    categoria_id: int | None = None,
+    categoria_id: str | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
-    produtos = produto_controller.listar(
-        db, q or None, limit=_BLOCO, offset=0, categoria_id=categoria_id
-    )
+    # "Todas as categorias" envia categoria_id="" (string vazia); o FastAPI rejeita
+    # "" em `int | None` (422), então recebemos como str e coerciamos vazio → None.
+    cat = int(categoria_id) if categoria_id else None
+    produtos = produto_controller.listar(db, q or None, limit=_BLOCO, offset=0, categoria_id=cat)
     contexto = {
         "user": usuario,
         "titulo": "Produtos",
@@ -67,8 +68,8 @@ def listar_produtos(
         "ver_custo": pode_ver_custo(usuario.perfil),
         "mensagem_ok": ok or None,
         "categorias": _categorias(db),
-        "categoria_id": categoria_id,
-        **_ctx_paginacao(produtos, q, 0, categoria_id),
+        "categoria_id": cat,
+        **_ctx_paginacao(produtos, q, 0, cat),
     }
     return templates.TemplateResponse(request, "produtos/index.html", contexto)
 
@@ -78,19 +79,20 @@ def busca_produtos(
     request: Request,
     q: str = "",
     offset: int = 0,
-    categoria_id: int | None = None,
+    categoria_id: str | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
+    cat = int(categoria_id) if categoria_id else None
     produtos = produto_controller.listar(
-        db, q or None, limit=_BLOCO, offset=offset, categoria_id=categoria_id
+        db, q or None, limit=_BLOCO, offset=offset, categoria_id=cat
     )
     contexto = {
         "user": usuario,
         "produtos": produtos,
         "pode_editar": e_admin(usuario.perfil),
         "ver_custo": pode_ver_custo(usuario.perfil),
-        **_ctx_paginacao(produtos, q, offset, categoria_id),
+        **_ctx_paginacao(produtos, q, offset, cat),
     }
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
 
