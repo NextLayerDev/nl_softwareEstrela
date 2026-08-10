@@ -209,14 +209,14 @@ def test_cancelar_estorna_reserva(db, usuario_vendedor):
 
 
 # --------------------------------------------------------- faturar
-def test_faturar_baixa_estoque_e_gera_conta_a_vista(db, usuario_vendedor, usuario_financeiro):
+def test_faturar_baixa_estoque_e_gera_conta_a_vista(db, usuario_vendedor, usuario_admin):
     prod = _produto(db, "F1")
     var = _variacao(db, prod, fisico=50)
     cli = _cliente(db, condicao="à vista")
     ped = _novo_pedido(db, cli, usuario_vendedor)
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
     pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
-    pedido_service.faturar(db, ped.id, usuario_financeiro.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
 
     db.refresh(var)
     assert var.estoque_fisico == 40
@@ -232,20 +232,20 @@ def test_faturar_baixa_estoque_e_gera_conta_a_vista(db, usuario_vendedor, usuari
     assert contas[0].status == StatusConta.PENDENTE
 
 
-def test_faturar_conta_30_dias(db, usuario_vendedor, usuario_financeiro):
+def test_faturar_conta_30_dias(db, usuario_vendedor, usuario_admin):
     prod = _produto(db, "F2")
     var = _variacao(db, prod, fisico=50)
     cli = _cliente(db, condicao="30 dias")
     ped = _novo_pedido(db, cli, usuario_vendedor)
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
     pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
-    pedido_service.faturar(db, ped.id, usuario_financeiro.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
     contas = list(db.scalars(select(ContaReceber).where(ContaReceber.pedido_id == ped.id)))
     assert len(contas) == 1
     assert contas[0].vencimento == date.today() + timedelta(days=30)
 
 
-def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_financeiro):
+def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_admin):
     prod = _produto(db, "F3")
     var = _variacao(db, prod, fisico=50)
     cli = _cliente(db, condicao="3x")
@@ -253,7 +253,7 @@ def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_fina
     # total 100.00 / 3 -> 33.33, 33.33, 33.34
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
     pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
-    pedido_service.faturar(db, ped.id, usuario_financeiro.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
     contas = sorted(
         db.scalars(select(ContaReceber).where(ContaReceber.pedido_id == ped.id)),
         key=lambda c: c.parcela,
@@ -298,7 +298,7 @@ def test_admin_pode_desconto_acima_do_limite(db, usuario_admin):
 
 
 # --------------------------------------------------------- separação
-def test_separacao_conclui_apos_conferencia(db, usuario_vendedor, usuario_funcionario):
+def test_separacao_conclui_apos_conferencia(db, usuario_vendedor):
     prod1 = _produto(db, "S1")
     prod2 = _produto(db, "S2")
     var1 = _variacao(db, prod1, fisico=50, cor="a")
@@ -322,8 +322,8 @@ def test_separacao_conclui_apos_conferencia(db, usuario_vendedor, usuario_funcio
 
 # --------------------------------------------------------- RBAC via HTTP
 @pytest.fixture
-def client_funcionario(db, usuario_funcionario, monkeypatch):
-    """TestClient autenticado como funcionário (override de get_current_user e get_db)."""
+def client_vendedor(db, usuario_vendedor):
+    """TestClient autenticado como vendedor (override de get_current_user e get_db)."""
     from fastapi.testclient import TestClient
 
     from app.deps.auth import get_current_user
@@ -331,17 +331,23 @@ def client_funcionario(db, usuario_funcionario, monkeypatch):
     from app.main import app
 
     app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_user] = lambda: usuario_funcionario
+    app.dependency_overrides[get_current_user] = lambda: usuario_vendedor
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
 
 
-def test_rbac_funcionario_nao_cria_pedido(client_funcionario):
-    r = client_funcionario.get("/pedidos/novo")
+def test_rbac_vendedor_nao_fatura(client_vendedor, db, usuario_vendedor):
+    """Faturar é a linha que o vendedor não cruza — mesmo no próprio pedido."""
+    prod = _produto(db, "RB1")
+    var = _variacao(db, prod, fisico=50)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("10.00"))
+    pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
+    db.flush()
+
+    r = client_vendedor.post(f"/pedidos/{ped.id}/faturar", follow_redirects=False)
     assert r.status_code == 403
-    r2 = client_funcionario.post("/pedidos", data={"cliente_id": 1})
-    assert r2.status_code == 403
 
 
 # --------------------------------------------------------- guardas extras

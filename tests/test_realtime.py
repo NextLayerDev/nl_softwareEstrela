@@ -52,18 +52,16 @@ def _envelope(tipo: str, **kw) -> dict:
 
 
 def _montar() -> tuple[GerenciadorConexoes, dict[str, _WSFake]]:
-    """Um gerenciador com um terminal de cada perfil (vendedor #7 e #9)."""
+    """Um gerenciador com dois terminais de admin e dois de vendedor (#7 e #9)."""
     ger = GerenciadorConexoes()
     ws = {
         "admin": _WSFake(),
-        "financeiro": _WSFake(),
-        "funcionario": _WSFake(),
+        "admin2": _WSFake(),
         "vendedor7": _WSFake(),
         "vendedor9": _WSFake(),
     }
     ger.registrar(ws["admin"], 1, "admin")
-    ger.registrar(ws["financeiro"], 2, "financeiro")
-    ger.registrar(ws["funcionario"], 3, "funcionario")
+    ger.registrar(ws["admin2"], 2, "admin")
     ger.registrar(ws["vendedor7"], 7, "vendedor")
     ger.registrar(ws["vendedor9"], 9, "vendedor")
     return ger, ws
@@ -78,23 +76,23 @@ def test_fan_out_entrega_para_a_audiencia_toda():
 
 
 def test_fan_out_respeita_o_perfil():
-    """Evento de financeiro não pode chegar no terminal do funcionário."""
+    """Evento financeiro não pode chegar no terminal do vendedor."""
     ger, ws = _montar()
     asyncio.run(ger.fan_out(_envelope("conta.baixada", audiencia=list(eventos.FIN_AUD))))
     assert ws["admin"].enviados
-    assert ws["financeiro"].enviados
-    assert not ws["funcionario"].enviados
+    assert ws["admin2"].enviados
     assert not ws["vendedor7"].enviados
+    assert not ws["vendedor9"].enviados
 
 
 def test_fan_out_entrega_ao_dono_mesmo_fora_da_audiencia():
     """O vendedor dono vê o próprio pedido; o outro vendedor não vê nada."""
     ger, ws = _montar()
-    env = _envelope("pedido.faturado", audiencia=list(eventos.FIN_AUD), vendedor_id=7)
+    env = _envelope("conta.baixada", audiencia=list(eventos.FIN_AUD), vendedor_id=7)
     asyncio.run(ger.fan_out(env))
     assert ws["vendedor7"].enviados, "o dono do pedido deveria receber"
-    assert not ws["vendedor9"].enviados, "vendedor não pode ver pedido de outro vendedor"
-    assert ws["financeiro"].enviados
+    assert not ws["vendedor9"].enviados, "quem não é dono e está fora da audiência não recebe"
+    assert ws["admin"].enviados
 
 
 def test_fan_out_dirigido_ignora_audiencia():
@@ -113,7 +111,7 @@ def test_desconectar_usuario_derruba_so_os_sockets_dele():
     assert ws["vendedor7"].fechado_com == 4001
     assert ws["vendedor9"].fechado_com is None
     assert ws["admin"].fechado_com is None
-    assert ger.total == 4
+    assert ger.total == 3
 
 
 def test_fan_out_descarta_socket_morto():
@@ -125,8 +123,8 @@ def test_fan_out_descarta_socket_morto():
 
     ws["admin"].send_json = explode
     asyncio.run(ger.fan_out(_envelope("x", audiencia=list(eventos.TODOS))))
-    assert ger.total == 4
-    assert ws["financeiro"].enviados
+    assert ger.total == 3
+    assert ws["admin2"].enviados
 
 
 # ==================================================================== emitir

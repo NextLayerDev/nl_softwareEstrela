@@ -240,7 +240,7 @@ def cancelar_pedido(
 def faturar_pedido(
     pedido_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "financeiro")),
+    usuario: Usuario = Depends(require_role("admin")),
 ):
     pedido_controller.faturar(db, pedido_id, usuario)
     return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
@@ -262,7 +262,7 @@ def imprimir_pedido(
     request: Request,
     pedido_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro")),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
     pedido = pedido_controller.get(db, pedido_id, usuario)
     contexto = {"user": usuario, "pedido": pedido}
@@ -274,7 +274,7 @@ def cupom_pedido(
     request: Request,
     pedido_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro")),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
     """Comprovante não fiscal em formato cupom (bobina 80mm)."""
     pedido = pedido_controller.get(db, pedido_id, usuario)

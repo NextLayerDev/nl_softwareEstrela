@@ -54,10 +54,5 @@ def usuario_vendedor(db: Session) -> Usuario:
 
 
 @pytest.fixture
-def usuario_financeiro(db: Session) -> Usuario:
-    return _criar_usuario(db, "financeiro")
-
-
-@pytest.fixture
-def usuario_funcionario(db: Session) -> Usuario:
-    return _criar_usuario(db, "funcionario")
+def usuario_dev(db: Session) -> Usuario:
+    return _criar_usuario(db, "dev")

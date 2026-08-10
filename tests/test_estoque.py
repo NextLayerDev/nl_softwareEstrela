@@ -154,10 +154,10 @@ def test_ajustar_marca_exato_e_gera_movimentacao(db: Session, usuario_admin: Usu
 
 
 # --------------------------------------------------------------------- entrada
-def test_entrada_marca_exato(db: Session, usuario_funcionario: Usuario):
+def test_entrada_marca_exato(db: Session, usuario_vendedor: Usuario):
     p = _produto(db)
     v = _variacao(db, p, modo=EstoqueModo.APROXIMADO, fisico=0, rotulo=RotuloAprox.TEM)
-    estoque_service.entrada(db, v, 25, usuario_funcionario.id)
+    estoque_service.entrada(db, v, 25, usuario_vendedor.id)
     assert v.estoque_modo == EstoqueModo.EXATO
     assert v.estoque_fisico == 25
     assert v.rotulo_aprox is None
@@ -168,14 +168,12 @@ def test_entrada_marca_exato(db: Session, usuario_funcionario: Usuario):
 
 # ------------------------------------------------------------------ inventário
 def test_inventario_aplica_e_gera_ajustes(
-    db: Session, usuario_funcionario: Usuario, usuario_admin: Usuario
+    db: Session, usuario_vendedor: Usuario, usuario_admin: Usuario
 ):
     p = _produto(db)
     v = _variacao(db, p, modo=EstoqueModo.APROXIMADO, fisico=0, rotulo=RotuloAprox.TEM)
 
-    inv = inventario_service.abrir(
-        db, usuario_funcionario.id, descricao="teste", variacao_ids=[v.id]
-    )
+    inv = inventario_service.abrir(db, usuario_vendedor.id, descricao="teste", variacao_ids=[v.id])
     item = inv.itens[0]
     inventario_service.registrar_contagem(db, inv.id, item.id, 77)
     aplicado = inventario_service.aplicar(db, inv.id, usuario_admin.id)
@@ -189,11 +187,11 @@ def test_inventario_aplica_e_gera_ajustes(
 
 
 def test_inventario_aplicado_nao_reaplica(
-    db: Session, usuario_funcionario: Usuario, usuario_admin: Usuario
+    db: Session, usuario_vendedor: Usuario, usuario_admin: Usuario
 ):
     p = _produto(db)
     v = _variacao(db, p, fisico=10)
-    inv = inventario_service.abrir(db, usuario_funcionario.id, variacao_ids=[v.id])
+    inv = inventario_service.abrir(db, usuario_vendedor.id, variacao_ids=[v.id])
     inventario_service.registrar_contagem(db, inv.id, inv.itens[0].id, 5)
     inventario_service.aplicar(db, inv.id, usuario_admin.id)
     with pytest.raises(RegraNegocioError):

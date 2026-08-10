@@ -59,9 +59,9 @@ def test_empresa_rbac_bloqueia_nao_admin() -> None:
     assert client.get("/empresa", follow_redirects=False).status_code == 403
 
 
-def test_cupom_rbac_bloqueia_funcionario() -> None:
-    """Cupom segue o mesmo RBAC da impressão A4: funcionário não acessa."""
+def test_cupom_rbac_exige_login() -> None:
+    """Cupom segue o mesmo RBAC da impressão A4: sem sessão, vai para o login."""
     client = TestClient(app)
-    _login(client, "funcionario")
     resp = client.get("/pedidos/999999/cupom", follow_redirects=False)
-    assert resp.status_code == 403
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login"

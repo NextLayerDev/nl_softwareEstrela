@@ -15,7 +15,7 @@ from app.schemas.financeiro import FORMAS_PAGAMENTO
 
 router = APIRouter()
 
-_ACESSO = require_role("admin", "financeiro")
+_ACESSO = require_role("admin")
 
 
 def _ctx_contas(db: Session, args: dict, usuario: Usuario) -> dict:

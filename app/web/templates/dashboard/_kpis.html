@@ -82,18 +82,20 @@
     {# Cabeçalho sempre renderizado, estado vazio dentro do tbody — mesmo padrão de
        usuarios/index.html. Embrulhar a tabela num {% if %} sumia com os scope="col"
        num banco sem pedidos. #}
+    {# O total do pedido aparece para os dois perfis: o vendedor monta esse número na
+       tela do pedido. O que é restrito é a RECEITA do dia e o gráfico (mostra_vendas). #}
     <table class="tabela">
-      <thead><tr><th scope="col">Nº</th><th scope="col">Status</th>{% if mostra_vendas %}<th scope="col" class="text-right">Total</th>{% endif %}</tr></thead>
+      <thead><tr><th scope="col">Nº</th><th scope="col">Status</th><th scope="col" class="text-right">Total</th></tr></thead>
       <tbody>
         {% for p in ultimos %}
         <tr>
           <td><a href="/pedidos/{{ p.id }}" class="font-medium text-gold-700 hover:underline">{{ p.numero or "rascunho" }}</a></td>
           <td>{{ p.status.value if p.status else "" }}</td>
-          {% if mostra_vendas %}<td class="text-right">{{ p.total | moeda }}</td>{% endif %}
+          <td class="text-right">{{ p.total | moeda }}</td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="{{ 3 if mostra_vendas else 2 }}" class="text-sm text-gray-500">Nenhum pedido ainda.</td>
+          <td colspan="3" class="text-sm text-gray-500">Nenhum pedido ainda.</td>
         </tr>
         {% endfor %}
       </tbody>

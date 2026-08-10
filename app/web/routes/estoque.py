@@ -12,14 +12,16 @@ from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.categoria import Categoria
-from app.models.enums import e_admin, tem_perfil
+from app.models.enums import tem_perfil
 from app.models.usuario import Usuario
 from app.repositories.estoque_repo import estoque_repo
 from app.schemas.estoque import AjusteCreate, ContagemCreate, EntradaCreate, InventarioCreate
 
 router = APIRouter()
 
-_TODOS = ("admin", "vendedor", "financeiro", "funcionario")
+# Com dois perfis, "todos" é literalmente admin + vendedor: o vendedor dá entrada,
+# ajusta saldo, conta e aplica inventário. O que ele não vê é preço de custo.
+_TODOS = ("admin", "vendedor")
 
 
 def _categorias(db: Session) -> list[Categoria]:
@@ -49,8 +51,8 @@ def index_estoque(
         "q": q,
         "categorias": _categorias(db),
         "categoria_id": cat,
-        "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
-        "pode_ajuste": e_admin(usuario.perfil),
+        "pode_entrada": tem_perfil(usuario.perfil, *_TODOS),
+        "pode_ajuste": tem_perfil(usuario.perfil, *_TODOS),
     }
     return templates.TemplateResponse(request, "estoque/index.html", contexto)
 
@@ -73,8 +75,8 @@ def busca_estoque(
     contexto = {
         "user": usuario,
         "variacoes": variacoes,
-        "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
-        "pode_ajuste": e_admin(usuario.perfil),
+        "pode_entrada": tem_perfil(usuario.perfil, *_TODOS),
+        "pode_ajuste": tem_perfil(usuario.perfil, *_TODOS),
     }
     return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
 
@@ -96,8 +98,8 @@ def fragmento_linha(
     contexto = {
         "user": usuario,
         "variacoes": [variacao],
-        "pode_entrada": tem_perfil(usuario.perfil, "admin", "funcionario"),
-        "pode_ajuste": e_admin(usuario.perfil),
+        "pode_entrada": tem_perfil(usuario.perfil, *_TODOS),
+        "pode_ajuste": tem_perfil(usuario.perfil, *_TODOS),
     }
     return templates.TemplateResponse(request, "estoque/_linhas.html", contexto)
 
@@ -174,7 +176,7 @@ def post_entrada(
     variacao_id: int = Form(...),
     qtd: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "funcionario")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     dados = EntradaCreate(variacao_id=variacao_id, qtd=qtd)
     variacao = estoque_controller.registrar_entrada(db, dados, usuario.id)
@@ -182,7 +184,7 @@ def post_entrada(
         "user": usuario,
         "variacoes": [variacao],
         "pode_entrada": True,
-        "pode_ajuste": e_admin(usuario.perfil),
+        "pode_ajuste": tem_perfil(usuario.perfil, *_TODOS),
         "msg_ok": f"Entrada de {qtd} registrada.",
         "oob": True,
     }
@@ -196,7 +198,7 @@ def post_ajuste(
     novo_saldo: int = Form(...),
     motivo: str = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     dados = AjusteCreate(variacao_id=variacao_id, novo_saldo=novo_saldo, motivo=motivo)
     variacao = estoque_controller.registrar_ajuste(db, dados, usuario.id)
@@ -216,14 +218,14 @@ def post_ajuste(
 def index_inventario(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "funcionario")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     inventarios = inventario_controller.listar(db)
     contexto = {
         "user": usuario,
         "titulo": "Inventário",
         "inventarios": inventarios,
-        "pode_aplicar": e_admin(usuario.perfil),
+        "pode_aplicar": tem_perfil(usuario.perfil, *_TODOS),
     }
     return templates.TemplateResponse(request, "estoque/inventario_index.html", contexto)
 
@@ -232,7 +234,7 @@ def index_inventario(
 def criar_inventario(
     descricao: str = Form(""),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "funcionario")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     dados = InventarioCreate(descricao=descricao or None)
     inv = inventario_controller.criar(db, dados, usuario.id)
@@ -244,7 +246,7 @@ def detalhe_inventario(
     request: Request,
     inventario_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "funcionario")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     inv = inventario_controller.get(db, inventario_id)
     if inv is None:
@@ -253,7 +255,7 @@ def detalhe_inventario(
         "user": usuario,
         "titulo": f"Inventário #{inv.id}",
         "inventario": inv,
-        "pode_aplicar": e_admin(usuario.perfil),
+        "pode_aplicar": tem_perfil(usuario.perfil, *_TODOS),
     }
     return templates.TemplateResponse(request, "estoque/inventario_contagem.html", contexto)
 
@@ -264,7 +266,7 @@ def post_contagem(
     item_id: int = Form(...),
     qtd_contada: int = Form(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "funcionario")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     dados = ContagemCreate(item_id=item_id, qtd_contada=qtd_contada)
     inventario_controller.contar(db, inventario_id, dados)
@@ -275,7 +277,7 @@ def post_contagem(
 def aplicar_inventario(
     inventario_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_TODOS)),
 ):
     inventario_controller.aplicar(db, inventario_id, usuario.id)
     return RedirectResponse(url=f"/inventario/{inventario_id}", status_code=303)

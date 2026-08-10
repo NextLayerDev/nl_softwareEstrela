@@ -91,3 +91,17 @@ def _foto_url(chave: object) -> str:
 
 # Disponível em todos os templates como {{ foto_url(variacao.imagem_url) }}.
 templates.env.globals["foto_url"] = _foto_url
+
+
+def _e_admin(perfil: object) -> bool:
+    """`{% if e_admin(user.perfil) %}` — poder de admin, com o dev incluído.
+
+    Existe para tirar dos templates listas literais tipo `["admin", "dev"]`, que
+    silenciosamente deixam de bater quando um perfil muda de nome ou some.
+    """
+    from app.models.enums import e_admin
+
+    return e_admin(perfil) if isinstance(perfil, str) else False
+
+
+templates.env.globals["e_admin"] = _e_admin

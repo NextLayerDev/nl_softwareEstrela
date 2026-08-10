@@ -143,7 +143,7 @@ def test_export_xlsx_retorna_bytes_validos(db: Session, usuario_vendedor: Usuari
 
 # ---------------- RBAC ----------------
 def test_export_endpoint_content_type() -> None:
-    resp = _login("financeiro").get("/relatorios/valorizacao/export")
+    resp = _login("admin").get("/relatorios/valorizacao/export")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == XLSX_MEDIA
     assert "attachment" in resp.headers["content-disposition"]
@@ -157,8 +157,9 @@ def test_vendedor_nao_ve_valorizacao() -> None:
     assert resp_exp.status_code == 403
 
 
-def test_funcionario_nao_acessa_relatorios() -> None:
-    resp = _login("funcionario").get("/relatorios", follow_redirects=False)
+def test_vendedor_nao_acessa_valorizacao() -> None:
+    """Valorização de estoque é dinheiro parado: só o admin."""
+    resp = _login("vendedor").get("/relatorios/valorizacao", follow_redirects=False)
     assert resp.status_code == 403
 
 

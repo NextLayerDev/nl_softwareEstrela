@@ -1,4 +1,9 @@
-"""Testes de RBAC nas rotas de cadastros (doc §7)."""
+"""Testes de RBAC das rotas (doc §7), na matriz de dois perfis.
+
+A empresa tem admin e vendedor. O vendedor faz o dia a dia inteiro; o que é só do
+admin é faturamento (faturar + /financeiro + valorização) e administração do sistema
+(usuários, empresa, importação).
+"""
 
 from __future__ import annotations
 
@@ -28,32 +33,40 @@ def test_sem_login_redireciona_login() -> None:
     assert resp.headers["location"] == "/login"
 
 
-@pytest.mark.parametrize("perfil", ["admin", "vendedor", "financeiro", "funcionario"])
-def test_todos_perfis_veem_produtos(perfil: str) -> None:
+@pytest.mark.parametrize("perfil", ["admin", "vendedor"])
+def test_ambos_perfis_veem_produtos(perfil: str) -> None:
     assert _client(perfil).get("/produtos").status_code == 200
 
 
-@pytest.mark.parametrize("perfil", ["vendedor", "financeiro", "funcionario"])
-def test_nao_admin_nao_cria_produto(perfil: str) -> None:
-    resp = _client(perfil).post(
+@pytest.mark.parametrize(
+    "rota",
+    ["/", "/produtos/novo", "/pedidos", "/separacao", "/clientes", "/estoque", "/relatorios"],
+)
+def test_vendedor_faz_o_dia_a_dia(rota: str) -> None:
+    """O vendedor abre tudo o que é operação de loja."""
+    assert _client("vendedor").get(rota).status_code == 200
+
+
+def test_vendedor_cria_produto() -> None:
+    """Cadastrar produto deixou de ser exclusivo do admin."""
+    resp = _client("vendedor").post(
         "/produtos",
         data={"codigo": f"X-{uuid.uuid4().hex[:6]}", "descricao": "X", "ativo": "on"},
         follow_redirects=False,
     )
+    assert resp.status_code == 303
+
+
+@pytest.mark.parametrize(
+    "rota", ["/financeiro", "/usuarios", "/empresa", "/importacao", "/relatorios/valorizacao"]
+)
+def test_vendedor_nao_acessa_o_que_e_do_admin(rota: str) -> None:
+    resp = _client("vendedor").get(rota, follow_redirects=False)
     assert resp.status_code == 403
 
 
-def test_funcionario_nao_acessa_clientes() -> None:
-    resp = _client("funcionario").get("/clientes", follow_redirects=False)
-    assert resp.status_code == 403
-
-
-@pytest.mark.parametrize("perfil", ["admin", "vendedor", "financeiro"])
-def test_perfis_permitidos_veem_clientes(perfil: str) -> None:
-    assert _client(perfil).get("/clientes").status_code == 200
-
-
-@pytest.mark.parametrize("perfil", ["vendedor", "financeiro", "funcionario"])
-def test_nao_admin_nao_acessa_usuarios(perfil: str) -> None:
-    resp = _client(perfil).get("/usuarios", follow_redirects=False)
-    assert resp.status_code == 403
+@pytest.mark.parametrize(
+    "rota", ["/financeiro", "/usuarios", "/empresa", "/importacao", "/relatorios/valorizacao"]
+)
+def test_admin_acessa_o_que_e_dele(rota: str) -> None:
+    assert _client("admin").get(rota).status_code == 200

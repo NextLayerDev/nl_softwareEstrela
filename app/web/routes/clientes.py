@@ -21,7 +21,7 @@ def listar_clientes(
     q: str = "",
     ok: str = "",
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro")),
+    usuario: Usuario = Depends(require_role("admin", "vendedor")),
 ):
     clientes = cliente_controller.listar(db, q or None)
     contexto = {
@@ -42,7 +42,7 @@ def busca_clientes(
     request: Request,
     q: str = "",
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin", "vendedor", "financeiro")),
+    usuario: Usuario = Depends(require_role("admin", "vendedor")),
 ):
     clientes = cliente_controller.listar(db, q or None)
     contexto = {

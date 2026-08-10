@@ -33,14 +33,13 @@ logger = logging.getLogger("estrela.eventos")
 _LIMITE_PAYLOAD = 7000
 
 # Audiências prontas (evita audiência "stringly-typed" espalhada pelos services).
-TODOS: tuple[str, ...] = (
-    Perfil.ADMIN.value,
-    Perfil.VENDEDOR.value,
-    Perfil.FINANCEIRO.value,
-    Perfil.FUNCIONARIO.value,
-)
-SEP_AUD: tuple[str, ...] = (Perfil.ADMIN.value, Perfil.FUNCIONARIO.value)
-FIN_AUD: tuple[str, ...] = (Perfil.ADMIN.value, Perfil.FINANCEIRO.value)
+# Os NOMES são preservados de propósito: são dezenas de call sites nos services, e
+# o que mudou com a redução para dois perfis foi só quem está dentro de cada uma.
+TODOS: tuple[str, ...] = (Perfil.ADMIN.value, Perfil.VENDEDOR.value)
+# Separação passou a ser do vendedor: mesma audiência de TODOS.
+SEP_AUD: tuple[str, ...] = TODOS
+# Faturamento e contas a receber só o admin vê.
+FIN_AUD: tuple[str, ...] = (Perfil.ADMIN.value,)
 ADMIN_AUD: tuple[str, ...] = (Perfil.ADMIN.value,)
 
 

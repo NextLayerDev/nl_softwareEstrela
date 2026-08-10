@@ -4,18 +4,15 @@
 {% block cabecalho %}Painel{% endblock %}
 
 {% block content %}
-{# Atalhos rápidos por perfil — tiram cliques das ações mais frequentes. #}
+{# Atalhos rápidos — tiram cliques das ações mais frequentes. Com dois perfis, os três
+   valem para admin e vendedor: quem vende também separa. #}
 <div class="mb-4 flex flex-wrap gap-2">
-  {% if user.perfil in ["admin", "vendedor", "dev"] %}
   <a href="/pedidos/novo" class="btn-primario">
     <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo pedido
   </a>
-  {% endif %}
-  {% if user.perfil in ["admin", "funcionario", "dev"] %}
   <a href="/separacao" class="btn-secundario">
     <span class="nav-icone" aria-hidden="true">{{ icone("lista") }}</span> Separação
   </a>
-  {% endif %}
   <a href="/estoque" class="btn-secundario">
     <span class="nav-icone" aria-hidden="true">{{ icone("caixa") }}</span> Estoque
   </a>

@@ -126,15 +126,16 @@ def test_custo_oculto_para_vendedor() -> None:
     _remover(codigo)
 
 
-def test_vendedor_nao_cria_produto() -> None:
+def test_anonimo_nao_cria_produto() -> None:
+    """Cadastro de produto é de admin e vendedor; sem sessão vai para o login."""
     client = TestClient(app)
-    _login(client, "vendedor")
     resp = client.post(
         "/produtos",
         data={"codigo": _codigo(), "descricao": "X", "ativo": "on"},
         follow_redirects=False,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login"
 
 
 def _remover(codigo: str) -> None:
@@ -273,19 +274,13 @@ def test_reativar_variacao_bloqueia_duplicidade(db: Session, usuario_admin) -> N
         produto_service.reativar_variacao(db, inativa.id)
 
 
-def test_vendedor_nao_adiciona_variacao() -> None:
+def test_anonimo_nao_mexe_em_variacao() -> None:
+    """Cores também seguem o RBAC de edição de produto: sem sessão, login."""
     client = TestClient(app)
-    _login(client, "vendedor")
-    # Produto 1 (seed) existe; vendedor deve tomar 403.
-    resp = client.post("/produtos/1/variacao", data={"cor": "X"}, follow_redirects=False)
-    assert resp.status_code == 403
-
-
-def test_vendedor_nao_remove_variacao() -> None:
-    client = TestClient(app)
-    _login(client, "vendedor")
-    resp = client.post("/produtos/variacao/1/remover", follow_redirects=False)
-    assert resp.status_code == 403
+    for rota in ("/produtos/1/variacao", "/produtos/variacao/1/remover"):
+        resp = client.post(rota, data={"cor": "X"}, follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login"
 
 
 def test_criar_produto_redireciona_para_edicao() -> None:

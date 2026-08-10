@@ -10,7 +10,7 @@ from app.core import eventos
 from app.core.errors import NaoEncontradoError, PermissaoNegadaError, RegraNegocioError
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
-from app.models.enums import Perfil, StatusConta, StatusPedido
+from app.models.enums import StatusConta, StatusPedido
 from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import Produto, ProdutoVariacao
 from app.repositories.pedido_repo import pedido_repo
@@ -278,7 +278,7 @@ class PedidoService:
             db,
             "separacao.concluida",
             self._dados_pedido(pedido),
-            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -309,7 +309,7 @@ class PedidoService:
             db,
             "pedido.faturado",
             {**self._dados_pedido(pedido), "contas_geradas": len(contas or [])},
-            audiencia=eventos.FIN_AUD + (Perfil.FUNCIONARIO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -338,7 +338,7 @@ class PedidoService:
             db,
             "pedido.cancelado",
             self._dados_pedido(pedido),
-            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -355,7 +355,7 @@ class PedidoService:
             db,
             "pedido.status_alterado",
             self._dados_pedido(pedido),
-            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido

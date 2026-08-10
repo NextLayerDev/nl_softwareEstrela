@@ -12,13 +12,19 @@ from app.core.templates import templates
 from app.deps.auth import get_current_user, require_role
 from app.deps.db import get_db
 from app.models.categoria import Categoria
-from app.models.enums import e_admin
+from app.models.enums import tem_perfil
 from app.models.produto import ProdutoVariacao
 from app.models.usuario import Usuario
 from app.schemas.produto import pode_ver_custo
 from app.web.routes._flash import redirect_ok
 
 router = APIRouter()
+
+# Quem cadastra e edita produto. O vendedor entrou aqui junto com a redução para dois
+# perfis: quem vende é quem descobre que o cadastro está errado. O que continua sendo
+# só do admin são os dois campos de dinheiro sensível — `preco_custo` e `preco_minimo`
+# —, filtrados pelas flags `ver_custo` e `pode_definir_minimo` do contexto.
+_EDITA = ("admin", "vendedor")
 
 # Tamanho do bloco no scroll infinito da listagem de produtos.
 _BLOCO = 50
@@ -64,7 +70,7 @@ def listar_produtos(
         "user": usuario,
         "titulo": "Produtos",
         "produtos": produtos,
-        "pode_editar": e_admin(usuario.perfil),
+        "pode_editar": tem_perfil(usuario.perfil, *_EDITA),
         "ver_custo": pode_ver_custo(usuario.perfil),
         "mensagem_ok": ok or None,
         "categorias": _categorias(db),
@@ -90,7 +96,7 @@ def busca_produtos(
     contexto = {
         "user": usuario,
         "produtos": produtos,
-        "pode_editar": e_admin(usuario.perfil),
+        "pode_editar": tem_perfil(usuario.perfil, *_EDITA),
         "ver_custo": pode_ver_custo(usuario.perfil),
         **_ctx_paginacao(produtos, q, offset, cat),
     }
@@ -114,7 +120,7 @@ def fragmento_linha_produto(
     contexto = {
         "user": usuario,
         "produtos": [produto],
-        "pode_editar": e_admin(usuario.perfil),
+        "pode_editar": tem_perfil(usuario.perfil, *_EDITA),
         "ver_custo": pode_ver_custo(usuario.perfil),
     }
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
@@ -124,7 +130,7 @@ def fragmento_linha_produto(
 def form_novo_produto(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     contexto = {
         "user": usuario,
@@ -141,7 +147,7 @@ def form_editar_produto(
     request: Request,
     produto_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     produto = produto_controller.obter(db, produto_id)
     contexto = {
@@ -158,7 +164,7 @@ def form_editar_produto(
 async def criar_produto(
     request: Request,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     raw = await request.form()
     form = dict(raw)
@@ -179,7 +185,7 @@ async def atualizar_produto(
     request: Request,
     produto_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     raw = await request.form()
     form = dict(raw)
@@ -194,7 +200,7 @@ async def inativar_produto(
     request: Request,
     produto_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     produto_controller.inativar(db, produto_id)
     return redirect_ok("/produtos", "Produto inativado.")
@@ -205,7 +211,7 @@ async def reativar_produto(
     request: Request,
     produto_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     produto_controller.reativar(db, produto_id)
     return redirect_ok(f"/produtos/{produto_id}/editar", "Produto reativado.")
@@ -216,7 +222,7 @@ async def renomear_cor_variacao(
     request: Request,
     variacao_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     form = dict(await request.form())
     variacao = produto_controller.renomear_variacao(db, variacao_id, form)
@@ -232,7 +238,7 @@ async def enviar_imagem_variacao(
     variacao_id: int,
     imagem: UploadFile = File(...),
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     variacao = _get_variacao(db, variacao_id)
     # Rejeita cedo (antes de carregar tudo em memória) se o tamanho já vier grande.
@@ -254,7 +260,7 @@ async def remover_imagem_variacao(
     request: Request,
     variacao_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     variacao = _get_variacao(db, variacao_id)
     variacao.imagem_dados = None
@@ -287,7 +293,7 @@ async def adicionar_variacao_produto(
     request: Request,
     produto_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     form = dict(await request.form())
     variacao = produto_controller.criar_variacao(db, produto_id, form, usuario.id)
@@ -301,7 +307,7 @@ async def remover_variacao_produto(
     request: Request,
     variacao_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     variacao, acao = produto_controller.remover_variacao(db, variacao_id)
     if acao == "deletada":
@@ -318,7 +324,7 @@ async def reativar_variacao_produto(
     request: Request,
     variacao_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require_role("admin")),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
 ):
     variacao = produto_controller.reativar_variacao(db, variacao_id)
     # Re-renderiza o card já ativo (sem o selo de inativa).
