@@ -15,7 +15,7 @@ from app.models.categoria import Categoria
 from app.models.enums import tem_perfil
 from app.models.produto import ProdutoVariacao
 from app.models.usuario import Usuario
-from app.schemas.produto import pode_ver_custo
+from app.schemas.produto import pode_definir_minimo, pode_ver_custo
 from app.web.routes._flash import redirect_ok
 
 router = APIRouter()
@@ -138,6 +138,7 @@ def form_novo_produto(
         "produto": None,
         "categorias": _categorias(db),
         "ver_custo": pode_ver_custo(usuario.perfil),
+        "pode_definir_minimo": pode_definir_minimo(usuario.perfil),
     }
     return templates.TemplateResponse(request, "produtos/form.html", contexto)
 
@@ -156,6 +157,7 @@ def form_editar_produto(
         "produto": produto,
         "categorias": _categorias(db),
         "ver_custo": pode_ver_custo(usuario.perfil),
+        "pode_definir_minimo": pode_definir_minimo(usuario.perfil),
     }
     return templates.TemplateResponse(request, "produtos/form.html", contexto)
 

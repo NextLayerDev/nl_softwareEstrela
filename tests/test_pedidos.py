@@ -453,3 +453,114 @@ def test_busca_cliente_acha_por_telefone_formatado_diferente(db):
 
     achados = cliente_repo.busca_rapida(db, "11977771234")
     assert cli.id in [c.id for c in achados]
+
+
+# --------------------------------------------------------- preço mínimo
+def test_preco_minimo_bloqueia_vendedor(db, usuario_vendedor):
+    prod = _produto(db, "MIN1", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("8.00")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    with pytest.raises(RegraNegocioError) as exc:
+        _add(db, ped, var, qtd=1, preco_unit=Decimal("7.99"))
+    assert "preço mínimo" in str(exc.value).lower()
+
+
+def test_preco_minimo_aceita_valor_igual_ao_piso(db, usuario_vendedor):
+    prod = _produto(db, "MIN2", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("8.00")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    item = _add(db, ped, var, qtd=1, preco_unit=Decimal("8.00"))
+    assert item.preco_unit == Decimal("8.00")
+
+
+def test_preco_minimo_nao_e_furavel_por_desconto(db, usuario_vendedor):
+    """O piso é sobre o preço efetivo: 10,00 com 5% de desconto cai abaixo de 9,60."""
+    prod = _produto(db, "MIN3", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("9.60")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    with pytest.raises(RegraNegocioError):
+        # 10 un x 10,00 = 100,00; desconto de 5,00 (dentro do limite de 10%) -> 9,50/un
+        _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"), desconto=Decimal("5.00"))
+
+
+def test_admin_passa_por_cima_do_preco_minimo(db, usuario_admin):
+    prod = _produto(db, "MIN4", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("8.00")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_admin)
+    item = _add(db, ped, var, perfil="admin", qtd=1, preco_unit=Decimal("1.00"))
+    assert item.preco_unit == Decimal("1.00")
+
+
+def test_preco_minimo_zero_nao_trava(db, usuario_vendedor):
+    """Produto ainda não revisado (piso 0) continua vendável a qualquer preço."""
+    prod = _produto(db, "MIN5", pouca=Decimal("10.00"))
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    item = _add(db, ped, var, qtd=1, preco_unit=Decimal("0.50"))
+    assert item.preco_unit == Decimal("0.50")
+
+
+def test_desconto_total_nao_fura_o_piso(db, usuario_vendedor):
+    prod = _produto(db, "MIN6", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("9.80")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
+
+    # 5,00 sobre 100,00 = 5% (dentro do limite), mas derruba a unidade para 9,50.
+    with pytest.raises(RegraNegocioError):
+        pedido_service.aplicar_desconto_total(db, ped.id, Decimal("5.00"), "vendedor")
+
+
+# --------------------------------------------------------- item repetido
+def test_mesmo_produto_mesmo_preco_soma_na_mesma_linha(db, usuario_vendedor):
+    prod = _produto(db, "REP1")
+    var = _variacao(db, prod, fisico=100)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    _add(db, ped, var, qtd=3, preco_unit=Decimal("10.00"))
+    item = _add(db, ped, var, qtd=2, preco_unit=Decimal("10.00"))
+
+    db.refresh(ped)
+    assert len(ped.itens) == 1
+    assert item.qtd == 5
+    assert item.subtotal == Decimal("50.00")
+    assert ped.total == Decimal("50.00")
+
+
+def test_mesmo_produto_preco_diferente_abre_linha_nova(db, usuario_vendedor):
+    """Preço diferente é outra negociação — juntar esconderia isso do faturamento."""
+    prod = _produto(db, "REP2")
+    var = _variacao(db, prod, fisico=100)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("10.00"))
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("9.00"))
+
+    db.refresh(ped)
+    assert len(ped.itens) == 2
+    assert ped.total == Decimal("19.00")
+
+
+def test_somar_revalida_o_desconto_consolidado(db, usuario_vendedor):
+    """Dois lançamentos dentro do limite não podem somar um desconto que estoura."""
+    prod = _produto(db, "REP3")
+    var = _variacao(db, prod, fisico=100)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    # 1 un x 100,00 com 9,00 de desconto = 9% (passa).
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("9.00"))
+    # Repetir levaria a 18,00 sobre 200,00 = 9%... ainda dentro. Um terceiro maior estoura.
+    with pytest.raises(PermissaoNegadaError):
+        _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("40.00"))

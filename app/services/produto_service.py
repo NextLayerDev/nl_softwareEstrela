@@ -67,6 +67,7 @@ class ProdutoService:
             preco_promocional=dados.preco_promocional,
             qtd_corte_atacado=dados.qtd_corte_atacado,
             preco_custo=dados.preco_custo,
+            preco_minimo=dados.preco_minimo,
             observacao=dados.observacao,
             ativo=dados.ativo,
             publicar_catalogo=dados.publicar_catalogo,

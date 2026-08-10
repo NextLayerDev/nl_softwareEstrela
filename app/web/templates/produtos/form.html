@@ -74,6 +74,18 @@
       <input id="preco_custo" class="input" name="preco_custo" value="{{ produto.preco_custo if produto else '0' }}" />
     </div>
     {% endif %}
+    {# Só o admin define o piso — é a trava que segura o preço do vendedor. Quando o
+       campo não é renderizado, o controller não recebe a chave e não mexe no valor
+       gravado (senão todo save de vendedor zeraria o piso). #}
+    {% if pode_definir_minimo %}
+    <div>
+      <label class="label" for="preco_minimo">Preço mínimo de venda</label>
+      <input id="preco_minimo" class="input" name="preco_minimo" value="{{ produto.preco_minimo if produto else '0' }}" />
+      <p class="mt-1 text-xs text-gray-500">
+        O vendedor não consegue vender abaixo disso, nem por desconto. <strong>0</strong> = sem trava.
+      </p>
+    </div>
+    {% endif %}
     <div class="sm:col-span-2">
       <label class="label" for="observacao">Observação</label>
       <textarea id="observacao" class="input" name="observacao" rows="2">{{ produto.observacao if produto and produto.observacao else '' }}</textarea>

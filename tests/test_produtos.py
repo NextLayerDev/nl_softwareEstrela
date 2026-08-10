@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -497,3 +498,87 @@ def test_pagina_produtos_categoria_vazia_nao_falha() -> None:
     _login(client, "admin")
     resp = client.get("/produtos", params={"categoria_id": ""})
     assert resp.status_code == 200, resp.text
+
+
+# ---------------- preço mínimo e a trava de campos do admin ----------------
+def test_vendedor_salvando_produto_nao_zera_custo_nem_piso() -> None:
+    """O formulário do vendedor não tem esses campos — salvar não pode apagá-los.
+
+    `_dec` devolve 0 para campo ausente, então mandar a chave sempre significaria
+    zerar custo e piso a cada save de vendedor. É perda de dado silenciosa: ninguém
+    percebe até a margem sumir do relatório.
+    """
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo = _codigo()
+    resp = client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM CUSTO",
+            "preco_pouca_qtd": "10,00",
+            "preco_custo": "4,00",
+            "preco_minimo": "8,00",
+            "ativo": "on",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    from app.core.database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        produto = s.query(Produto).filter(Produto.codigo == codigo).one()
+        assert produto.preco_custo == Decimal("4.00")
+        assert produto.preco_minimo == Decimal("8.00")
+        produto_id = produto.id
+    finally:
+        s.close()
+
+    # Agora o vendedor edita: o form dele não manda preco_custo nem preco_minimo.
+    vendedor = TestClient(app)
+    _login(vendedor, "vendedor")
+    resp = vendedor.post(
+        f"/produtos/{produto_id}",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO EDITADO PELO VENDEDOR",
+            "preco_pouca_qtd": "12,00",
+            "ativo": "on",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    s = SessionLocal()
+    try:
+        produto = s.get(Produto, produto_id)
+        assert produto.descricao == "PRODUTO EDITADO PELO VENDEDOR"
+        assert produto.preco_pouca_qtd == Decimal("12.00")
+        assert produto.preco_custo == Decimal("4.00"), "o vendedor zerou o custo"
+        assert produto.preco_minimo == Decimal("8.00"), "o vendedor zerou o piso"
+    finally:
+        s.close()
+    _remover(codigo)
+
+
+def test_preco_minimo_some_do_dict_do_vendedor(db: Session) -> None:
+    """O piso é onde a margem acaba: não vai no payload de quem não pode mexer nele."""
+    from app.schemas.produto import produto_para_dict
+
+    produto = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=_codigo(),
+            descricao="COM PISO",
+            preco_custo=Decimal("1"),
+            preco_minimo=Decimal("2"),
+        ),
+    )
+    db.flush()
+    dados_admin = produto_para_dict(produto, "admin")
+    assert dados_admin["preco_minimo"] == Decimal("2")
+    dados_vendedor = produto_para_dict(produto, "vendedor")
+    assert "preco_minimo" not in dados_vendedor
+    assert "preco_custo" not in dados_vendedor
