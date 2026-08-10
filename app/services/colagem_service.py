@@ -28,13 +28,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.codigos import normalizar as normalizar_codigo
 from app.core.colagem import (
     QTD_MAXIMA,
     BlocoColado,
     LinhaColada,
     LinhaIgnorada,
     consolidar,
-    normalizar_codigo,
     normalizar_texto,
     parse_blocos,
     parse_colagem,

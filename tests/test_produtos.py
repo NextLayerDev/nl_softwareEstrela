@@ -582,3 +582,73 @@ def test_preco_minimo_some_do_dict_do_vendedor(db: Session) -> None:
     dados_vendedor = produto_para_dict(produto, "vendedor")
     assert "preco_minimo" not in dados_vendedor
     assert "preco_custo" not in dados_vendedor
+
+
+# ------------------------------------------------------- busca de código versátil
+def test_codigo_acha_sem_traco_e_em_minusculas(db):
+    """O vendedor digita "kd31"; o cadastro tem "KD-31". Tem que achar."""
+    from app.repositories.estoque_repo import estoque_repo
+    from app.repositories.produto_repo import produto_repo
+
+    p = produto_service.criar(
+        db, ProdutoCreate(codigo="KD-31", descricao="TESTE BUSCA CODIGO VERSATIL")
+    )
+    produto_service.adicionar_variacao(db, p.id, VariacaoCreate(cor="azul"), 1)
+    db.flush()
+
+    for digitado in ("kd31", "KD31", "kd-31", "Kd 31", "KD-31"):
+        assert produto_repo.get_by_codigo(db, digitado) is not None, digitado
+        assert estoque_repo.por_codigo_exato(db, digitado) is not None, digitado
+        assert p.codigo in [x.codigo for x in produto_repo.busca_rapida(db, digitado)], digitado
+        assert p.codigo in [
+            v.produto.codigo for v in estoque_repo.busca_localizacao(db, digitado)
+        ], digitado
+        assert p.codigo in [v.produto.codigo for v in estoque_repo.busca_orcamento(db, digitado)], (
+            digitado
+        )
+
+
+def test_codigo_digitado_vem_na_frente_de_quem_casou_pela_descricao(db):
+    """Digitar um código tem que pôr aquele produto na PRIMEIRA linha."""
+    from app.repositories.estoque_repo import estoque_repo
+
+    alvo = produto_service.criar(db, ProdutoCreate(codigo="ZQ-533", descricao="CANECA ZQ ALFA"))
+    produto_service.adicionar_variacao(db, alvo.id, VariacaoCreate(cor="azul"), 1)
+    # Descrição parecida, código diferente: casaria por trigrama e sairia antes na
+    # ordem alfabética antiga.
+    vizinho = produto_service.criar(
+        db, ProdutoCreate(codigo="ZQ-545", descricao="CANECA ZQ ALFA B")
+    )
+    produto_service.adicionar_variacao(db, vizinho.id, VariacaoCreate(cor="azul"), 1)
+    db.flush()
+
+    achados = estoque_repo.busca_localizacao(db, "zq533")
+    assert achados[0].produto.codigo == "ZQ-533"
+
+
+def test_codigo_que_normaliza_igual_nao_pode_duplicar(db):
+    """ "K-31" e "K31" seriam o mesmo produto para quem busca — o cadastro barra."""
+    produto_service.criar(db, ProdutoCreate(codigo="QW-31", descricao="PRIMEIRO"))
+    with pytest.raises(RegraNegocioError) as erro:
+        produto_service.criar(db, ProdutoCreate(codigo="qw31", descricao="SEGUNDO"))
+    assert "QW-31" in str(erro.value)  # nomeia o que JÁ existe, não o que foi digitado
+
+
+def test_codigo_alternativo_do_fornecedor_tambem_e_versatil(db):
+    from app.repositories.estoque_repo import estoque_repo
+    from app.repositories.produto_repo import produto_repo
+
+    p = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo="ZZ-900",
+            descricao="PRODUTO COM CODIGO DE FORNECEDOR",
+            codigos_alt=[CodigoAltCreate(codigo_alt="FORN-7788")],
+        ),
+    )
+    produto_service.adicionar_variacao(db, p.id, VariacaoCreate(cor="azul"), 1)
+    db.flush()
+
+    assert estoque_repo.por_codigo_exato(db, "forn7788") is not None
+    assert p.codigo in [x.codigo for x in produto_repo.busca_rapida(db, "forn7788")]
+    assert p.codigo in [v.produto.codigo for v in estoque_repo.busca_localizacao(db, "forn7788")]

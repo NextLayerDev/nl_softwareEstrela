@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.core.codigos import casa_codigo, coluna_normalizada, normalizar, prioridade_codigo
 from app.core.estoque_alertas import clausula_abaixo_minimo
 from app.models.inventario import Inventario
 from app.models.movimentacao import MovimentacaoEstoque
@@ -48,14 +49,13 @@ class EstoqueRepository:
             return []
 
         sub_alt = select(ProdutoCodigoAlt.produto_id).where(
-            ProdutoCodigoAlt.codigo_alt.ilike(f"%{termo}%")
+            casa_codigo(ProdutoCodigoAlt.codigo_alt, termo)
         )
         stmt = (
             select(ProdutoVariacao)
             .join(Produto, ProdutoVariacao.produto_id == Produto.id)
             .options(joinedload(ProdutoVariacao.produto))
             .where(ProdutoVariacao.ativo.is_(True))
-            .order_by(Produto.descricao, ProdutoVariacao.cor)
             .limit(limit)
         )
         if categoria_id is not None:
@@ -63,14 +63,20 @@ class EstoqueRepository:
         if termo:
             stmt = stmt.where(
                 or_(
-                    Produto.codigo.ilike(f"%{termo}%"),
+                    casa_codigo(Produto.codigo, termo),
                     Produto.descricao.op("%")(termo),
                     Produto.descricao.ilike(f"%{termo}%"),
                     Produto.localizacao.ilike(f"%{termo}%"),
                     ProdutoVariacao.cor.ilike(f"%{termo}%"),
                     Produto.id.in_(sub_alt),
                 )
+            ).order_by(
+                prioridade_codigo(Produto.codigo, termo),
+                Produto.descricao,
+                ProdutoVariacao.cor,
             )
+        else:
+            stmt = stmt.order_by(Produto.descricao, ProdutoVariacao.cor)
         return list(db.scalars(stmt))
 
     def busca_orcamento(self, db: Session, termo: str, limit: int = 10) -> list[ProdutoVariacao]:
@@ -86,7 +92,7 @@ class EstoqueRepository:
             return []
 
         sub_alt = select(ProdutoCodigoAlt.produto_id).where(
-            ProdutoCodigoAlt.codigo_alt.ilike(f"%{termo}%")
+            casa_codigo(ProdutoCodigoAlt.codigo_alt, termo)
         )
         stmt = (
             select(ProdutoVariacao)
@@ -96,28 +102,38 @@ class EstoqueRepository:
                 ProdutoVariacao.ativo.is_(True),
                 Produto.ativo.is_(True),
                 or_(
-                    Produto.codigo.ilike(f"%{termo}%"),
+                    casa_codigo(Produto.codigo, termo),
                     Produto.descricao.op("%")(termo),
                     Produto.descricao.ilike(f"%{termo}%"),
                     ProdutoVariacao.cor.ilike(f"%{termo}%"),
                     Produto.id.in_(sub_alt),
                 ),
             )
-            .order_by(Produto.descricao, ProdutoVariacao.cor)
+            .order_by(
+                prioridade_codigo(Produto.codigo, termo),
+                Produto.descricao,
+                ProdutoVariacao.cor,
+            )
             .limit(limit)
         )
         return list(db.scalars(stmt))
 
     def por_codigo_exato(self, db: Session, codigo: str) -> ProdutoVariacao | None:
-        """Primeira variação ativa de um produto pelo código exato (ou código alternativo).
+        """Primeira variação ativa de um produto pelo código (ou código alternativo).
 
         É o caminho do leitor de código de barras na tela de orçamento: o scanner
         "digita" os dígitos e manda Enter, sem passar pela lista de sugestões.
+
+        "Exato" aqui é sobre o código INTEIRO — não sobre a grafia. A comparação é
+        normalizada, então "ch-1086", "CH1086" e "CH-1086" são o mesmo produto. Antes
+        era `==` puro e nem trocar a caixa funcionava.
         """
-        codigo = (codigo or "").strip()
-        if not codigo:
+        alvo = normalizar(codigo)
+        if not alvo:
             return None
-        sub_alt = select(ProdutoCodigoAlt.produto_id).where(ProdutoCodigoAlt.codigo_alt == codigo)
+        sub_alt = select(ProdutoCodigoAlt.produto_id).where(
+            coluna_normalizada(ProdutoCodigoAlt.codigo_alt) == alvo
+        )
         stmt = (
             select(ProdutoVariacao)
             .join(Produto, ProdutoVariacao.produto_id == Produto.id)
@@ -125,7 +141,7 @@ class EstoqueRepository:
             .where(
                 ProdutoVariacao.ativo.is_(True),
                 Produto.ativo.is_(True),
-                or_(Produto.codigo == codigo, Produto.id.in_(sub_alt)),
+                or_(coluna_normalizada(Produto.codigo) == alvo, Produto.id.in_(sub_alt)),
             )
             .order_by(ProdutoVariacao.id)
             .limit(1)

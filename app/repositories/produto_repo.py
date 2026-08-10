@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 
 from sqlalchemy import ARRAY, Text, cast, func, or_, select, true
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.codigos import casa_codigo, coluna_normalizada, normalizar, prioridade_codigo
 from app.models.inventario import InventarioItem
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.pedido import PedidoItem
 from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
-
-_SEM_ALFANUM = re.compile(r"[^A-Z0-9]")
-
-
-def _codigo_normalizado(coluna):  # noqa: ANN001, ANN202 - expressão SQL
-    """Espelho SQL do `normalizar_codigo` do `app/core/colagem.py`."""
-    return func.regexp_replace(func.upper(coluna), "[^A-Z0-9]", "", "g")
 
 
 class ProdutoRepository:
@@ -27,7 +20,11 @@ class ProdutoRepository:
         return db.get(ProdutoVariacao, variacao_id)
 
     def get_by_codigo(self, db: Session, codigo: str) -> Produto | None:
-        return db.scalar(select(Produto).where(Produto.codigo == codigo.strip()))
+        """Produto pelo código, ignorando pontuação e caixa ("k-708" acha "K708")."""
+        alvo = normalizar(codigo)
+        if not alvo:
+            return None
+        return db.scalar(select(Produto).where(coluna_normalizada(Produto.codigo) == alvo))
 
     def listar(
         self,
@@ -57,17 +54,24 @@ class ProdutoRepository:
     def busca_rapida(
         self, db: Session, termo: str, limit: int = 20, categoria_id: int | None = None
     ) -> list[Produto]:
-        """Busca por pg_trgm na descrição + match de substring no código.
+        """Busca por pg_trgm na descrição + match normalizado no código.
 
-        - Código: `ilike('%termo%')` — basta um pedaço do código (ex: `708`
-          casa com `K-708`), não precisa digitar desde o início.
+        - Código: comparado sem pontuação e sem caixa (`ch1086` acha `CH-1086`), e por
+          pedaço — não precisa digitar desde o início. Casa também o código alternativo
+          do fornecedor.
         - Descrição: trigram (ranking) + fallback `ilike('%termo%')` para garantir
           que qualquer pedaço case, inclusive curto, mesmo quando a similaridade por
           trigramas fica abaixo do limiar padrão (0.3) do Postgres.
+        - Ordem: quem casou pelo CÓDIGO vem primeiro (igual, depois começa-com, depois
+          contém); só então entra o ranking por similaridade da descrição. Sem isso, o
+          produto cujo código foi digitado saía no meio da lista.
         - `categoria_id` (opcional): restringe o resultado a uma categoria, combinando
           com a busca por texto.
         """
         termo = termo.strip()
+        sub_alt = select(ProdutoCodigoAlt.produto_id).where(
+            casa_codigo(ProdutoCodigoAlt.codigo_alt, termo)
+        )
         stmt = (
             select(Produto)
             .options(
@@ -77,12 +81,16 @@ class ProdutoRepository:
             )
             .where(
                 or_(
-                    Produto.codigo.ilike(f"%{termo}%"),
+                    casa_codigo(Produto.codigo, termo),
                     Produto.descricao.op("%")(termo),
                     Produto.descricao.ilike(f"%{termo}%"),
+                    Produto.id.in_(sub_alt),
                 )
             )
-            .order_by(func.similarity(Produto.descricao, termo).desc())
+            .order_by(
+                prioridade_codigo(Produto.codigo, termo),
+                func.similarity(Produto.descricao, termo).desc(),
+            )
             .limit(limit)
         )
         if categoria_id is not None:
@@ -100,24 +108,19 @@ class ProdutoRepository:
         banco. Traz variações e códigos alternativos carregados junto, porque quem
         escolhe a variação é o service, em memória, sem uma segunda rodada de queries.
         """
-        alvos = {c.strip().upper() for c in codigos if c and c.strip()}
-        if not alvos:
+        normalizados = {n for n in (normalizar(c) for c in codigos) if n}
+        if not normalizados:
             return []
-        normalizados = {n for n in (_SEM_ALFANUM.sub("", c) for c in alvos) if n}
 
         sub_alt = select(ProdutoCodigoAlt.produto_id).where(
-            or_(
-                func.upper(ProdutoCodigoAlt.codigo_alt).in_(alvos),
-                _codigo_normalizado(ProdutoCodigoAlt.codigo_alt).in_(normalizados),
-            )
+            coluna_normalizada(ProdutoCodigoAlt.codigo_alt).in_(normalizados)
         )
         stmt = (
             select(Produto)
             .options(selectinload(Produto.variacoes), selectinload(Produto.codigos_alt))
             .where(
                 or_(
-                    func.upper(Produto.codigo).in_(alvos),
-                    _codigo_normalizado(Produto.codigo).in_(normalizados),
+                    coluna_normalizada(Produto.codigo).in_(normalizados),
                     Produto.id.in_(sub_alt),
                 )
             )
