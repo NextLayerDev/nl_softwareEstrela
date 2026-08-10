@@ -70,3 +70,20 @@ def test_vendedor_nao_acessa_o_que_e_do_admin(rota: str) -> None:
 )
 def test_admin_acessa_o_que_e_dele(rota: str) -> None:
     assert _client("admin").get(rota).status_code == 200
+
+
+def test_login_com_sessao_vai_direto_para_o_painel() -> None:
+    """Quem já está logado não vê o formulário de novo.
+
+    Nos terminais em modo aplicativo o atalho aponta para uma URL fixa; sem isso quem
+    já tem cookie válido caía num login pedindo o que a sessão já sabe.
+    """
+    resp = _client("vendedor").get("/login", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/"
+
+
+def test_login_sem_sessao_continua_mostrando_o_formulario() -> None:
+    resp = TestClient(app).get("/login")
+    assert resp.status_code == 200
+    assert 'name="senha"' in resp.text
