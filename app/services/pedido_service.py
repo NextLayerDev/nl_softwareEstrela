@@ -118,6 +118,27 @@ class PedidoService:
                 f"de R$ {piso.quantize(CENT)}. Peça a um administrador."
             )
 
+    def erro_de_preco(
+        self,
+        perfil: str,
+        produto: Produto,
+        qtd: int,
+        preco_unit: Decimal,
+        desconto: Decimal = Decimal("0"),
+    ) -> str | None:
+        """Mesma checagem de piso do `adicionar_item`, só que sem levantar exceção.
+
+        Existe para quem precisa CLASSIFICAR antes de gravar — a colagem de planilha
+        decide linha a linha o que vira item e o que vira pendência, e não pode
+        descobrir isso estourando no meio do lote. Devolve a mensagem do erro, ou None
+        quando a venda pode sair. A regra em si continua morando num lugar só.
+        """
+        try:
+            self._validar_preco_minimo(perfil, produto, qtd, preco_unit, desconto)
+        except RegraNegocioError as exc:
+            return exc.mensagem
+        return None
+
     # ------------------------------------------------------------- criação
     def criar(
         self,
@@ -161,7 +182,7 @@ class PedidoService:
         )
         return pedido_repo.add(db, pedido)
 
-    def _carregar_editavel(self, db: Session, pedido_id: int) -> Pedido:
+    def carregar_editavel(self, db: Session, pedido_id: int) -> Pedido:
         pedido = pedido_repo.get(db, pedido_id)
         if pedido is None:
             raise NaoEncontradoError("Pedido não encontrado.")
@@ -179,7 +200,7 @@ class PedidoService:
     def adicionar_item(
         self, db: Session, pedido_id: int, dados: ItemAdicionar, perfil: str
     ) -> PedidoItem:
-        pedido = self._carregar_editavel(db, pedido_id)
+        pedido = self.carregar_editavel(db, pedido_id)
         variacao = self._get_variacao(db, dados.variacao_id)
         produto = variacao.produto
 
@@ -242,7 +263,7 @@ class PedidoService:
         return item
 
     def remover_item(self, db: Session, pedido_id: int, item_id: int) -> Pedido:
-        pedido = self._carregar_editavel(db, pedido_id)
+        pedido = self.carregar_editavel(db, pedido_id)
         item = pedido_repo.get_item(db, item_id)
         if item is None or item.pedido_id != pedido.id:
             raise NaoEncontradoError("Item do pedido não encontrado.")
@@ -255,7 +276,7 @@ class PedidoService:
     def aplicar_desconto_total(
         self, db: Session, pedido_id: int, desconto: Decimal, perfil: str
     ) -> Pedido:
-        pedido = self._carregar_editavel(db, pedido_id)
+        pedido = self.carregar_editavel(db, pedido_id)
         desconto = Decimal(desconto).quantize(CENT)
         if desconto < 0:
             raise RegraNegocioError("O desconto não pode ser negativo.")

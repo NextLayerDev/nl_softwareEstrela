@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.controllers.pedido_controller import pedido_controller
 from app.core.errors import NaoEncontradoError
+from app.core.numeros_br import parse_decimal_br
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
@@ -25,12 +26,9 @@ _CRIA = ("admin", "vendedor")
 
 
 def _to_decimal(valor: str | None) -> Decimal:
-    if valor is None or str(valor).strip() == "":
-        return Decimal("0")
-    try:
-        return Decimal(str(valor).replace(",", "."))
-    except InvalidOperation:
-        return Decimal("0")
+    """Campo de dinheiro do formulário. Ilegível vale zero — o service valida o resto."""
+    lido = parse_decimal_br(valor)
+    return lido if lido is not None else Decimal("0")
 
 
 # ===================================================================== LISTAR
@@ -92,6 +90,84 @@ def criar_pedido(
     )
     pedido = pedido_controller.criar(db, dados, usuario)
     return RedirectResponse(url=f"/pedidos/{pedido.id}", status_code=303)
+
+
+# ===================================================================== COLAR PLANILHA
+# Antes de /pedidos/{pedido_id} pelo mesmo motivo da rota "lista": o path casa por ordem.
+#
+# As duas rotas abaixo respondem SEMPRE 200, mesmo quando nada casou. O htmx descarta o
+# corpo de respostas 4xx (`responseHandling` manda `swap:false` para "[45].."), então
+# mandar as pendências como erro seria mandá-las para o lixo — o vendedor veria o botão
+# não fazer nada. Pendência é conteúdo, não falha.
+@router.post("/pedidos/colar", response_class=HTMLResponse)
+def colar_pedido_novo(
+    request: Request,
+    texto: str = Form(""),
+    cliente_id: str = Form(""),
+    cliente_nome: str = Form(""),
+    cliente_telefone: str = Form(""),
+    observacao: str = Form(""),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Cola a planilha e já abre o rascunho com os itens (painel da tela `/pedidos/novo`).
+
+    Os campos de cliente vêm por `hx-include` do formulário ao lado, então quem o
+    vendedor digitou (ou vinculou) vale para o pedido criado aqui.
+    """
+    dados = PedidoCreate(
+        cliente_id=int(cliente_id) if cliente_id.strip().isdigit() else None,
+        cliente_nome=cliente_nome or None,
+        cliente_telefone=cliente_telefone or None,
+        observacao=observacao or None,
+    )
+    pedido, resultado = pedido_controller.criar_colando(db, dados, texto, usuario)
+
+    # Casou tudo: não há o que conferir, manda direto para o pedido pronto.
+    if resultado.tudo_casou:
+        return HTMLResponse("", headers={"HX-Redirect": f"/pedidos/{pedido.id}"})
+
+    contexto = {"user": usuario, "pedido": pedido, "resultado": resultado}
+    return templates.TemplateResponse(request, "pedidos/_colagem_resultado.html", contexto)
+
+
+@router.get("/pedidos/{pedido_id}/colagem", response_class=HTMLResponse)
+def painel_colagem(
+    request: Request,
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Devolve o painel de colagem vazio — o "colar outra planilha" do resultado."""
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    contexto = {"user": usuario, "pedido": pedido}
+    return templates.TemplateResponse(request, "pedidos/_colagem_painel.html", contexto)
+
+
+@router.post("/pedidos/{pedido_id}/colar", response_class=HTMLResponse)
+def colar_itens(
+    request: Request,
+    pedido_id: int,
+    texto: str = Form(""),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Acrescenta em bloco os itens colados a um rascunho já aberto.
+
+    A resposta é toda OOB (o form usa `hx-swap="none"`), mesmo padrão do estoque/_oob:
+    atualiza o painel de resultado, a tabela de itens e os botões do pedido de uma vez.
+    """
+    resultado = pedido_controller.colar_itens(db, pedido_id, texto, usuario)
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    contexto = {
+        "user": usuario,
+        "pedido": pedido,
+        "resultado": resultado,
+        "editavel": True,
+        "oob": True,
+        "oob_bloco": True,
+    }
+    return templates.TemplateResponse(request, "pedidos/_colagem_resultado.html", contexto)
 
 
 @router.get("/pedidos/busca-cliente", response_class=HTMLResponse)

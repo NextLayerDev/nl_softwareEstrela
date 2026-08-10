@@ -12,12 +12,17 @@
 {% endblock %}
 
 {% block content %}
+{# Duas portas para o mesmo pedido, lado a lado: à esquerda o rascunho vazio de sempre,
+   à direita a colagem da planilha. O painel da direita reaproveita os campos de cliente
+   da esquerda por hx-include (#form-cliente), então o cliente digitado vale nos dois
+   caminhos e não existe um segundo formulário de cliente para manter em dia. #}
+<div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
 {# O cliente é OPCIONAL. Quem chega no balcão raramente está cadastrado, e parar a venda
    para preencher um cadastro completo é o que fazia o vendedor abandonar o sistema.
    Digitando o nome ou o telefone, a busca sugere quem já existe; escolhendo a sugestão,
    o pedido se amarra ao cadastro (hidden cliente_id) e a condição de pagamento dele
    volta a valer no faturamento. Sem nada preenchido, o pedido é de CONSUMIDOR. #}
-<form method="post" action="/pedidos" class="card max-w-xl"
+<form method="post" action="/pedidos" id="form-cliente" class="card"
       x-data="{
         clienteId: '',
         clienteRotulo: '',
@@ -88,4 +93,7 @@
     <a href="/pedidos" class="btn-secundario">Cancelar</a>
   </div>
 </form>
+
+{% include "pedidos/_colagem_painel.html" %}
+</div>
 {% endblock %}
