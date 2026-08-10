@@ -1,5 +1,10 @@
-{# Fragmento: tabela de itens + totais. Trocado via HTMX ao adicionar/remover/descontar. #}
-<div id="bloco-itens" class="card">
+{# Fragmento: tabela de itens + totais. Trocado via HTMX ao adicionar/remover/descontar.
+
+   `oob_bloco` é flag SEPARADA da `oob` de propósito. As rotas de item/desconto trocam
+   este bloco pelo hx-target (`outerHTML`), e o htmx remove do conteúdo qualquer nó
+   marcado como OOB antes do swap principal — marcar o #bloco-itens ali apagaria a
+   tabela da tela. Só a colagem, que responde com `hx-swap="none"`, liga a flag. #}
+<div id="bloco-itens"{% if oob_bloco %} hx-swap-oob="true"{% endif %} class="card">
   <h3 class="mb-3 text-sm font-semibold">Itens</h3>
   <div class="overflow-x-auto">
     <table class="tabela w-full">

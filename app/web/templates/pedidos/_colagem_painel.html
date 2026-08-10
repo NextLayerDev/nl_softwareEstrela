@@ -1,0 +1,38 @@
+{# Painel "Colar pedido" — o mesmo nas duas telas, só muda para onde ele posta.
+
+   Em /pedidos/novo (`pedido` indefinido) ele CRIA o rascunho junto com os itens e o
+   alvo é ele mesmo. Dentro de um rascunho aberto ele só acrescenta, e a resposta vem
+   toda OOB (por isso hx-swap="none"). #}
+{% set em_pedido = pedido is defined and pedido %}
+<div class="card" id="painel-colagem">
+  <h3 class="mb-1 text-sm font-semibold">
+    {% if em_pedido %}Colar mais itens{% else %}Colar pedido{% endif %}
+  </h3>
+  <p class="mb-3 text-xs text-gray-500">
+    Copie as linhas da planilha no Excel (Ctrl+C) e cole aqui. O sistema lê código,
+    descrição, quantidade e valor unitário, e casa cada linha com o produto do cadastro.
+    O cabeçalho e a linha de <strong>TOTAL</strong> são ignorados.
+  </p>
+
+  <form {% if em_pedido %}hx-post="/pedidos/{{ pedido.id }}/colar" hx-swap="none"
+        {% else %}hx-post="/pedidos/colar" hx-target="#painel-colagem" hx-swap="outerHTML"
+                  hx-include="#form-cliente"{% endif %}
+        hx-indicator="#colagem-load"
+        x-data="{ texto: '' }">
+    <label class="label" for="texto-colagem">Linhas da planilha</label>
+    <textarea id="texto-colagem" name="texto" rows="12" x-model="texto"
+              class="input w-full font-mono text-xs" autocomplete="off" spellcheck="false"
+              placeholder="CODIGO&#9;DESCRICAO&#9;QUANT.&#9;V. UNIT.&#9;SUB. TOTAL&#10;K-708&#9;CANETA AZUL&#9;10&#9;R$ 2,50&#9;R$ 25,00"></textarea>
+
+    <div class="mt-3 flex items-center gap-2">
+      <button type="submit" class="btn-primario" :disabled="!texto.trim()"
+              :title="texto.trim() ? '' : 'Cole as linhas da planilha primeiro'">
+        {% if em_pedido %}Colar itens{% else %}Colar e criar pedido{% endif %}
+      </button>
+      <button type="button" class="btn-secundario" @click="texto = ''" x-show="texto.trim()">
+        Limpar
+      </button>
+      <span id="colagem-load" class="carregando" role="status">lendo a planilha…</span>
+    </div>
+  </form>
+</div>

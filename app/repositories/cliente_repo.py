@@ -84,6 +84,28 @@ class ClienteRepository:
         )
         return db.scalar(stmt)
 
+    def por_codigo(self, db: Session, codigo: str) -> Cliente | None:
+        """Cliente ativo pelo código da planilha. None quando não acha OU quando é ambíguo.
+
+        É o vínculo automático da colagem em lote: o número no topo do bloco vira o
+        cliente daquele pedido. Devolver None no empate é decisão de segurança — o
+        código não é único no banco, e dois cadastros com o mesmo número fariam um
+        `LIMIT 1` carimbar o cliente errado numa venda de verdade. Sem certeza, o
+        pedido nasce como CONSUMIDOR e alguém corrige à mão.
+        """
+        codigo = (codigo or "").strip()
+        if not codigo:
+            return None
+        achados = list(
+            db.scalars(
+                select(Cliente)
+                .where(Cliente.ativo.is_(True), func.upper(Cliente.codigo) == codigo.upper())
+                .order_by(Cliente.id)
+                .limit(2)
+            )
+        )
+        return achados[0] if len(achados) == 1 else None
+
     def add(self, db: Session, cliente: Cliente) -> Cliente:
         db.add(cliente)
         db.flush()

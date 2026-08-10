@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from collections.abc import Sequence
+
+from sqlalchemy import ARRAY, Text, cast, func, or_, select, true
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.codigos import casa_codigo, coluna_normalizada, normalizar, prioridade_codigo
 from app.models.inventario import InventarioItem
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.pedido import PedidoItem
-from app.models.produto import Produto, ProdutoVariacao
+from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
 
 
 class ProdutoRepository:
@@ -17,7 +20,11 @@ class ProdutoRepository:
         return db.get(ProdutoVariacao, variacao_id)
 
     def get_by_codigo(self, db: Session, codigo: str) -> Produto | None:
-        return db.scalar(select(Produto).where(Produto.codigo == codigo.strip()))
+        """Produto pelo código, ignorando pontuação e caixa ("k-708" acha "K708")."""
+        alvo = normalizar(codigo)
+        if not alvo:
+            return None
+        return db.scalar(select(Produto).where(coluna_normalizada(Produto.codigo) == alvo))
 
     def listar(
         self,
@@ -47,17 +54,24 @@ class ProdutoRepository:
     def busca_rapida(
         self, db: Session, termo: str, limit: int = 20, categoria_id: int | None = None
     ) -> list[Produto]:
-        """Busca por pg_trgm na descrição + match de substring no código.
+        """Busca por pg_trgm na descrição + match normalizado no código.
 
-        - Código: `ilike('%termo%')` — basta um pedaço do código (ex: `708`
-          casa com `K-708`), não precisa digitar desde o início.
+        - Código: comparado sem pontuação e sem caixa (`ch1086` acha `CH-1086`), e por
+          pedaço — não precisa digitar desde o início. Casa também o código alternativo
+          do fornecedor.
         - Descrição: trigram (ranking) + fallback `ilike('%termo%')` para garantir
           que qualquer pedaço case, inclusive curto, mesmo quando a similaridade por
           trigramas fica abaixo do limiar padrão (0.3) do Postgres.
+        - Ordem: quem casou pelo CÓDIGO vem primeiro (igual, depois começa-com, depois
+          contém); só então entra o ranking por similaridade da descrição. Sem isso, o
+          produto cujo código foi digitado saía no meio da lista.
         - `categoria_id` (opcional): restringe o resultado a uma categoria, combinando
           com a busca por texto.
         """
         termo = termo.strip()
+        sub_alt = select(ProdutoCodigoAlt.produto_id).where(
+            casa_codigo(ProdutoCodigoAlt.codigo_alt, termo)
+        )
         stmt = (
             select(Produto)
             .options(
@@ -67,17 +81,93 @@ class ProdutoRepository:
             )
             .where(
                 or_(
-                    Produto.codigo.ilike(f"%{termo}%"),
+                    casa_codigo(Produto.codigo, termo),
                     Produto.descricao.op("%")(termo),
                     Produto.descricao.ilike(f"%{termo}%"),
+                    Produto.id.in_(sub_alt),
                 )
             )
-            .order_by(func.similarity(Produto.descricao, termo).desc())
+            .order_by(
+                prioridade_codigo(Produto.codigo, termo),
+                func.similarity(Produto.descricao, termo).desc(),
+            )
             .limit(limit)
         )
         if categoria_id is not None:
             stmt = stmt.where(Produto.categoria_id == categoria_id)
         return list(db.scalars(stmt))
+
+    # ------------------------------------------------------------- colagem de pedido
+    def catalogo_por_codigos(self, db: Session, codigos: Sequence[str]) -> list[Produto]:
+        """Produtos cujo código — ou código alternativo — casa com algum dos colados.
+
+        Casa por igualdade exata (upper) e por igualdade NORMALIZADA (só letras e
+        dígitos), que é o que faz "K708" achar o "K-708" do cadastro.
+
+        Uma query para a colagem inteira: 200 linhas coladas não podem virar 200 idas ao
+        banco. Traz variações e códigos alternativos carregados junto, porque quem
+        escolhe a variação é o service, em memória, sem uma segunda rodada de queries.
+        """
+        normalizados = {n for n in (normalizar(c) for c in codigos) if n}
+        if not normalizados:
+            return []
+
+        sub_alt = select(ProdutoCodigoAlt.produto_id).where(
+            coluna_normalizada(ProdutoCodigoAlt.codigo_alt).in_(normalizados)
+        )
+        stmt = (
+            select(Produto)
+            .options(selectinload(Produto.variacoes), selectinload(Produto.codigos_alt))
+            .where(
+                or_(
+                    coluna_normalizada(Produto.codigo).in_(normalizados),
+                    Produto.id.in_(sub_alt),
+                )
+            )
+        )
+        return list(db.scalars(stmt))
+
+    def melhores_por_descricao(
+        self, db: Session, termos: Sequence[str], por_termo: int = 3
+    ) -> dict[str, list[tuple[int, float]]]:
+        """Para cada termo, os produtos ativos mais parecidos + a similaridade (0..1).
+
+        Um round-trip para TODOS os termos, via `unnest(...) WITH ORDINALITY` + `LATERAL`
+        — é o fallback de quem não casou por código, e uma query por linha colada
+        derrubaria a ideia. O `%` é o operador do pg_trgm, que usa o índice GIN
+        `ix_produtos_descricao_trgm`; o ranking sai do `similarity()` e o corte entre
+        "casou" e "dúvida" é decisão do service, não daqui.
+        """
+        limpos = [t.strip() for t in termos if t and t.strip()]
+        if not limpos:
+            return {}
+
+        # `render_derived` é o que emite o "AS t(termo, ord)" — sem a lista de colunas o
+        # Postgres não enxerga `t.termo` de dentro do LATERAL.
+        tabela_termos = (
+            func.unnest(cast(limpos, ARRAY(Text)))
+            .table_valued("termo", with_ordinality="ord")
+            .render_derived(name="termos_colados")
+        )
+        similaridade = func.similarity(Produto.descricao, tabela_termos.c.termo)
+        melhores = (
+            select(Produto.id.label("produto_id"), similaridade.label("sim"))
+            .where(
+                Produto.ativo.is_(True),
+                Produto.descricao.op("%")(tabela_termos.c.termo),
+            )
+            .order_by(similaridade.desc(), Produto.id)
+            .limit(por_termo)
+            .lateral()
+        )
+        stmt = select(tabela_termos.c.termo, melhores.c.produto_id, melhores.c.sim).select_from(
+            tabela_termos.join(melhores, true())
+        )
+
+        saida: dict[str, list[tuple[int, float]]] = {}
+        for termo, produto_id, sim in db.execute(stmt):
+            saida.setdefault(termo, []).append((produto_id, float(sim)))
+        return saida
 
     def add(self, db: Session, produto: Produto) -> Produto:
         db.add(produto)

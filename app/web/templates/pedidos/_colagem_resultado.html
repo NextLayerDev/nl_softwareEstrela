@@ -1,0 +1,118 @@
+{# Resultado da colagem. Serve as duas telas:
+
+   - /pedidos/novo: substitui o #painel-colagem pelo hx-target. O pedido acabou de
+     nascer, então a ação principal é "Abrir pedido"; as pendências vão como leitura,
+     com os candidatos citados pelo nome para o vendedor saber o que procurar lá.
+   - detalhe do rascunho (`oob_bloco`): a resposta é toda OOB, e aí os candidatos viram
+     botão de um clique — só ali existe o #bloco-itens que o POST de item devolve. #}
+{% from "_icones.html" import icone %}
+{% set no_pedido = oob_bloco | default(false) %}
+
+<div id="painel-colagem" {% if no_pedido %}hx-swap-oob="true"{% endif %} class="card">
+  <h3 class="mb-3 text-sm font-semibold">Resultado da colagem</h3>
+
+  {% set n_ok = resultado.aplicados | length %}
+  {% set n_pend = resultado.pendencias | length %}
+  {% if resultado.aplicados %}
+  <div class="alerta alerta-ok" role="status">
+    {{ "%d linha virou item" % n_ok if n_ok == 1 else "%d linhas viraram itens" % n_ok }}
+    de um total de {{ resultado.linhas_lidas }}.
+  </div>
+  {% elif resultado.linhas_lidas %}
+  <div class="alerta alerta-erro" role="alert">
+    Nenhuma das {{ resultado.linhas_lidas }} linhas coladas casou com um produto do cadastro.
+  </div>
+  {% else %}
+  <div class="alerta alerta-erro" role="alert">
+    Não encontrei linhas de produto no texto colado. Copie as linhas da planilha,
+    incluindo a de cabeçalho.
+  </div>
+  {% endif %}
+
+  {# ----------------------- Pendências ----------------------- #}
+  {% if resultado.pendencias %}
+  <div class="mt-4">
+    <h4 class="mb-2 flex items-center gap-2 text-sm font-semibold">
+      <span class="nav-icone text-gold-600" aria-hidden="true">{{ icone("alerta") }}</span>
+      {{ "%d linha não entrou" % n_pend if n_pend == 1 else "%d linhas não entraram" % n_pend }}
+    </h4>
+    <ul class="flex flex-col gap-2">
+      {% for p in resultado.pendencias %}
+      <li class="rounded-md border border-marca-borda p-2">
+        <p class="text-sm">
+          <span class="text-gray-400">linha {{ p.linha }}</span>
+          {% if p.codigo %}<span class="ml-1 font-mono font-semibold">{{ p.codigo }}</span>{% endif %}
+          {% if p.descricao %}<span class="ml-1">{{ p.descricao }}</span>{% endif %}
+          {% if p.qtd %}<span class="ml-1 text-gray-500">× {{ p.qtd }}</span>{% endif %}
+        </p>
+        <p class="mt-0.5 text-xs text-gold-700">{{ p.motivo }}</p>
+
+        {% if p.sugestoes and no_pedido %}
+        <div class="mt-2 flex flex-wrap gap-1">
+          {% for s in p.sugestoes %}
+          <button type="button" class="btn-secundario text-xs"
+                  hx-post="/pedidos/{{ resultado.pedido_id }}/itens"
+                  hx-target="#bloco-itens" hx-swap="outerHTML"
+                  hx-vals='{{ {"variacao_id": s.variacao_id, "qtd": p.qtd or 1,
+                               "preco_unit": (p.preco_unit | string) if p.preco_unit else ""} | tojson }}'>
+            <span class="font-mono">{{ s.codigo }}</span>
+            {{ s.descricao | truncate(34) }}{% if s.cor %} · {{ s.cor }}{% endif %}
+          </button>
+          {% endfor %}
+        </div>
+        {% elif p.sugestoes %}
+        <p class="mt-1 text-xs text-gray-500">
+          Parecidos:
+          {% for s in p.sugestoes %}<span class="font-mono">{{ s.codigo }}</span>
+          {{ s.descricao | truncate(28) }}{% if s.cor %} ({{ s.cor }}){% endif %}{% if not loop.last %} · {% endif %}
+          {% endfor %}
+        </p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="mt-2 text-xs text-gray-500">
+      {% if no_pedido %}
+        Clique num parecido para lançar, ou use a busca de produto acima.
+      {% else %}
+        Abra o pedido para lançar estas linhas na busca de produto — ou cole de novo por lá.
+      {% endif %}
+    </p>
+  </div>
+  {% endif %}
+
+  {# ----------------------- Linhas descartadas ----------------------- #}
+  {% if resultado.ignoradas %}
+  <details class="mt-4">
+    <summary class="cursor-pointer text-xs text-gray-500">
+      {{ resultado.ignoradas | length }} linha(s) ignorada(s) — cabeçalho, data e total
+    </summary>
+    <ul class="mt-2 flex flex-col gap-1">
+      {% for i in resultado.ignoradas %}
+      <li class="truncate font-mono text-xs text-gray-400">
+        {% if i.linha %}{{ i.linha }}:{% endif %} {{ i.bruto or "—" }}
+        <span class="font-sans not-italic text-gray-500">({{ i.motivo }})</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {# ----------------------- Ações ----------------------- #}
+  <div class="mt-4 flex flex-wrap gap-2">
+    {% if no_pedido %}
+    <button type="button" class="btn-secundario"
+            hx-get="/pedidos/{{ resultado.pedido_id }}/colagem"
+            hx-target="#painel-colagem" hx-swap="outerHTML">
+      Colar outra planilha
+    </button>
+    {% else %}
+    <a href="/pedidos/{{ resultado.pedido_id }}" class="btn-primario">
+      Abrir pedido #{{ pedido.numero or pedido.id }}
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{# No detalhe do rascunho a tabela de itens e os botões do pedido acompanham, tudo OOB. #}
+{% if no_pedido %}{% include "pedidos/_itens.html" %}{% endif %}

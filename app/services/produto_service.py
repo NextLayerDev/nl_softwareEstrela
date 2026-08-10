@@ -54,8 +54,11 @@ class ProdutoService:
         return produto
 
     def criar(self, db: Session, dados: ProdutoCreate) -> Produto:
-        if produto_repo.get_by_codigo(db, dados.codigo) is not None:
-            raise RegraNegocioError(f"Já existe um produto com o código {dados.codigo}.")
+        # A checagem ignora pontuação e caixa, igual à busca: "K-708" e "K708" seriam
+        # o mesmo produto para quem procura, então não podem coexistir no cadastro.
+        existente = produto_repo.get_by_codigo(db, dados.codigo)
+        if existente is not None:
+            raise RegraNegocioError(f"Já existe um produto com o código {existente.codigo}.")
         produto = Produto(
             codigo=dados.codigo,
             descricao=dados.descricao,
@@ -103,7 +106,7 @@ class ProdutoService:
             novo = dados.codigo.strip()
             outro = produto_repo.get_by_codigo(db, novo)
             if outro is not None and outro.id != produto_id:
-                raise RegraNegocioError(f"Já existe um produto com o código {novo}.")
+                raise RegraNegocioError(f"Já existe um produto com o código {outro.codigo}.")
             produto.codigo = novo
         # Campos simples (codigo e codigos_alt são tratados à parte: o código
         # passa por validação de unicidade e codigos_alt é relationship de lista).

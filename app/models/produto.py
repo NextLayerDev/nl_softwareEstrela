@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,12 @@ if TYPE_CHECKING:
 
 def _enum(py_enum, nome: str) -> SAEnum:
     return SAEnum(py_enum, name=nome, values_callable=lambda e: [m.value for m in e])
+
+
+# Espelho da expressão gerada por `app/core/codigos.coluna_normalizada`. Declarada aqui
+# para o modelo bater com o banco (o `alembic check` da CI compara os dois); mudar a
+# fórmula lá obriga a mudar aqui e a refazer os índices por migration.
+_CODIGO_NORM = "upper(regexp_replace({coluna}, '[^A-Za-z0-9]', '', 'g'))"
 
 
 class Produto(Base):
@@ -33,6 +39,15 @@ class Produto(Base):
             "localizacao",
             postgresql_using="gin",
             postgresql_ops={"localizacao": "gin_trgm_ops"},
+        ),
+        # Busca por código sem traço e sem caixa ("ch1086" acha "CH-1086"). A expressão
+        # tem que ser IDÊNTICA à do `app/core/codigos.coluna_normalizada` — é ela que a
+        # consulta gera, e qualquer diferença faz o Postgres ignorar o índice.
+        Index(
+            "ix_produtos_codigo_norm",
+            text(_CODIGO_NORM.format(coluna="codigo")),
+            postgresql_using="gin",
+            postgresql_ops={_CODIGO_NORM.format(coluna="codigo"): "gin_trgm_ops"},
         ),
     )
 
@@ -103,6 +118,14 @@ class ProdutoVariacao(Base):
 
 class ProdutoCodigoAlt(Base):
     __tablename__ = "produto_codigos_alt"
+    __table_args__ = (
+        Index(
+            "ix_produto_codigos_alt_norm",
+            text(_CODIGO_NORM.format(coluna="codigo_alt")),
+            postgresql_using="gin",
+            postgresql_ops={_CODIGO_NORM.format(coluna="codigo_alt"): "gin_trgm_ops"},
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     produto_id: Mapped[int] = mapped_column(ForeignKey("produtos.id"), index=True)
