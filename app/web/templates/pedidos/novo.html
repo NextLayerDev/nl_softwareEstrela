@@ -12,22 +12,77 @@
 {% endblock %}
 
 {% block content %}
-<form method="post" action="/pedidos" class="card max-w-xl">
+{# O cliente é OPCIONAL. Quem chega no balcão raramente está cadastrado, e parar a venda
+   para preencher um cadastro completo é o que fazia o vendedor abandonar o sistema.
+   Digitando o nome ou o telefone, a busca sugere quem já existe; escolhendo a sugestão,
+   o pedido se amarra ao cadastro (hidden cliente_id) e a condição de pagamento dele
+   volta a valer no faturamento. Sem nada preenchido, o pedido é de CONSUMIDOR. #}
+<form method="post" action="/pedidos" class="card max-w-xl"
+      x-data="{
+        clienteId: '',
+        clienteRotulo: '',
+        buscar(termo) {
+          if (this.clienteId) return;              // já vinculado: não sugere mais
+          const caixa = document.getElementById('sug-cliente');
+          if (!termo || termo.trim().length < 2) { caixa.innerHTML = ''; return; }
+          htmx.ajax('GET', '/pedidos/busca-cliente?q=' + encodeURIComponent(termo.trim()),
+                    { target: '#sug-cliente' });
+        },
+        vincular(id, nome, telefone) {
+          this.clienteId = id;
+          this.clienteRotulo = nome;
+          document.getElementById('cliente_nome').value = nome;
+          document.getElementById('cliente_telefone').value = telefone;
+          document.getElementById('sug-cliente').innerHTML = '';
+        },
+        desvincular() {
+          this.clienteId = '';
+          this.clienteRotulo = '';
+          document.getElementById('sug-cliente').innerHTML = '';
+          $nextTick(() => document.getElementById('cliente_nome').focus());
+        }
+      }">
+  <input type="hidden" name="cliente_id" :value="clienteId" />
+
   <div class="grid grid-cols-1 gap-4">
-    <div>
-      <label class="label" for="cliente_id">Cliente *</label>
-      <select id="cliente_id" name="cliente_id" required class="input">
-        <option value="">Selecione…</option>
-        {% for c in clientes %}
-        <option value="{{ c.id }}">{{ c.nome }}{% if c.condicao_pagto_padrao %} — {{ c.condicao_pagto_padrao }}{% endif %}</option>
-        {% endfor %}
-      </select>
+    <div class="relative">
+      <label class="label" for="cliente_nome">Nome do cliente <span class="text-gray-400">(opcional)</span></label>
+      <input type="text" id="cliente_nome" name="cliente_nome" class="input" autocomplete="off"
+             placeholder="Quem está comprando"
+             @input.debounce.250ms="buscar($el.value)" />
     </div>
+
+    <div>
+      <label class="label" for="cliente_telefone">Telefone <span class="text-gray-400">(opcional)</span></label>
+      <input type="tel" id="cliente_telefone" name="cliente_telefone" class="input" autocomplete="off"
+             placeholder="(00) 00000-0000" inputmode="tel"
+             @input.debounce.250ms="buscar($el.value)" />
+      <p class="mt-1 text-xs text-gray-500">
+        Digitando o nome ou o telefone, quem já é cadastrado aparece abaixo.
+      </p>
+    </div>
+
+    {# Sugestões. Fica fora dos dois campos de propósito: os dois alimentam a mesma lista. #}
+    <div id="sug-cliente" x-show="!clienteId"
+         class="max-h-56 overflow-y-auto rounded-md border border-marca-borda empty:hidden"></div>
+
+    {# Selo do vínculo — é o que diz ao vendedor que a condição de pagamento do cadastro
+       vai valer no faturamento. Sem ele, o pedido é à vista. #}
+    <div x-show="clienteId" x-cloak
+         class="flex items-center gap-3 rounded-md border border-marca-borda bg-gold-50 p-2">
+      <span class="nav-icone shrink-0 text-gold-600" aria-hidden="true">{{ icone("usuarios") }}</span>
+      <p class="min-w-0 flex-1 truncate text-sm">
+        Vinculado ao cadastro de <strong x-text="clienteRotulo"></strong>
+      </p>
+      <button type="button" class="btn-secundario shrink-0" @click="desvincular()">Desvincular</button>
+    </div>
+
     <div>
       <label class="label" for="observacao">Observação</label>
       <textarea id="observacao" name="observacao" rows="2" class="input" placeholder="Opcional"></textarea>
     </div>
   </div>
+
   <div class="mt-6 flex gap-2">
     <button type="submit" class="btn-primario">Criar rascunho</button>
     <a href="/pedidos" class="btn-secundario">Cancelar</a>

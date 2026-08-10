@@ -13,6 +13,7 @@ from app.models.conta_receber import ContaReceber
 from app.models.enums import StatusConta, StatusPedido
 from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import Produto, ProdutoVariacao
+from app.repositories.cliente_repo import cliente_repo
 from app.repositories.pedido_repo import pedido_repo
 from app.schemas.pedido import ItemAdicionar, SugestaoPreco
 from app.services.estoque_service import estoque_service
@@ -90,13 +91,39 @@ class PedidoService:
 
     # ------------------------------------------------------------- criação
     def criar(
-        self, db: Session, cliente_id: int, vendedor_id: int, observacao: str | None = None
+        self,
+        db: Session,
+        cliente_id: int | None,
+        vendedor_id: int,
+        observacao: str | None = None,
+        cliente_nome: str | None = None,
+        cliente_telefone: str | None = None,
     ) -> Pedido:
-        cliente = db.get(Cliente, cliente_id)
-        if cliente is None:
-            raise NaoEncontradoError("Cliente não encontrado.")
+        """Abre um rascunho, com ou sem cliente cadastrado.
+
+        Se o vendedor escolheu uma sugestão da busca, vem `cliente_id` e o resto é
+        ignorado. Se ele só digitou o telefone, tentamos amarrar sozinhos ao cadastro
+        que já existe — é o que faz a segunda compra do mesmo cliente cair na ficha
+        certa sem ninguém procurar. Não achando, guardamos o texto livre.
+        """
+        nome = (cliente_nome or "").strip() or None
+        telefone = (cliente_telefone or "").strip() or None
+
+        cliente: Cliente | None = None
+        if cliente_id is not None:
+            cliente = db.get(Cliente, cliente_id)
+            if cliente is None:
+                raise NaoEncontradoError("Cliente não encontrado.")
+        elif telefone:
+            cliente = cliente_repo.por_telefone(db, telefone)
+
         pedido = Pedido(
-            cliente_id=cliente_id,
+            cliente_id=cliente.id if cliente is not None else None,
+            # O texto livre só sobra quando não há cadastro: com cliente vinculado, o
+            # nome verdadeiro é o do cadastro, e duplicá-lo aqui só criaria duas versões
+            # do mesmo dado esperando divergir.
+            cliente_nome=None if cliente is not None else nome,
+            cliente_telefone=None if cliente is not None else telefone,
             vendedor_id=vendedor_id,
             status=StatusPedido.RASCUNHO,
             observacao=observacao,
@@ -367,7 +394,7 @@ class PedidoService:
             "pedido_id": pedido.id,
             "numero": pedido.numero,
             "status": str(pedido.status),
-            "cliente": pedido.cliente.nome if pedido.cliente else None,
+            "cliente": pedido.nome_cliente,
             "vendedor_id": pedido.vendedor_id,
             "total": str(pedido.total or Decimal("0")),
         }
@@ -410,7 +437,7 @@ class PedidoService:
 
     def _gerar_contas_receber(self, db: Session, pedido: Pedido) -> list[ContaReceber]:
         """Cria os títulos a receber conforme a condição de pagamento do cliente."""
-        offsets = self._parse_parcelas(pedido.cliente.condicao_pagto_padrao)
+        offsets = self._parse_parcelas(pedido.condicao_pagto)
         n = len(offsets)
         total = (pedido.total or Decimal("0")).quantize(CENT)
         base = (total / n).quantize(CENT)

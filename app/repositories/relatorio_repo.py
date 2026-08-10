@@ -41,11 +41,14 @@ class RelatorioRepository:
                 Pedido.faturado_em,
                 Pedido.total,
                 Pedido.desconto_total,
-                Cliente.nome.label("cliente"),
+                # Venda de balcão não tem cliente cadastrado — o COALESCE evita que o
+                # relatório de vendas perca justamente essas. O outer join é pelo mesmo
+                # motivo: com INNER, todo pedido sem `cliente_id` sumiria do faturamento.
+                func.coalesce(Cliente.nome, Pedido.cliente_nome, "CONSUMIDOR").label("cliente"),
                 Usuario.nome.label("vendedor"),
                 Pedido.vendedor_id,
             )
-            .join(Cliente, Pedido.cliente_id == Cliente.id)
+            .outerjoin(Cliente, Pedido.cliente_id == Cliente.id)
             .join(Usuario, Pedido.vendedor_id == Usuario.id)
             .where(Pedido.status.in_(STATUS_FATURADOS))
             .order_by(Pedido.faturado_em.desc().nulls_last(), Pedido.id.desc())

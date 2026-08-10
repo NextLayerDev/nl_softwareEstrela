@@ -6,9 +6,16 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class PedidoCreate(BaseModel):
-    """Abre um rascunho de pedido para um cliente."""
+    """Abre um rascunho de pedido.
 
-    cliente_id: int
+    Os três campos de cliente são opcionais e se completam: `cliente_id` vem quando o
+    vendedor escolhe uma sugestão da busca; nome e telefone são o texto livre do balcão.
+    Sem nenhum deles, o pedido é de CONSUMIDOR.
+    """
+
+    cliente_id: int | None = None
+    cliente_nome: str | None = None
+    cliente_telefone: str | None = None
     observacao: str | None = None
 
 

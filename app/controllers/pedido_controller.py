@@ -39,7 +39,14 @@ class PedidoController:
 
     # ----------------------------------------------------------- criação
     def criar(self, db: Session, dados: PedidoCreate, usuario: Usuario) -> Pedido:
-        return pedido_service.criar(db, dados.cliente_id, usuario.id, dados.observacao)
+        return pedido_service.criar(
+            db,
+            dados.cliente_id,
+            usuario.id,
+            dados.observacao,
+            cliente_nome=dados.cliente_nome,
+            cliente_telefone=dados.cliente_telefone,
+        )
 
     def adicionar_item(
         self, db: Session, pedido_id: int, dados: ItemAdicionar, usuario: Usuario

@@ -1,0 +1,22 @@
+{# Sugestões de cliente no formulário de novo pedido. Cada linha é um botão que
+   preenche nome + telefone e amarra o pedido ao cadastro (hidden cliente_id).
+   O estado (nome/telefone/clienteId/clienteRotulo) vive no x-data de novo.html. #}
+{% for c in clientes %}
+<button type="button"
+        class="flex w-full items-center gap-3 border-b border-marca-borda px-3 py-2 text-left text-sm
+               last:border-b-0 hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
+        data-id="{{ c.id }}" data-nome="{{ c.nome }}" data-telefone="{{ c.telefone or c.telefone2 or '' }}"
+        @click="vincular($el.dataset.id, $el.dataset.nome, $el.dataset.telefone)">
+  <span class="min-w-0 flex-1 truncate font-medium">{{ c.nome }}</span>
+  {% if c.telefone or c.telefone2 %}
+    <span class="shrink-0 font-mono text-xs text-gray-500">{{ c.telefone or c.telefone2 }}</span>
+  {% endif %}
+  {% if c.condicao_pagto_padrao %}
+    <span class="selo-neutro shrink-0">{{ c.condicao_pagto_padrao }}</span>
+  {% endif %}
+</button>
+{% else %}
+<p class="px-3 py-2 text-sm text-gray-400">
+  Nenhum cliente cadastrado com esse dado — pode seguir só com o nome e o telefone.
+</p>
+{% endfor %}

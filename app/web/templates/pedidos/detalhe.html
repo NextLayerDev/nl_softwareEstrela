@@ -27,10 +27,18 @@
      data-rt-swap="none">
   <div>
     <p class="text-sm text-gray-500">Cliente</p>
-    <p class="font-semibold">{{ pedido.cliente.nome }}</p>
+    <p class="font-semibold">
+      {{ pedido.nome_cliente }}
+      {% if pedido.telefone_cliente %}
+        <span class="ml-1 font-mono text-sm font-normal text-gray-500">{{ pedido.telefone_cliente }}</span>
+      {% endif %}
+      {% if not pedido.cliente %}
+        <span class="selo-neutro ml-1">sem cadastro</span>
+      {% endif %}
+    </p>
     <p class="mt-0.5 text-xs text-gray-400">
       Vendedor: {{ pedido.vendedor.nome }} ·
-      Pagamento: {{ pedido.cliente.condicao_pagto_padrao or "à vista" }} ·
+      Pagamento: {{ pedido.condicao_pagto }} ·
       Status: {% include "pedidos/_status.html" %}
     </p>
   </div>

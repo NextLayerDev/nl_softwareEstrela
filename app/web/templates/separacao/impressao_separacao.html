@@ -28,7 +28,7 @@
     <div class="marca">★ Estrela Gestão</div>
     <h1>Lista de separação — Pedido nº {{ pedido.numero or pedido.id }}</h1>
     <div class="meta">
-      Cliente: <strong>{{ pedido.cliente.nome }}</strong> ·
+      Cliente: <strong>{{ pedido.nome_cliente }}</strong> ·
       Recebido: {{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "" }} ·
       Itens: {{ pedido.itens | length }}
     </div>

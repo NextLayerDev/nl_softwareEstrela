@@ -64,24 +64,53 @@ def fragmento_lista(
 @router.get("/pedidos/novo", response_class=HTMLResponse)
 def novo_pedido(
     request: Request,
-    db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
-    clientes = cliente_repo.listar(db)
-    contexto = {"user": usuario, "titulo": "Novo pedido", "clientes": clientes}
+    contexto = {"user": usuario, "titulo": "Novo pedido"}
     return templates.TemplateResponse(request, "pedidos/novo.html", contexto)
 
 
 @router.post("/pedidos")
 def criar_pedido(
-    cliente_id: int = Form(...),
+    cliente_id: str = Form(""),
+    cliente_nome: str = Form(""),
+    cliente_telefone: str = Form(""),
     observacao: str = Form(""),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
-    dados = PedidoCreate(cliente_id=cliente_id, observacao=observacao or None)
+    """Abre o rascunho. Os três campos de cliente são opcionais (venda de balcão).
+
+    `cliente_id` chega como string porque é um input hidden preenchido por JS: vazio
+    quando o vendedor só digitou o nome, e um id quando ele clicou numa sugestão.
+    """
+    dados = PedidoCreate(
+        cliente_id=int(cliente_id) if cliente_id.strip().isdigit() else None,
+        cliente_nome=cliente_nome or None,
+        cliente_telefone=cliente_telefone or None,
+        observacao=observacao or None,
+    )
     pedido = pedido_controller.criar(db, dados, usuario)
     return RedirectResponse(url=f"/pedidos/{pedido.id}", status_code=303)
+
+
+@router.get("/pedidos/busca-cliente", response_class=HTMLResponse)
+def busca_cliente(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Sugestões de cliente por nome, telefone ou documento (fragmento HTMX).
+
+    Um caractere só devolveria a base inteira a cada tecla; a partir de dois já vale a
+    consulta. A mesma rota serve os dois campos da tela — quem chama manda o que o
+    vendedor está digitando, seja nome ou telefone.
+    """
+    termo = q.strip()
+    clientes = cliente_repo.busca_rapida(db, termo, limit=8) if len(termo) >= 2 else []
+    contexto = {"user": usuario, "clientes": clientes}
+    return templates.TemplateResponse(request, "pedidos/_busca_cliente.html", contexto)
 
 
 # ===================================================================== BUSCA ITEM (HTMX)

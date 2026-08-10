@@ -6,6 +6,7 @@ Rodam dentro da transação revertida do fixture `db`.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -365,3 +366,90 @@ def test_editar_item_fora_de_rascunho_falha(db, usuario_vendedor):
 def test_get_pedido_inexistente(db):
     with pytest.raises(NaoEncontradoError):
         pedido_service.confirmar(db, 999999, 1)
+
+
+# --------------------------------------------------------- cliente livre (balcão)
+def test_pedido_sem_cliente_vira_consumidor(db, usuario_vendedor):
+    """Venda de balcão: nenhum campo de cliente preenchido."""
+    ped = pedido_service.criar(db, None, usuario_vendedor.id)
+    assert ped.cliente_id is None
+    assert ped.nome_cliente == "CONSUMIDOR"
+    assert ped.telefone_cliente is None
+    # Sem cadastro não há condição negociada: o faturamento trata como à vista.
+    assert ped.condicao_pagto == "À VISTA"
+
+
+def test_pedido_guarda_nome_e_telefone_livres(db, usuario_vendedor):
+    ped = pedido_service.criar(
+        db,
+        None,
+        usuario_vendedor.id,
+        cliente_nome="Maria do Balcão",
+        cliente_telefone="11 98888-7777",
+    )
+    assert ped.cliente_id is None
+    assert ped.nome_cliente == "Maria do Balcão"
+    assert ped.telefone_cliente == "11 98888-7777"
+
+
+def test_telefone_conhecido_vincula_o_cadastro_sozinho(db, usuario_vendedor):
+    """O vendedor digita só o telefone e o pedido cai na ficha certa."""
+    cli = Cliente(nome="Cliente Fiel", telefone="(11) 98888-7777", condicao_pagto_padrao="30 dias")
+    db.add(cli)
+    db.flush()
+
+    ped = pedido_service.criar(
+        db, None, usuario_vendedor.id, cliente_nome="digitou errado", cliente_telefone="11988887777"
+    )
+
+    assert ped.cliente_id == cli.id
+    # O nome que vale é o do cadastro, não o que foi digitado na pressa.
+    assert ped.nome_cliente == "Cliente Fiel"
+    assert ped.condicao_pagto == "30 dias"
+    assert ped.cliente_nome is None
+
+
+def test_telefone_desconhecido_nao_vincula(db, usuario_vendedor):
+    ped = pedido_service.criar(db, None, usuario_vendedor.id, cliente_telefone="11 90000-0001")
+    assert ped.cliente_id is None
+    assert ped.cliente_telefone == "11 90000-0001"
+
+
+def test_telefone_curto_nao_vincula(db, usuario_vendedor):
+    """4 dígitos não podem casar com meia agenda."""
+    cli = Cliente(nome="Curto", telefone="1234")
+    db.add(cli)
+    db.flush()
+    ped = pedido_service.criar(db, None, usuario_vendedor.id, cliente_telefone="1234")
+    assert ped.cliente_id is None
+
+
+def test_cliente_id_invalido_falha(db, usuario_vendedor):
+    with pytest.raises(NaoEncontradoError):
+        pedido_service.criar(db, 999_999_999, usuario_vendedor.id)
+
+
+def test_faturar_pedido_de_balcao_gera_conta_a_vista(db, usuario_vendedor, usuario_admin):
+    """O faturamento não pode quebrar quando o pedido não tem cliente cadastrado."""
+    prod = _produto(db, "BALC1")
+    var = _variacao(db, prod, fisico=50)
+    ped = pedido_service.criar(db, None, usuario_vendedor.id, cliente_nome="Passante")
+    _add(db, ped, var, qtd=2, preco_unit=Decimal("10.00"))
+    pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
+
+    contas = list(db.scalars(select(ContaReceber).where(ContaReceber.pedido_id == ped.id)))
+    assert len(contas) == 1
+    assert contas[0].valor == Decimal("20.00")
+    assert contas[0].vencimento == date.today()
+
+
+def test_busca_cliente_acha_por_telefone_formatado_diferente(db):
+    from app.repositories.cliente_repo import cliente_repo
+
+    cli = Cliente(nome=f"Busca {uuid.uuid4().hex[:6]}", telefone="(11) 97777-1234")
+    db.add(cli)
+    db.flush()
+
+    achados = cliente_repo.busca_rapida(db, "11977771234")
+    assert cli.id in [c.id for c in achados]

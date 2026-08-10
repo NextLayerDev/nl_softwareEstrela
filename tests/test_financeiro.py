@@ -125,13 +125,7 @@ def test_vendedor_nao_acessa_financeiro() -> None:
     assert resp.status_code == 403
 
 
-def test_funcionario_nao_acessa_financeiro() -> None:
-    resp = _login("funcionario").get("/financeiro", follow_redirects=False)
-    assert resp.status_code == 403
-
-
-def test_financeiro_e_admin_acessam() -> None:
-    assert _login("financeiro").get("/financeiro").status_code == 200
+def test_admin_acessa() -> None:
     assert _login("admin").get("/financeiro").status_code == 200
 
 

@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,7 +32,13 @@ class Pedido(Base):
     numero: Mapped[int | None] = mapped_column(
         Integer, unique=True, index=True
     )  # sequence ao confirmar
-    cliente_id: Mapped[int] = mapped_column(ForeignKey("clientes.id"), index=True)
+    # No balcão o cliente quase nunca está cadastrado — e parar a venda para cadastrar
+    # é o que fazia o vendedor abandonar o sistema. Por isso o vínculo é opcional: ou o
+    # pedido aponta para um Cliente, ou guarda nome/telefone soltos (ou nada, e vira
+    # CONSUMIDOR). Leia sempre pelas propriedades abaixo, nunca por `pedido.cliente`.
+    cliente_id: Mapped[int | None] = mapped_column(ForeignKey("clientes.id"), index=True)
+    cliente_nome: Mapped[str | None] = mapped_column(String(160))
+    cliente_telefone: Mapped[str | None] = mapped_column(String(40))
     vendedor_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
     status: Mapped[StatusPedido] = mapped_column(
         _enum(StatusPedido, "status_pedido"), default=StatusPedido.RASCUNHO, index=True
@@ -48,11 +54,37 @@ class Pedido(Base):
     )
     faturado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    cliente: Mapped[Cliente] = relationship()
+    cliente: Mapped[Cliente | None] = relationship()
     vendedor: Mapped[Usuario] = relationship()
     itens: Mapped[list[PedidoItem]] = relationship(
         back_populates="pedido", cascade="all, delete-orphan"
     )
+
+    # ---------------------------------------------------------------- exibição
+    # Templates, impressão, cupom e eventos leem daqui. `pedido.cliente.nome` volta a
+    # ser None-unsafe no instante em que alguém vende para um cliente não cadastrado.
+    @property
+    def nome_cliente(self) -> str:
+        if self.cliente is not None:
+            return self.cliente.nome
+        return self.cliente_nome or "CONSUMIDOR"
+
+    @property
+    def telefone_cliente(self) -> str | None:
+        if self.cliente is not None:
+            return self.cliente.telefone or self.cliente.telefone2 or self.cliente_telefone
+        return self.cliente_telefone
+
+    @property
+    def condicao_pagto(self) -> str:
+        """Condição de pagamento do pedido, com o padrão do balcão.
+
+        Sem cliente cadastrado não há condição negociada: quem passa no balcão paga
+        à vista. É esta string que o `_parse_parcelas` do faturamento interpreta.
+        """
+        if self.cliente is not None and self.cliente.condicao_pagto_padrao:
+            return self.cliente.condicao_pagto_padrao
+        return "À VISTA"
 
 
 class PedidoItem(Base):
