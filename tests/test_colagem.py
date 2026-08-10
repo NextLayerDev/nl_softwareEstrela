@@ -16,8 +16,9 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.colagem import consolidar, normalizar_codigo, parse_colagem
+from app.core.colagem import consolidar, normalizar_codigo, parse_blocos, parse_colagem
 from app.core.numeros_br import parse_decimal_br, parse_int_br
+from app.models.cliente import Cliente
 from app.models.enums import EstoqueModo, StatusPedido
 from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
 from app.schemas.pedido import PedidoCreate
@@ -76,16 +77,27 @@ def _colar(db, usuario, texto):
     return pedido, resultado
 
 
-def _tsv(*linhas: str) -> str:
-    """Monta a colagem no formato exato da planilha da cliente (com o typo e tudo)."""
+def _tsv(*linhas: str, codigo_cliente: str = "265550", data: str = "07/08/2026") -> str:
+    """Monta um bloco no formato exato da planilha da cliente (com o typo e tudo)."""
     return "\n".join(
         [
-            "07/08/2026\t\t265550\t\t",
+            f"{data}\t\t{codigo_cliente}\t\t",
             "CODIGO\tDESCIRCAO\tQUANT.\tV. UNIT.\tSUB. TOTAL",
             *linhas,
             "\t\t\tTOTAL\tR$ 0,00",
         ]
     )
+
+
+def _cliente(db, *, nome="CLIENTE DA PLANILHA", codigo=None):
+    c = Cliente(nome=nome, codigo=codigo)
+    db.add(c)
+    db.flush()
+    return c
+
+
+def _lote(db, usuario, texto, **campos):
+    return colagem_service.criar_lote(db, PedidoCreate(**campos), texto, usuario.id, usuario.perfil)
 
 
 # ============================================================ 1. números pt-BR
@@ -430,3 +442,157 @@ def test_colagem_registra_auditoria_com_hash_e_resumo(db, usuario_vendedor):
     assert len(registro.depois["texto_sha256"]) == 64
     assert registro.depois["aplicados"][0]["match"] == "codigo_exato"
     assert "texto" not in registro.depois  # o conteúdo colado não é guardado
+
+
+# ============================================================ 5. planilha do dia (lote)
+def test_parse_blocos_fatia_a_planilha_do_dia():
+    """Cada cabeçalho abre um pedido; a data logo acima pertence ao bloco que vem."""
+    blocos = parse_blocos(
+        _tsv("K1\tCANETA\t10\tR$ 2,50\t", codigo_cliente="265550", data="07/08/2026")
+        + "\n"
+        + _tsv(
+            "A12\tCADERNO\t3\t\t", "B33\tLAPIS\t7\t\t", codigo_cliente="998877", data="08/08/2026"
+        )
+    )
+
+    assert len(blocos) == 2
+    assert (blocos[0].data, blocos[0].codigo_cliente) == ("07/08/2026", "265550")
+    assert [linha.codigo for linha in blocos[0].linhas] == ["K1"]
+    assert (blocos[1].data, blocos[1].codigo_cliente) == ("08/08/2026", "998877")
+    assert [linha.codigo for linha in blocos[1].linhas] == ["A12", "B33"]
+
+
+def test_parse_blocos_sem_repetir_o_cabecalho():
+    """Planilha que só repete a linha de data: ela sozinha abre o pedido seguinte."""
+    blocos = parse_blocos(
+        "07/08/2026\t\t111\t\t\n"
+        "CODIGO\tDESCIRCAO\tQUANT.\tV. UNIT.\n"
+        "K1\tCANETA\t2\t3,00\n"
+        "08/08/2026\t\t222\t\t\n"
+        "K2\tCADERNO\t5\t4,00"
+    )
+    assert [b.codigo_cliente for b in blocos] == ["111", "222"]
+    assert [[linha.codigo for linha in b.linhas] for b in blocos] == [["K1"], ["K2"]]
+
+
+def test_bloco_unico_continua_sendo_um_bloco_so():
+    blocos = parse_blocos(_tsv("K1\tCANETA\t2\t3,00\t"))
+    assert len(blocos) == 1 and blocos[0].codigo_cliente == "265550"
+
+
+def test_parse_colagem_achata_todos_os_blocos():
+    """É o que a colagem dentro de um rascunho usa: tudo entra no pedido aberto."""
+    lidas, _ = parse_colagem(_tsv("K1\tCANETA\t1\t2,00\t") + "\n" + _tsv("K2\tCADERNO\t2\t3,00\t"))
+    assert [linha.codigo for linha in lidas] == ["K1", "K2"]
+
+
+def test_planilha_do_dia_cria_um_pedido_por_bloco(db, usuario_vendedor):
+    p1 = _produto(db, pouca=Decimal("10.00"))
+    p2 = _produto(db, pouca=Decimal("10.00"))
+
+    lote = _lote(
+        db,
+        usuario_vendedor,
+        _tsv(f"{p1.codigo}\tx\t2\tR$ 5,00\t", codigo_cliente="111")
+        + "\n"
+        + _tsv(f"{p2.codigo}\tx\t3\tR$ 4,00\t", codigo_cliente="222"),
+    )
+
+    assert len(lote.pedidos) == 2
+    assert lote.tudo_casou
+    assert [p.total for p in lote.pedidos] == [Decimal("10.00"), Decimal("12.00")]
+    assert lote.total_aplicados == 2
+
+
+def test_codigo_do_bloco_amarra_o_cadastro_do_cliente(db, usuario_vendedor):
+    cliente = _cliente(db, nome="LOJA DO ZÉ", codigo="265550")
+    p = _produto(db)
+
+    lote = _lote(
+        db, usuario_vendedor, _tsv(f"{p.codigo}\tx\t1\tR$ 5,00\t", codigo_cliente="265550")
+    )
+
+    assert lote.pedidos[0].cliente_vinculado is True
+    assert lote.pedidos[0].cliente == cliente.nome
+
+
+def test_codigo_repetido_no_cadastro_nao_chuta_cliente(db, usuario_vendedor):
+    """Dois cadastros com o mesmo código: melhor CONSUMIDOR do que o cliente errado."""
+    _cliente(db, nome="LOJA A", codigo="777777")
+    _cliente(db, nome="LOJA B", codigo="777777")
+    p = _produto(db)
+
+    lote = _lote(
+        db, usuario_vendedor, _tsv(f"{p.codigo}\tx\t1\tR$ 5,00\t", codigo_cliente="777777")
+    )
+
+    assert lote.pedidos[0].cliente_vinculado is False
+    assert lote.pedidos[0].cliente == "CONSUMIDOR"
+
+
+def test_codigo_sem_cadastro_cai_nos_campos_da_tela(db, usuario_vendedor):
+    """Os campos digitados à esquerda são o padrão de quem o código não achou."""
+    p = _produto(db)
+
+    lote = _lote(
+        db,
+        usuario_vendedor,
+        _tsv(f"{p.codigo}\tx\t1\tR$ 5,00\t", codigo_cliente="000000"),
+        cliente_nome="Maria do Balcão",
+        cliente_telefone="11 97777-6666",
+    )
+
+    assert lote.pedidos[0].cliente_vinculado is False
+    assert lote.pedidos[0].cliente == "Maria do Balcão"
+
+
+def test_cadastro_do_bloco_vence_os_campos_da_tela(db, usuario_vendedor):
+    _cliente(db, nome="LOJA DO ZÉ", codigo="265550")
+    p = _produto(db)
+
+    lote = _lote(
+        db,
+        usuario_vendedor,
+        _tsv(f"{p.codigo}\tx\t1\tR$ 5,00\t", codigo_cliente="265550"),
+        cliente_nome="Maria do Balcão",
+    )
+
+    assert lote.pedidos[0].cliente == "LOJA DO ZÉ"
+
+
+def test_pendencia_num_bloco_nao_afeta_o_outro(db, usuario_vendedor):
+    bom = _produto(db, pouca=Decimal("10.00"))
+
+    lote = _lote(
+        db,
+        usuario_vendedor,
+        _tsv("NAOEXISTE-ZZZ\t\t5\tR$ 1,00\t", codigo_cliente="111")
+        + "\n"
+        + _tsv(f"{bom.codigo}\tx\t2\tR$ 5,00\t", codigo_cliente="222"),
+    )
+
+    assert len(lote.pedidos) == 2
+    assert lote.pedidos[0].resultado.aplicados == []
+    assert len(lote.pedidos[0].resultado.pendencias) == 1
+    assert len(lote.pedidos[1].resultado.aplicados) == 1
+    assert lote.pedidos[1].total == Decimal("10.00")
+
+
+def test_colar_a_planilha_do_dia_num_rascunho_junta_tudo(db, usuario_vendedor):
+    """No rascunho o vendedor escolheu UM pedido: blocos separados entram todos nele."""
+    p1 = _produto(db, pouca=Decimal("10.00"))
+    p2 = _produto(db, pouca=Decimal("10.00"))
+    pedido, _ = _colar(db, usuario_vendedor, _tsv(f"{p1.codigo}\tx\t1\tR$ 5,00\t"))
+
+    r = colagem_service.aplicar(
+        db,
+        pedido.id,
+        _tsv(f"{p1.codigo}\tx\t1\tR$ 5,00\t", codigo_cliente="111")
+        + "\n"
+        + _tsv(f"{p2.codigo}\tx\t2\tR$ 3,00\t", codigo_cliente="222"),
+        "vendedor",
+        usuario_vendedor.id,
+    )
+
+    assert len(r.aplicados) == 2
+    assert pedido.total == Decimal("16.00")  # 5 (antes) + 5 + 6

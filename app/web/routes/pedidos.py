@@ -13,6 +13,7 @@ from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.enums import StatusPedido
+from app.models.pedido import Pedido
 from app.models.usuario import Usuario
 from app.repositories.cliente_repo import cliente_repo
 from app.repositories.estoque_repo import estoque_repo
@@ -110,10 +111,15 @@ def colar_pedido_novo(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
-    """Cola a planilha e já abre o rascunho com os itens (painel da tela `/pedidos/novo`).
+    """Cola a planilha e já abre os pedidos (painel da tela `/pedidos/novo`).
+
+    Uma planilha do dia traz vários blocos empilhados e vira UM PEDIDO POR BLOCO. Um
+    bloco só continua caindo no caminho de sempre: casando tudo, redireciona direto
+    para o pedido pronto.
 
     Os campos de cliente vêm por `hx-include` do formulário ao lado, então quem o
-    vendedor digitou (ou vinculou) vale para o pedido criado aqui.
+    vendedor digitou (ou vinculou) vale como padrão — o código no topo de cada bloco
+    tem precedência sobre ele.
     """
     dados = PedidoCreate(
         cliente_id=int(cliente_id) if cliente_id.strip().isdigit() else None,
@@ -121,14 +127,22 @@ def colar_pedido_novo(
         cliente_telefone=cliente_telefone or None,
         observacao=observacao or None,
     )
-    pedido, resultado = pedido_controller.criar_colando(db, dados, texto, usuario)
+    lote = pedido_controller.criar_colando(db, dados, texto, usuario)
 
-    # Casou tudo: não há o que conferir, manda direto para o pedido pronto.
-    if resultado.tudo_casou:
-        return HTMLResponse("", headers={"HX-Redirect": f"/pedidos/{pedido.id}"})
+    if len(lote.pedidos) == 1:
+        unico = lote.pedidos[0]
+        # Casou tudo: não há o que conferir, manda direto para o pedido pronto.
+        if unico.resultado.tudo_casou:
+            return HTMLResponse("", headers={"HX-Redirect": f"/pedidos/{unico.pedido_id}"})
+        contexto = {
+            "user": usuario,
+            "pedido": db.get(Pedido, unico.pedido_id),
+            "resultado": unico.resultado,
+        }
+        return templates.TemplateResponse(request, "pedidos/_colagem_resultado.html", contexto)
 
-    contexto = {"user": usuario, "pedido": pedido, "resultado": resultado}
-    return templates.TemplateResponse(request, "pedidos/_colagem_resultado.html", contexto)
+    contexto = {"user": usuario, "lote": lote}
+    return templates.TemplateResponse(request, "pedidos/_colagem_lote.html", contexto)
 
 
 @router.get("/pedidos/{pedido_id}/colagem", response_class=HTMLResponse)

@@ -1,0 +1,88 @@
+{# Resultado de uma planilha do dia: vários blocos, vários pedidos criados.
+
+   Não dá para redirecionar para N pedidos, então esta é a tela de chegada: um cartão
+   por pedido, com o cliente que casou, o total e as pendências daquele bloco. #}
+{% from "_icones.html" import icone %}
+{% set n = lote.pedidos | length %}
+
+<div id="painel-colagem" class="card">
+  <h3 class="mb-3 text-sm font-semibold">Resultado da colagem</h3>
+
+  {% if n %}
+  <div class="alerta {{ 'alerta-ok' if lote.tudo_casou else 'alerta-erro' }}" role="status">
+    {{ "%d pedido criado" % n if n == 1 else "%d pedidos criados" % n }},
+    {{ lote.total_aplicados }} {{ "item" if lote.total_aplicados == 1 else "itens" }} no total.
+    {% if lote.total_pendencias %}
+      <strong>{{ lote.total_pendencias }}</strong>
+      {{ "linha não entrou" if lote.total_pendencias == 1 else "linhas não entraram" }}.
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="alerta alerta-erro" role="alert">
+    Não encontrei linhas de produto no texto colado. Copie as linhas da planilha,
+    incluindo a de cabeçalho.
+  </div>
+  {% endif %}
+
+  {% if n %}
+  <ul class="mt-4 flex flex-col gap-3">
+    {% for p in lote.pedidos %}
+    <li class="rounded-md border border-marca-borda p-3">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <p class="font-semibold">
+          Pedido {{ p.rotulo }}
+          <span class="ml-1 font-normal">{{ p.cliente }}</span>
+          {% if p.cliente_vinculado %}
+            <span class="selo-info ml-1" title="Casou pelo código {{ p.codigo_cliente }} da planilha">
+              cadastro
+            </span>
+          {% elif p.codigo_cliente %}
+            <span class="selo-neutro ml-1" title="Nenhum cadastro com o código {{ p.codigo_cliente }}">
+              código {{ p.codigo_cliente }} não achado
+            </span>
+          {% endif %}
+        </p>
+        <p class="text-sm">
+          {{ p.resultado.aplicados | length }}
+          {{ "item" if p.resultado.aplicados | length == 1 else "itens" }}
+          · <strong>{{ p.total | moeda }}</strong>
+        </p>
+      </div>
+
+      {% if p.data_planilha %}
+      <p class="mt-0.5 text-xs text-gray-400">Bloco de {{ p.data_planilha }}</p>
+      {% endif %}
+
+      {% if p.resultado.pendencias %}
+      <ul class="mt-2 flex flex-col gap-1">
+        {% for pend in p.resultado.pendencias %}
+        <li class="text-xs">
+          <span class="nav-icone inline-block h-3 w-3 align-[-2px] text-gold-600" aria-hidden="true">
+            {{ icone("alerta") }}
+          </span>
+          <span class="text-gray-400">linha {{ pend.linha }}</span>
+          {% if pend.codigo %}<span class="ml-1 font-mono font-semibold">{{ pend.codigo }}</span>{% endif %}
+          {% if pend.descricao %}<span class="ml-1">{{ pend.descricao | truncate(40) }}</span>{% endif %}
+          <span class="ml-1 text-gold-700">— {{ pend.motivo }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <div class="mt-2">
+        <a href="/pedidos/{{ p.pedido_id }}" class="btn-secundario text-xs">Abrir pedido</a>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <p class="mt-3 text-xs text-gray-500">
+    Cada bloco da planilha virou um pedido, todos em <strong>rascunho</strong> — nada foi
+    confirmado nem reservou estoque. Abra cada um para conferir e confirmar.
+  </p>
+  {% endif %}
+
+  <div class="mt-4">
+    <a href="/pedidos" class="btn-primario">Ver a lista de pedidos</a>
+  </div>
+</div>

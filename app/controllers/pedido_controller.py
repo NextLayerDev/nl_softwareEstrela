@@ -8,7 +8,7 @@ from app.core.errors import NaoEncontradoError
 from app.models.pedido import Pedido, PedidoItem
 from app.models.usuario import Usuario
 from app.repositories.pedido_repo import pedido_repo
-from app.schemas.colagem import ResultadoColagem
+from app.schemas.colagem import ResultadoColagem, ResultadoLote
 from app.schemas.pedido import ItemAdicionar, PedidoCreate
 from app.services.colagem_service import colagem_service
 from app.services.pedido_service import pedido_service
@@ -53,9 +53,9 @@ class PedidoController:
     # ----------------------------------------------------------- colagem de planilha
     def criar_colando(
         self, db: Session, dados: PedidoCreate, texto: str, usuario: Usuario
-    ) -> tuple[Pedido, ResultadoColagem]:
-        """Abre o rascunho já com os itens da planilha colada (tela `/pedidos/novo`)."""
-        return colagem_service.criar_com_colagem(db, dados, texto, usuario.id, usuario.perfil)
+    ) -> ResultadoLote:
+        """Abre um pedido por bloco da planilha colada (tela `/pedidos/novo`)."""
+        return colagem_service.criar_lote(db, dados, texto, usuario.id, usuario.perfil)
 
     def colar_itens(
         self, db: Session, pedido_id: int, texto: str, usuario: Usuario

@@ -60,3 +60,35 @@ class ResultadoColagem(BaseModel):
     def tudo_casou(self) -> bool:
         """Sem pendência e com pelo menos um item: dá para mandar o vendedor direto ao pedido."""
         return bool(self.aplicados) and not self.pendencias
+
+
+class PedidoColado(BaseModel):
+    """Um pedido criado a partir de um bloco da planilha do dia."""
+
+    pedido_id: int
+    rotulo: str  # "#123" — número do pedido, ou o id enquanto ele é rascunho
+    cliente: str
+    cliente_vinculado: bool = False  # achou o cadastro pelo código do bloco
+    codigo_cliente: str | None = None
+    data_planilha: str | None = None
+    total: Decimal
+    resultado: ResultadoColagem
+
+
+class ResultadoLote(BaseModel):
+    """Resultado de uma planilha inteira: vários blocos, vários pedidos."""
+
+    pedidos: list[PedidoColado] = []
+    ignoradas: list[LinhaIgnoradaOut] = []  # só quando nenhum bloco tinha produto
+
+    @property
+    def total_aplicados(self) -> int:
+        return sum(len(p.resultado.aplicados) for p in self.pedidos)
+
+    @property
+    def total_pendencias(self) -> int:
+        return sum(len(p.resultado.pendencias) for p in self.pedidos)
+
+    @property
+    def tudo_casou(self) -> bool:
+        return bool(self.pedidos) and not self.total_pendencias

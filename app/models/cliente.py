@@ -13,6 +13,11 @@ class Cliente(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(String(160), index=True)
+    # Código do cliente na planilha da loja — é o número que aparece no topo de cada
+    # bloco de pedido no Excel. É por ele que a colagem em lote amarra cada bloco ao
+    # cadastro certo. Indexado mas NÃO único: código repetido no cadastro faz a busca
+    # devolver "ambíguo" e o pedido cair em CONSUMIDOR, em vez de chutar um cliente.
+    codigo: Mapped[str | None] = mapped_column(String(40), index=True)
     cnpj_cpf: Mapped[str | None] = mapped_column(String(20))
     telefone: Mapped[str | None] = mapped_column(String(40))
     telefone2: Mapped[str | None] = mapped_column(String(40))

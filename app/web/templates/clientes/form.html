@@ -23,6 +23,15 @@
              value="{{ cliente.nome if cliente else '' }}" />
     </div>
     <div>
+      <label class="label" for="codigo">Código na planilha</label>
+      <input id="codigo" class="input" name="codigo" autocomplete="off"
+             value="{{ cliente.codigo if cliente and cliente.codigo else '' }}" />
+      <p class="mt-1 text-xs text-gray-500">
+        O número que aparece no topo do bloco deste cliente na planilha do Excel.
+        É por ele que a colagem em lote acha o cadastro certo.
+      </p>
+    </div>
+    <div>
       <label class="label" for="cnpj_cpf">CNPJ/CPF</label>
       <input id="cnpj_cpf" class="input" name="cnpj_cpf" value="{{ cliente.cnpj_cpf if cliente and cliente.cnpj_cpf else '' }}" />
     </div>

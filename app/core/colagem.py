@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from app.core.numeros_br import parse_decimal_br, parse_int_br
@@ -70,6 +70,22 @@ class LinhaIgnorada:
     numero: int
     bruto: str
     motivo: str
+
+
+@dataclass
+class BlocoColado:
+    """Um pedido dentro da colagem.
+
+    A planilha do dia empilha vários blocos iguais ao de um pedido só — cada um com sua
+    linha de data + código do cliente, seu cabeçalho e seu rodapé de TOTAL. Cada bloco
+    vira um pedido separado.
+    """
+
+    numero: int  # linha onde o bloco começa, para o vendedor achar na planilha
+    data: str | None = None
+    codigo_cliente: str | None = None
+    linhas: list[LinhaColada] = field(default_factory=list)
+    ignoradas: list[LinhaIgnorada] = field(default_factory=list)
 
 
 # ----------------------------------------------------------------- normalização
@@ -166,61 +182,125 @@ def _pegar(celulas: list[str], mapa: dict[str, int], papel: str) -> str:
 
 
 # ----------------------------------------------------------------- parse
-def parse_colagem(texto: str) -> tuple[list[LinhaColada], list[LinhaIgnorada]]:
-    """Lê o bloco colado. Devolve (linhas de produto, linhas descartadas com motivo)."""
+def _cabecalho_da_planilha(celulas: list[str]) -> tuple[str, str | None] | None:
+    """Lê a linha "07/08/2026 … 265550": devolve (data, código do cliente).
+
+    O código é o primeiro número solto depois da data. Numa planilha de um pedido só
+    ele não fazia falta; numa planilha do dia é o que diz de quem é cada bloco.
+    """
+    if not celulas or not _DATA.match(celulas[0].strip()):
+        return None
+    for celula in celulas[1:]:
+        chave = normalizar_codigo(celula)
+        if chave:
+            return celulas[0].strip(), chave
+    return celulas[0].strip(), None
+
+
+def parse_blocos(texto: str) -> list[BlocoColado]:
+    """Fatia a colagem em pedidos.
+
+    Cada linha de cabeçalho (CÓDIGO + QUANT.) abre um bloco novo, e a linha de data que
+    vier logo antes dela pertence a esse bloco — é assim que a planilha do dia, com
+    várias tabelinhas empilhadas, vira vários pedidos em vez de um só gigante.
+    """
     if not texto or not texto.strip():
-        return [], []
+        return []
     if len(texto) > MAX_CHARS:
-        return [], [
-            LinhaIgnorada(0, "", f"Colagem grande demais (limite de {MAX_CHARS} caracteres).")
+        return [
+            BlocoColado(
+                numero=0,
+                ignoradas=[
+                    LinhaIgnorada(
+                        0, "", f"Colagem grande demais (limite de {MAX_CHARS} caracteres)."
+                    )
+                ],
+            )
         ]
 
     brutas = texto.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     if len(brutas) > MAX_LINHAS:
-        return [], [
-            LinhaIgnorada(0, "", f"Colagem com {len(brutas)} linhas — o limite é {MAX_LINHAS}.")
+        return [
+            BlocoColado(
+                numero=0,
+                ignoradas=[
+                    LinhaIgnorada(
+                        0, "", f"Colagem com {len(brutas)} linhas — o limite é {MAX_LINHAS}."
+                    )
+                ],
+            )
         ]
 
-    # O separador é decidido no bloco inteiro, não linha a linha: cópia de Excel é
+    # O separador é decidido na colagem inteira, não linha a linha: cópia de Excel é
     # sempre TSV, e uma linha solta sem TAB no meio não muda o formato da planilha.
     usa_tab = any("\t" in linha for linha in brutas)
 
-    lidas: list[LinhaColada] = []
-    ignoradas: list[LinhaIgnorada] = []
+    blocos: list[BlocoColado] = []
+    atual = BlocoColado(numero=1)
     mapa: dict[str, int] = dict(_POSICIONAL)
+    # A linha de data vem ANTES do cabeçalho, então fica guardada aqui — junto com a
+    # própria linha, para ela ser listada como ignorada no bloco a que pertence, e não
+    # no bloco anterior que por acaso ainda estava aberto.
+    pendente: tuple[str, str | None, LinhaIgnorada] | None = None
+
+    def _fechar() -> None:
+        if atual.linhas or atual.ignoradas:
+            blocos.append(atual)
+
+    def _abrir(numero: int) -> BlocoColado:
+        novo = BlocoColado(numero=numero)
+        if pendente is not None:
+            novo.data, novo.codigo_cliente, ignorada = pendente
+            novo.ignoradas.append(ignorada)
+        return novo
 
     for numero, bruto in enumerate(brutas, start=1):
         celulas = _celulas(bruto, usa_tab)
         if not any(celulas):
             continue  # linha em branco não precisa virar ruído na tela
 
+        planilha = _cabecalho_da_planilha(celulas)
+        if planilha is not None:
+            data, codigo_cliente = planilha
+            pendente = (
+                data,
+                codigo_cliente,
+                LinhaIgnorada(numero, bruto.strip(), "cabeçalho da planilha"),
+            )
+            continue
+
         cabecalho = _mapear_cabecalho(celulas)
         if cabecalho is not None:
+            # Cabeçalho novo = pedido novo. O que já foi lido vira um bloco fechado.
+            _fechar()
+            atual = _abrir(numero)
             mapa = cabecalho
-            # Tudo que veio antes do cabeçalho é enfeite da planilha — a data e o número
-            # de controle do Excel, que o sistema ignora de propósito.
-            ignoradas.extend(
-                LinhaIgnorada(linha.numero, linha.bruto, "antes do cabeçalho") for linha in lidas
-            )
-            lidas.clear()
-            ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "cabeçalho da tabela"))
+            atual.ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "cabeçalho da tabela"))
+            pendente = None
             continue
+
+        if pendente is not None:
+            if atual.linhas:
+                # Planilha sem repetir o cabeçalho: a própria linha de data abre o pedido.
+                _fechar()
+                atual = _abrir(numero)
+            else:
+                atual.data, atual.codigo_cliente, ignorada = pendente
+                atual.ignoradas.append(ignorada)
+            pendente = None
 
         codigo = _pegar(celulas, mapa, "codigo")
         descricao = _pegar(celulas, mapa, "descricao")
 
-        if _DATA.match(codigo):
-            ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "cabeçalho da planilha"))
-            continue
         if not codigo and any(normalizar_codigo(c).startswith("TOTAL") for c in celulas):
-            ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "rodapé de total"))
+            atual.ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "rodapé de total"))
             continue
         if not codigo and not descricao:
-            ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "sem código nem descrição"))
+            atual.ignoradas.append(LinhaIgnorada(numero, bruto.strip(), "sem código nem descrição"))
             continue
 
         preco = parse_decimal_br(_pegar(celulas, mapa, "preco_unit"))
-        lidas.append(
+        atual.linhas.append(
             LinhaColada(
                 numero=numero,
                 codigo=codigo,
@@ -233,6 +313,21 @@ def parse_colagem(texto: str) -> tuple[list[LinhaColada], list[LinhaIgnorada]]:
             )
         )
 
+    _fechar()
+    return blocos
+
+
+def parse_colagem(texto: str) -> tuple[list[LinhaColada], list[LinhaIgnorada]]:
+    """Visão achatada da colagem: todas as linhas, de todos os blocos, numa lista só.
+
+    É o que a colagem dentro de um rascunho já aberto usa — ali o vendedor escolheu um
+    pedido específico, então blocos separados na planilha entram todos nele.
+    """
+    lidas: list[LinhaColada] = []
+    ignoradas: list[LinhaIgnorada] = []
+    for bloco in parse_blocos(texto):
+        lidas.extend(bloco.linhas)
+        ignoradas.extend(bloco.ignoradas)
     return lidas, ignoradas
 
 

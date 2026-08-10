@@ -20,6 +20,7 @@ class DadosFiscais(BaseModel):
 
 class ClienteCreate(DadosFiscais):
     nome: str
+    codigo: str | None = None
     cnpj_cpf: str | None = None
     telefone: str | None = None
     telefone2: str | None = None
@@ -41,6 +42,7 @@ class ClienteCreate(DadosFiscais):
 
 class ClienteUpdate(DadosFiscais):
     nome: str | None = None
+    codigo: str | None = None
     cnpj_cpf: str | None = None
     telefone: str | None = None
     telefone2: str | None = None
@@ -57,6 +59,7 @@ class ClienteRead(DadosFiscais):
 
     id: int
     nome: str
+    codigo: str | None
     cnpj_cpf: str | None
     telefone: str | None
     telefone2: str | None

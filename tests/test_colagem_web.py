@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
+from app.models.cliente import Cliente
 from app.models.enums import EstoqueModo
 from app.models.produto import Produto, ProdutoVariacao
 
@@ -174,3 +175,78 @@ def test_rotas_antigas_de_item_nao_marcam_o_bloco_como_oob(client_admin, produto
     assert 'id="bloco-itens" class=' in r.text
     assert 'id="bloco-itens" hx-swap-oob' not in r.text
     assert 'hx-swap-oob="true"' in r.text  # o _acoes.html continua vindo OOB
+
+
+# --------------------------------------------------------------------- planilha do dia
+@pytest.fixture
+def outro_produto(db):
+    p = Produto(
+        codigo=f"WEB{uuid.uuid4().hex[:8].upper()}",
+        descricao="SEGUNDO PRODUTO DE COLAGEM WEB",
+        preco_pouca_qtd=Decimal("10.00"),
+        preco_muita_qtd=Decimal("8.00"),
+        preco_minimo=Decimal("0.00"),
+    )
+    db.add(p)
+    db.flush()
+    db.add(
+        ProdutoVariacao(
+            produto_id=p.id,
+            cor="preto",
+            estoque_modo=EstoqueModo.EXATO,
+            estoque_fisico=1000,
+            estoque_reservado=0,
+        )
+    )
+    db.flush()
+    return p
+
+
+def _bloco(*linhas: str, codigo_cliente: str, data: str = "07/08/2026") -> str:
+    return "\n".join(
+        [
+            f"{data}\t\t{codigo_cliente}\t\t",
+            "CODIGO\tDESCIRCAO\tQUANT.\tV. UNIT.\tSUB. TOTAL",
+            *linhas,
+            "\t\t\tTOTAL\tR$ 0,00",
+        ]
+    )
+
+
+def test_planilha_do_dia_cria_um_pedido_por_bloco(client_admin, produto, outro_produto) -> None:
+    r = _colar(
+        client_admin,
+        _bloco(f"{produto.codigo}\tx\t2\tR$ 9,00\t", codigo_cliente="111")
+        + "\n"
+        + _bloco(f"{outro_produto.codigo}\tx\t3\tR$ 4,00\t", codigo_cliente="222"),
+    )
+
+    assert r.status_code == 200
+    # Não dá para redirecionar para dois pedidos: a tela de chegada é o resumo do lote.
+    assert "HX-Redirect" not in r.headers
+    assert "2 pedidos criados" in r.text
+    assert "R$ 18,00" in r.text
+    assert "R$ 12,00" in r.text
+    assert r.text.count("Abrir pedido") == 2
+
+
+def test_bloco_com_codigo_conhecido_mostra_o_cadastro(client_admin, db, produto, outro_produto):
+    db.add(Cliente(nome="LOJA DO ZE", codigo="265550"))
+    db.flush()
+
+    r = _colar(
+        client_admin,
+        _bloco(f"{produto.codigo}\tx\t1\tR$ 9,00\t", codigo_cliente="265550")
+        + "\n"
+        + _bloco(f"{outro_produto.codigo}\tx\t1\tR$ 9,00\t", codigo_cliente="000000"),
+    )
+
+    assert "LOJA DO ZE" in r.text
+    assert "cadastro" in r.text
+    assert "código 000000 não achado" in r.text
+
+
+def test_um_bloco_so_continua_redirecionando(client_admin, produto) -> None:
+    """A planilha de um pedido só não pode ganhar uma tela de resumo no caminho."""
+    r = _colar(client_admin, _bloco(f"{produto.codigo}\tx\t2\tR$ 9,00\t", codigo_cliente="111"))
+    assert re.fullmatch(r"/pedidos/\d+", r.headers.get("HX-Redirect", ""))

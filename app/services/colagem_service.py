@@ -30,22 +30,28 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.colagem import (
     QTD_MAXIMA,
+    BlocoColado,
     LinhaColada,
+    LinhaIgnorada,
     consolidar,
     normalizar_codigo,
     normalizar_texto,
+    parse_blocos,
     parse_colagem,
 )
 from app.core.errors import DominioError
 from app.models.auditoria import Auditoria
 from app.models.pedido import Pedido
 from app.models.produto import Produto, ProdutoVariacao
+from app.repositories.cliente_repo import cliente_repo
 from app.repositories.produto_repo import produto_repo
 from app.schemas.colagem import (
     ItemAplicado,
     LinhaIgnoradaOut,
+    PedidoColado,
     Pendencia,
     ResultadoColagem,
+    ResultadoLote,
     SugestaoProduto,
 )
 from app.schemas.pedido import ItemAdicionar, PedidoCreate
@@ -129,17 +135,87 @@ class ColagemService:
         db.flush()
         return pedido, self.aplicar(db, pedido.id, texto, perfil, usuario_id)
 
+    def criar_lote(
+        self, db: Session, dados: PedidoCreate, texto: str, usuario_id: int, perfil: str
+    ) -> ResultadoLote:
+        """Uma planilha do dia, com vários blocos empilhados, vira UM PEDIDO POR BLOCO.
+
+        Cada bloco traz no topo a data e o código do cliente daquela venda. O código do
+        bloco manda no vínculo; os campos de cliente digitados na tela valem como padrão,
+        para os blocos cujo código não achou cadastro.
+
+        Um bloco só cai no caminho de sempre — é o mesmo método que a colagem de um
+        pedido único usa.
+        """
+        blocos = [b for b in parse_blocos(texto) if b.linhas]
+        lote = ResultadoLote()
+
+        if not blocos:
+            # Nada de produto no texto: devolve o que foi descartado para a tela explicar.
+            _, ignoradas = parse_colagem(texto)
+            lote.ignoradas = [
+                LinhaIgnoradaOut(linha=i.numero, bruto=i.bruto, motivo=i.motivo) for i in ignoradas
+            ]
+            return lote
+
+        for bloco in blocos:
+            cliente_id, nome, telefone, vinculado = self._cliente_do_bloco(db, bloco, dados)
+            pedido = pedido_service.criar(
+                db,
+                cliente_id,
+                usuario_id,
+                dados.observacao,
+                cliente_nome=nome,
+                cliente_telefone=telefone,
+            )
+            # Materializa o id e deixa a Session LIMPA antes do primeiro SAVEPOINT do
+            # bloco — ver o comentário do `_aplicar_linhas`.
+            db.flush()
+            resultado = self._aplicar_linhas(
+                db, pedido.id, bloco.linhas, bloco.ignoradas, texto, perfil, usuario_id
+            )
+            lote.pedidos.append(
+                PedidoColado(
+                    pedido_id=pedido.id,
+                    rotulo=f"#{pedido.numero or pedido.id}",
+                    cliente=pedido.nome_cliente,
+                    cliente_vinculado=vinculado,
+                    codigo_cliente=bloco.codigo_cliente,
+                    data_planilha=bloco.data,
+                    total=pedido.total,
+                    resultado=resultado,
+                )
+            )
+        return lote
+
     def aplicar(
         self, db: Session, pedido_id: int, texto: str, perfil: str, usuario_id: int
     ) -> ResultadoColagem:
-        """Lê o texto colado e grava no rascunho o que casou."""
+        """Lê o texto colado e grava no rascunho o que casou.
+
+        Aqui a colagem é sempre ACHATADA: o vendedor abriu um pedido específico, então
+        blocos separados na planilha entram todos nele. Quem fatia em vários pedidos é o
+        `criar_lote`, na tela de novo pedido.
+        """
+        lidas, ignoradas = parse_colagem(texto)
+        return self._aplicar_linhas(db, pedido_id, lidas, ignoradas, texto, perfil, usuario_id)
+
+    def _aplicar_linhas(
+        self,
+        db: Session,
+        pedido_id: int,
+        lidas: list[LinhaColada],
+        ignoradas: list[LinhaIgnorada],
+        texto: str,
+        perfil: str,
+        usuario_id: int,
+    ) -> ResultadoColagem:
+        """Casa e grava um conjunto de linhas num rascunho. É o miolo das duas portas."""
         pedido = pedido_service.carregar_editavel(db, pedido_id)
         itens_antes = len(pedido.itens)
         total_antes = pedido.total
 
-        lidas, ignoradas = parse_colagem(texto)
         lidas = consolidar(lidas)
-
         resultado = ResultadoColagem(
             pedido_id=pedido_id,
             linhas_lidas=len(lidas),
@@ -158,6 +234,22 @@ class ColagemService:
 
         self._auditar(db, pedido_id, usuario_id, texto, itens_antes, total_antes, resultado)
         return resultado
+
+    def _cliente_do_bloco(
+        self, db: Session, bloco: BlocoColado, padrao: PedidoCreate
+    ) -> tuple[int | None, str | None, str | None, bool]:
+        """De quem é este bloco. Devolve (cliente_id, nome livre, telefone, vinculado?).
+
+        O código do topo do bloco vence: ele é específico daquela venda, enquanto os
+        campos da tela são um padrão digitado uma vez para a planilha inteira. Código
+        que não acha cadastro (ou que acha dois) cai no padrão, e o pedido nasce como
+        CONSUMIDOR se nem isso houver — nunca chutando um cliente.
+        """
+        if bloco.codigo_cliente:
+            cliente = cliente_repo.por_codigo(db, bloco.codigo_cliente)
+            if cliente is not None:
+                return cliente.id, None, None, True
+        return padrao.cliente_id, padrao.cliente_nome, padrao.cliente_telefone, False
 
     # ------------------------------------------------------------- gravação
     def _gravar(

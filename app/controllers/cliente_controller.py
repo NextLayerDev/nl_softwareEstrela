@@ -52,6 +52,7 @@ class ClienteController:
     def criar(self, db: Session, form: dict) -> Cliente:
         dados = ClienteCreate(
             nome=form.get("nome", ""),
+            codigo=(form.get("codigo") or None),
             cnpj_cpf=(form.get("cnpj_cpf") or None),
             telefone=(form.get("telefone") or None),
             telefone2=(form.get("telefone2") or None),
@@ -68,6 +69,7 @@ class ClienteController:
     def atualizar(self, db: Session, cliente_id: int, form: dict) -> Cliente:
         dados = ClienteUpdate(
             nome=form.get("nome") or None,
+            codigo=(form.get("codigo") or None),
             cnpj_cpf=(form.get("cnpj_cpf") or None),
             telefone=(form.get("telefone") or None),
             telefone2=(form.get("telefone2") or None),
