@@ -68,6 +68,7 @@ class ProdutoController:
             preco_promocional=_dec_opt(form.get("preco_promocional")),
             qtd_corte_atacado=_int_opt(form.get("qtd_corte_atacado")),
             preco_custo=_dec(form.get("preco_custo")),
+            preco_minimo=_dec(form.get("preco_minimo")),
             observacao=(form.get("observacao") or None),
             ativo=form.get("ativo") in ("on", "true", "1", True),
             publicar_catalogo=form.get("publicar_catalogo") in ("on", "true", "1", True),
@@ -77,23 +78,29 @@ class ProdutoController:
         return produto_service.criar(db, dados)
 
     def atualizar(self, db: Session, produto_id: int, form: dict) -> Produto:
-        dados = ProdutoUpdate(
-            codigo=form.get("codigo") or None,
-            descricao=form.get("descricao") or None,
-            categoria_id=_int_opt(form.get("categoria_id")),
-            unidades_por_caixa=_int_opt(form.get("unidades_por_caixa")),
-            localizacao=(form.get("localizacao") or None),
-            preco_pouca_qtd=_dec(form.get("preco_pouca_qtd")),
-            preco_muita_qtd=_dec(form.get("preco_muita_qtd")),
-            preco_promocional=_dec_opt(form.get("preco_promocional")),
-            qtd_corte_atacado=_int_opt(form.get("qtd_corte_atacado")),
-            preco_custo=_dec(form.get("preco_custo")),
-            observacao=(form.get("observacao") or None),
-            ativo=form.get("ativo") in ("on", "true", "1", True),
-            publicar_catalogo=form.get("publicar_catalogo") in ("on", "true", "1", True),
-            codigos_alt=self._parse_codigos(form),
-        )
-        return produto_service.atualizar(db, produto_id, dados)
+        campos: dict = {
+            "codigo": form.get("codigo") or None,
+            "descricao": form.get("descricao") or None,
+            "categoria_id": _int_opt(form.get("categoria_id")),
+            "unidades_por_caixa": _int_opt(form.get("unidades_por_caixa")),
+            "localizacao": (form.get("localizacao") or None),
+            "preco_pouca_qtd": _dec(form.get("preco_pouca_qtd")),
+            "preco_muita_qtd": _dec(form.get("preco_muita_qtd")),
+            "preco_promocional": _dec_opt(form.get("preco_promocional")),
+            "qtd_corte_atacado": _int_opt(form.get("qtd_corte_atacado")),
+            "observacao": (form.get("observacao") or None),
+            "ativo": form.get("ativo") in ("on", "true", "1", True),
+            "publicar_catalogo": form.get("publicar_catalogo") in ("on", "true", "1", True),
+            "codigos_alt": self._parse_codigos(form),
+        }
+        # `preco_custo` e `preco_minimo` só aparecem no formulário do admin. Passá-los
+        # sempre significaria zerar os dois toda vez que um vendedor salvasse o produto
+        # — `_dec` devolve 0 para campo ausente, e o service usa exclude_unset, então
+        # a única forma de dizer "não mexe" é não mandar a chave.
+        for campo in ("preco_custo", "preco_minimo"):
+            if campo in form:
+                campos[campo] = _dec(form.get(campo))
+        return produto_service.atualizar(db, produto_id, ProdutoUpdate(**campos))
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
         return produto_service.inativar(db, produto_id)

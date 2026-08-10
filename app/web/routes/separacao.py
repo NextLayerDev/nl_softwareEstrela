@@ -12,7 +12,7 @@ from app.models.usuario import Usuario
 
 router = APIRouter()
 
-_SEP = ("admin", "funcionario")
+_SEP = ("admin", "vendedor")
 
 
 # ===================================================================== FILA

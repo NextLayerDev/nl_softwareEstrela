@@ -73,6 +73,65 @@ class EstoqueRepository:
             )
         return list(db.scalars(stmt))
 
+    def busca_orcamento(self, db: Session, termo: str, limit: int = 10) -> list[ProdutoVariacao]:
+        """Busca da tela pública de orçamento: código, código alternativo e descrição.
+
+        Difere da `busca_localizacao` em duas coisas que importam por ser pública:
+        exige `Produto.ativo` (produto descontinuado não pode ser orçado) e NÃO casa por
+        localização — onde a mercadoria fica guardada é informação interna da loja e não
+        tem por que virar chave de busca para quem está do lado de fora.
+        """
+        termo = (termo or "").strip()
+        if len(termo) < 2:
+            return []
+
+        sub_alt = select(ProdutoCodigoAlt.produto_id).where(
+            ProdutoCodigoAlt.codigo_alt.ilike(f"%{termo}%")
+        )
+        stmt = (
+            select(ProdutoVariacao)
+            .join(Produto, ProdutoVariacao.produto_id == Produto.id)
+            .options(joinedload(ProdutoVariacao.produto))
+            .where(
+                ProdutoVariacao.ativo.is_(True),
+                Produto.ativo.is_(True),
+                or_(
+                    Produto.codigo.ilike(f"%{termo}%"),
+                    Produto.descricao.op("%")(termo),
+                    Produto.descricao.ilike(f"%{termo}%"),
+                    ProdutoVariacao.cor.ilike(f"%{termo}%"),
+                    Produto.id.in_(sub_alt),
+                ),
+            )
+            .order_by(Produto.descricao, ProdutoVariacao.cor)
+            .limit(limit)
+        )
+        return list(db.scalars(stmt))
+
+    def por_codigo_exato(self, db: Session, codigo: str) -> ProdutoVariacao | None:
+        """Primeira variação ativa de um produto pelo código exato (ou código alternativo).
+
+        É o caminho do leitor de código de barras na tela de orçamento: o scanner
+        "digita" os dígitos e manda Enter, sem passar pela lista de sugestões.
+        """
+        codigo = (codigo or "").strip()
+        if not codigo:
+            return None
+        sub_alt = select(ProdutoCodigoAlt.produto_id).where(ProdutoCodigoAlt.codigo_alt == codigo)
+        stmt = (
+            select(ProdutoVariacao)
+            .join(Produto, ProdutoVariacao.produto_id == Produto.id)
+            .options(joinedload(ProdutoVariacao.produto))
+            .where(
+                ProdutoVariacao.ativo.is_(True),
+                Produto.ativo.is_(True),
+                or_(Produto.codigo == codigo, Produto.id.in_(sub_alt)),
+            )
+            .order_by(ProdutoVariacao.id)
+            .limit(1)
+        )
+        return db.scalar(stmt)
+
     def listar_alertas(self, db: Session, limit: int = 200) -> list[ProdutoVariacao]:
         """Variações em atenção: EXATO <= mínimo OU aproximado POUCO/ACABOU."""
         stmt = (

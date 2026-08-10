@@ -2,7 +2,7 @@
 {% for conta in contas %}
 <tr>
   <td>#{{ conta.pedido.numero or conta.pedido_id }}</td>
-  <td>{{ conta.pedido.cliente.nome if conta.pedido and conta.pedido.cliente else "—" }}</td>
+  <td>{{ conta.pedido.nome_cliente if conta.pedido else "—" }}</td>
   <td class="text-center">{{ conta.parcela }}</td>
   <td class="text-right">{{ conta.valor | moeda }}</td>
   <td class="text-center">{{ conta.vencimento.strftime("%d/%m/%Y") }}</td>

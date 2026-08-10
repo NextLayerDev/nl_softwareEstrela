@@ -12,7 +12,7 @@
     </form>
   {% endif %}
   {% if pedido.status in ("confirmado", "separacao", "separado") %}
-    {% if user.perfil in ("admin", "financeiro", "dev") %}
+    {% if e_admin(user.perfil) %}
     <form method="post" action="/pedidos/{{ pedido.id }}/faturar">
       <button class="btn-primario">
         <span class="nav-icone" aria-hidden="true">{{ icone("dinheiro") }}</span> Faturar

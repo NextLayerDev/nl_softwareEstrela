@@ -170,8 +170,8 @@ def test_foto_rota_exige_login() -> None:
         db.close()
 
 
-def test_upload_rbac_bloqueia_nao_admin() -> None:
-    """Vendedor e funcionário não podem enviar imagem (403)."""
+def test_upload_rbac_exige_sessao() -> None:
+    """Sem sessão não sobe foto; o vendedor, que edita produto, sobe."""
     db = SessionLocal()
     try:
         v = _criar_variacao(db)
@@ -180,16 +180,25 @@ def test_upload_rbac_bloqueia_nao_admin() -> None:
         db.close()
 
     client = TestClient(app)
-    for email in ("vendedor@estrela.local", "funcionario@estrela.local"):
-        tok = client.post(
-            "/login", data={"email": email, "senha": "estrela123"}, follow_redirects=False
-        ).cookies.get("estrela_token")
-        r = client.post(
-            f"/produtos/variacao/{vid}/imagem",
-            cookies={"estrela_token": tok},
-            files={"imagem": ("x.png", _png_bytes(), "image/png")},
-        )
-        assert r.status_code == 403
+    anonimo = client.post(
+        f"/produtos/variacao/{vid}/imagem",
+        files={"imagem": ("x.png", _png_bytes(), "image/png")},
+        follow_redirects=False,
+    )
+    assert anonimo.status_code == 303
+    assert anonimo.headers["location"] == "/login"
+
+    tok = client.post(
+        "/login",
+        data={"email": "vendedor@estrela.local", "senha": "estrela123"},
+        follow_redirects=False,
+    ).cookies.get("estrela_token")
+    r = client.post(
+        f"/produtos/variacao/{vid}/imagem",
+        cookies={"estrela_token": tok},
+        files={"imagem": ("x.png", _png_bytes(), "image/png")},
+    )
+    assert r.status_code == 200
 
     db = SessionLocal()
     try:

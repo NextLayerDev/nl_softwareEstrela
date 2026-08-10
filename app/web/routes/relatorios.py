@@ -8,15 +8,15 @@ from app.controllers.relatorio_controller import relatorio_controller
 from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
-from app.models.enums import tem_perfil
+from app.models.enums import e_admin
 from app.models.usuario import Usuario
 
 router = APIRouter()
 
 XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-_VENDAS_ROLES = require_role("admin", "vendedor", "financeiro")
-_FINANCEIRO_ROLES = require_role("admin", "financeiro")
+_VENDAS_ROLES = require_role("admin", "vendedor")
+_FINANCEIRO_ROLES = require_role("admin")
 
 
 def _xlsx(conteudo: bytes, nome: str) -> Response:
@@ -28,8 +28,13 @@ def _xlsx(conteudo: bytes, nome: str) -> Response:
 
 
 def _vendedor_forcado(usuario: Usuario) -> int | None:
-    """Vendedor só enxerga os próprios pedidos."""
-    return usuario.id if usuario.perfil == "vendedor" else None
+    """Filtro obrigatório de vendedor no relatório.
+
+    Hoje ninguém é forçado: com dois perfis a loja tem um balcão só, e o vendedor
+    enxerga o movimento inteiro (mesma decisão do `pedido_controller`). O filtro por
+    vendedor continua disponível como escolha, pelo `vendedor_id` do formulário.
+    """
+    return None
 
 
 # ----------------- Hub -----------------
@@ -41,7 +46,7 @@ def hub_relatorios(
     contexto = {
         "user": usuario,
         "titulo": "Relatórios",
-        "pode_financeiro": tem_perfil(usuario.perfil, "admin", "financeiro"),
+        "pode_financeiro": e_admin(usuario.perfil),
     }
     return templates.TemplateResponse(request, "relatorios/index.html", contexto)
 
@@ -113,7 +118,7 @@ def export_abc(
     return _xlsx(conteudo, "curva_abc.xlsx")
 
 
-# ----------------- Valorização (SÓ admin/financeiro) -----------------
+# ----------------- Valorização (SÓ admin) -----------------
 @router.get("/relatorios/valorizacao", response_class=HTMLResponse)
 def relatorio_valorizacao(
     request: Request,

@@ -35,6 +35,11 @@
     {% if sugestao.preco_promocional %}
     <p class="text-gold-700">Promoção disponível: {{ sugestao.preco_promocional | moeda }}</p>
     {% endif %}
+    {# O piso aparece para os dois perfis: é preço de VENDA, não custo, e escondê-lo do
+       vendedor só faria ele descobrir a trava levando erro na cara ao adicionar. #}
+    {% if produto.preco_minimo and produto.preco_minimo > 0 %}
+    <p class="text-aviso">Preço mínimo: <strong>{{ produto.preco_minimo | moeda }}</strong> por unidade</p>
+    {% endif %}
     {% if produto.unidades_por_caixa %}
     <p class="text-gray-500">Caixa: {{ produto.unidades_por_caixa }} un</p>
     {% endif %}

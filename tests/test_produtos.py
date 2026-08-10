@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -126,15 +127,16 @@ def test_custo_oculto_para_vendedor() -> None:
     _remover(codigo)
 
 
-def test_vendedor_nao_cria_produto() -> None:
+def test_anonimo_nao_cria_produto() -> None:
+    """Cadastro de produto é de admin e vendedor; sem sessão vai para o login."""
     client = TestClient(app)
-    _login(client, "vendedor")
     resp = client.post(
         "/produtos",
         data={"codigo": _codigo(), "descricao": "X", "ativo": "on"},
         follow_redirects=False,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login"
 
 
 def _remover(codigo: str) -> None:
@@ -273,19 +275,13 @@ def test_reativar_variacao_bloqueia_duplicidade(db: Session, usuario_admin) -> N
         produto_service.reativar_variacao(db, inativa.id)
 
 
-def test_vendedor_nao_adiciona_variacao() -> None:
+def test_anonimo_nao_mexe_em_variacao() -> None:
+    """Cores também seguem o RBAC de edição de produto: sem sessão, login."""
     client = TestClient(app)
-    _login(client, "vendedor")
-    # Produto 1 (seed) existe; vendedor deve tomar 403.
-    resp = client.post("/produtos/1/variacao", data={"cor": "X"}, follow_redirects=False)
-    assert resp.status_code == 403
-
-
-def test_vendedor_nao_remove_variacao() -> None:
-    client = TestClient(app)
-    _login(client, "vendedor")
-    resp = client.post("/produtos/variacao/1/remover", follow_redirects=False)
-    assert resp.status_code == 403
+    for rota in ("/produtos/1/variacao", "/produtos/variacao/1/remover"):
+        resp = client.post(rota, data={"cor": "X"}, follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login"
 
 
 def test_criar_produto_redireciona_para_edicao() -> None:
@@ -502,3 +498,87 @@ def test_pagina_produtos_categoria_vazia_nao_falha() -> None:
     _login(client, "admin")
     resp = client.get("/produtos", params={"categoria_id": ""})
     assert resp.status_code == 200, resp.text
+
+
+# ---------------- preço mínimo e a trava de campos do admin ----------------
+def test_vendedor_salvando_produto_nao_zera_custo_nem_piso() -> None:
+    """O formulário do vendedor não tem esses campos — salvar não pode apagá-los.
+
+    `_dec` devolve 0 para campo ausente, então mandar a chave sempre significaria
+    zerar custo e piso a cada save de vendedor. É perda de dado silenciosa: ninguém
+    percebe até a margem sumir do relatório.
+    """
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo = _codigo()
+    resp = client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM CUSTO",
+            "preco_pouca_qtd": "10,00",
+            "preco_custo": "4,00",
+            "preco_minimo": "8,00",
+            "ativo": "on",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    from app.core.database import SessionLocal
+
+    s = SessionLocal()
+    try:
+        produto = s.query(Produto).filter(Produto.codigo == codigo).one()
+        assert produto.preco_custo == Decimal("4.00")
+        assert produto.preco_minimo == Decimal("8.00")
+        produto_id = produto.id
+    finally:
+        s.close()
+
+    # Agora o vendedor edita: o form dele não manda preco_custo nem preco_minimo.
+    vendedor = TestClient(app)
+    _login(vendedor, "vendedor")
+    resp = vendedor.post(
+        f"/produtos/{produto_id}",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO EDITADO PELO VENDEDOR",
+            "preco_pouca_qtd": "12,00",
+            "ativo": "on",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    s = SessionLocal()
+    try:
+        produto = s.get(Produto, produto_id)
+        assert produto.descricao == "PRODUTO EDITADO PELO VENDEDOR"
+        assert produto.preco_pouca_qtd == Decimal("12.00")
+        assert produto.preco_custo == Decimal("4.00"), "o vendedor zerou o custo"
+        assert produto.preco_minimo == Decimal("8.00"), "o vendedor zerou o piso"
+    finally:
+        s.close()
+    _remover(codigo)
+
+
+def test_preco_minimo_some_do_dict_do_vendedor(db: Session) -> None:
+    """O piso é onde a margem acaba: não vai no payload de quem não pode mexer nele."""
+    from app.schemas.produto import produto_para_dict
+
+    produto = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=_codigo(),
+            descricao="COM PISO",
+            preco_custo=Decimal("1"),
+            preco_minimo=Decimal("2"),
+        ),
+    )
+    db.flush()
+    dados_admin = produto_para_dict(produto, "admin")
+    assert dados_admin["preco_minimo"] == Decimal("2")
+    dados_vendedor = produto_para_dict(produto, "vendedor")
+    assert "preco_minimo" not in dados_vendedor
+    assert "preco_custo" not in dados_vendedor

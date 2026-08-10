@@ -50,6 +50,11 @@ class Produto(Base):
     preco_promocional: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     qtd_corte_atacado: Mapped[int | None] = mapped_column(Integer)
     preco_custo: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    # Piso de venda por unidade, definido pelo admin. ZERO significa "sem piso" — é o
+    # estado de todo produto que ainda não foi revisado, e um piso implícito faria o
+    # sistema recusar venda de produto recém-cadastrado. Quem valida é o pedido_service,
+    # sobre o preço JÁ com desconto; o admin passa por cima (é ele quem define o número).
+    preco_minimo: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
 
     observacao: Mapped[str | None] = mapped_column(Text)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)

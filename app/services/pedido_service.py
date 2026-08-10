@@ -10,9 +10,10 @@ from app.core import eventos
 from app.core.errors import NaoEncontradoError, PermissaoNegadaError, RegraNegocioError
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
-from app.models.enums import Perfil, StatusConta, StatusPedido
+from app.models.enums import StatusConta, StatusPedido, e_admin
 from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import Produto, ProdutoVariacao
+from app.repositories.cliente_repo import cliente_repo
 from app.repositories.pedido_repo import pedido_repo
 from app.schemas.pedido import ItemAdicionar, SugestaoPreco
 from app.services.estoque_service import estoque_service
@@ -77,7 +78,7 @@ class PedidoService:
 
     def _validar_limite_desconto(self, perfil: str, bruto_item: Decimal, desconto: Decimal) -> None:
         """Vendedor só aplica desconto até o limite (%). Acima, exige admin."""
-        if desconto <= 0 or perfil == "admin":
+        if desconto <= 0 or e_admin(perfil):
             return
         if bruto_item <= 0:
             return
@@ -88,15 +89,70 @@ class PedidoService:
                 f"({LIMITE_DESCONTO_VENDEDOR_PCT}%). Requer aprovação do administrador."
             )
 
+    def _preco_efetivo(self, qtd: int, preco_unit: Decimal, desconto: Decimal) -> Decimal:
+        """Quanto de fato sai cada unidade, já descontado o desconto do item."""
+        if qtd <= 0:
+            return preco_unit
+        return ((Decimal(qtd) * preco_unit - desconto) / Decimal(qtd)).quantize(CENT)
+
+    def _validar_preco_minimo(
+        self, perfil: str, produto: Produto, qtd: int, preco_unit: Decimal, desconto: Decimal
+    ) -> None:
+        """Piso de venda do produto: o vendedor não desce abaixo dele.
+
+        A conta é sobre o preço EFETIVO (já com o desconto do item), não sobre o preço
+        digitado. Olhar só o `preco_unit` deixaria o piso furável pelo campo de desconto,
+        que é exatamente o buraco simétrico ao que existia antes — o limite de desconto
+        em % era contornável baixando o preço unitário.
+
+        `preco_minimo == 0` é "sem piso" (produto ainda não revisado). O admin passa:
+        é ele quem define o número, e o balcão precisa poder fechar negócio difícil.
+        """
+        piso = produto.preco_minimo or Decimal("0")
+        if piso <= 0 or e_admin(perfil):
+            return
+        efetivo = self._preco_efetivo(qtd, preco_unit, desconto)
+        if efetivo < piso:
+            raise RegraNegocioError(
+                f"{produto.codigo}: R$ {efetivo} por unidade fica abaixo do preço mínimo "
+                f"de R$ {piso.quantize(CENT)}. Peça a um administrador."
+            )
+
     # ------------------------------------------------------------- criação
     def criar(
-        self, db: Session, cliente_id: int, vendedor_id: int, observacao: str | None = None
+        self,
+        db: Session,
+        cliente_id: int | None,
+        vendedor_id: int,
+        observacao: str | None = None,
+        cliente_nome: str | None = None,
+        cliente_telefone: str | None = None,
     ) -> Pedido:
-        cliente = db.get(Cliente, cliente_id)
-        if cliente is None:
-            raise NaoEncontradoError("Cliente não encontrado.")
+        """Abre um rascunho, com ou sem cliente cadastrado.
+
+        Se o vendedor escolheu uma sugestão da busca, vem `cliente_id` e o resto é
+        ignorado. Se ele só digitou o telefone, tentamos amarrar sozinhos ao cadastro
+        que já existe — é o que faz a segunda compra do mesmo cliente cair na ficha
+        certa sem ninguém procurar. Não achando, guardamos o texto livre.
+        """
+        nome = (cliente_nome or "").strip() or None
+        telefone = (cliente_telefone or "").strip() or None
+
+        cliente: Cliente | None = None
+        if cliente_id is not None:
+            cliente = db.get(Cliente, cliente_id)
+            if cliente is None:
+                raise NaoEncontradoError("Cliente não encontrado.")
+        elif telefone:
+            cliente = cliente_repo.por_telefone(db, telefone)
+
         pedido = Pedido(
-            cliente_id=cliente_id,
+            cliente_id=cliente.id if cliente is not None else None,
+            # O texto livre só sobra quando não há cadastro: com cliente vinculado, o
+            # nome verdadeiro é o do cadastro, e duplicá-lo aqui só criaria duas versões
+            # do mesmo dado esperando divergir.
+            cliente_nome=None if cliente is not None else nome,
+            cliente_telefone=None if cliente is not None else telefone,
             vendedor_id=vendedor_id,
             status=StatusPedido.RASCUNHO,
             observacao=observacao,
@@ -137,6 +193,37 @@ class PedidoService:
         desconto = Decimal(dados.desconto).quantize(CENT)
         bruto = (Decimal(qtd) * preco_unit).quantize(CENT)
         self._validar_limite_desconto(perfil, bruto, desconto)
+        self._validar_preco_minimo(perfil, produto, qtd, preco_unit, desconto)
+
+        # Mesma variação pelo mesmo preço vira UMA linha, somando a quantidade — é o
+        # que mantém o pedido e o cupom legíveis quando o vendedor lança o produto três
+        # vezes seguidas. Preço diferente abre linha nova de propósito: são negociações
+        # distintas do mesmo item, e juntá-las esconderia isso do faturamento.
+        existente = next(
+            (
+                i
+                for i in pedido.itens
+                if i.produto_variacao_id == variacao.id and i.preco_unit == preco_unit
+            ),
+            None,
+        )
+        if existente is not None:
+            qtd_total = existente.qtd + qtd
+            desconto_total = (existente.desconto + desconto).quantize(CENT)
+            # Revalida o consolidado: dois lançamentos, cada um dentro do limite, podem
+            # somar um desconto que estoura — e o piso é por unidade, não por lançamento.
+            self._validar_limite_desconto(
+                perfil, (Decimal(qtd_total) * preco_unit).quantize(CENT), desconto_total
+            )
+            self._validar_preco_minimo(perfil, produto, qtd_total, preco_unit, desconto_total)
+            existente.qtd = qtd_total
+            existente.desconto = desconto_total
+            if qtd_caixas is not None:
+                existente.qtd_caixas = (existente.qtd_caixas or 0) + qtd_caixas
+            existente.subtotal = self._calcular_subtotal(qtd_total, preco_unit, desconto_total)
+            self._recalcular_total(pedido)
+            db.flush()
+            return existente
 
         subtotal = self._calcular_subtotal(qtd, preco_unit, desconto)
         item = PedidoItem(
@@ -173,17 +260,34 @@ class PedidoService:
         if desconto < 0:
             raise RegraNegocioError("O desconto não pode ser negativo.")
         soma = sum((item.subtotal for item in pedido.itens), Decimal("0"))
-        if perfil != "admin" and soma > 0:
+        if not e_admin(perfil) and soma > 0:
             pct = (desconto / soma) * Decimal("100")
             if pct > LIMITE_DESCONTO_VENDEDOR_PCT:
                 raise PermissaoNegadaError(
                     f"Desconto total de {pct.quantize(CENT)}% acima do limite do vendedor "
                     f"({LIMITE_DESCONTO_VENDEDOR_PCT}%). Requer aprovação do administrador."
                 )
+            # O desconto do rodapé derruba o preço de cada item na mesma proporção. Sem
+            # esta checagem o piso do produto seria furado por fora, sem passar por
+            # nenhum campo de item — o mesmo buraco, só que no rodapé da tela.
+            self._validar_piso_com_desconto_rateado(db, pedido, desconto, soma, perfil)
         pedido.desconto_total = desconto
         self._recalcular_total(pedido)
         db.flush()
         return pedido
+
+    def _validar_piso_com_desconto_rateado(
+        self, db: Session, pedido: Pedido, desconto: Decimal, soma: Decimal, perfil: str
+    ) -> None:
+        for item in pedido.itens:
+            variacao = self._get_variacao(db, item.produto_variacao_id)
+            produto = variacao.produto
+            if (produto.preco_minimo or Decimal("0")) <= 0:
+                continue
+            rateio = (desconto * (item.subtotal / soma)).quantize(CENT)
+            self._validar_preco_minimo(
+                perfil, produto, item.qtd, item.preco_unit, item.desconto + rateio
+            )
 
     # ------------------------------------------------------------- ciclo
     def confirmar(self, db: Session, pedido_id: int, usuario_id: int) -> Pedido:
@@ -278,7 +382,7 @@ class PedidoService:
             db,
             "separacao.concluida",
             self._dados_pedido(pedido),
-            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -309,7 +413,7 @@ class PedidoService:
             db,
             "pedido.faturado",
             {**self._dados_pedido(pedido), "contas_geradas": len(contas or [])},
-            audiencia=eventos.FIN_AUD + (Perfil.FUNCIONARIO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -338,7 +442,7 @@ class PedidoService:
             db,
             "pedido.cancelado",
             self._dados_pedido(pedido),
-            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -355,7 +459,7 @@ class PedidoService:
             db,
             "pedido.status_alterado",
             self._dados_pedido(pedido),
-            audiencia=eventos.SEP_AUD + (Perfil.FINANCEIRO.value,),
+            audiencia=eventos.TODOS,
             vendedor_id=pedido.vendedor_id,
         )
         return pedido
@@ -367,7 +471,7 @@ class PedidoService:
             "pedido_id": pedido.id,
             "numero": pedido.numero,
             "status": str(pedido.status),
-            "cliente": pedido.cliente.nome if pedido.cliente else None,
+            "cliente": pedido.nome_cliente,
             "vendedor_id": pedido.vendedor_id,
             "total": str(pedido.total or Decimal("0")),
         }
@@ -410,7 +514,7 @@ class PedidoService:
 
     def _gerar_contas_receber(self, db: Session, pedido: Pedido) -> list[ContaReceber]:
         """Cria os títulos a receber conforme a condição de pagamento do cliente."""
-        offsets = self._parse_parcelas(pedido.cliente.condicao_pagto_padrao)
+        offsets = self._parse_parcelas(pedido.condicao_pagto)
         n = len(offsets)
         total = (pedido.total or Decimal("0")).quantize(CENT)
         base = (total / n).quantize(CENT)

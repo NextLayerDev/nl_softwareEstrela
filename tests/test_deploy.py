@@ -31,7 +31,7 @@ from app.services.saude_service import (
     saude_service,
 )
 
-PERFIS = ["admin", "vendedor", "financeiro", "funcionario", "dev"]
+PERFIS = ["admin", "vendedor", "dev"]
 ROTAS = [
     "/deploy",
     "/deploy/status",
@@ -63,7 +63,7 @@ def test_deploy_exige_login(rota: str) -> None:
     assert r.headers["location"] == "/login"
 
 
-@pytest.mark.parametrize("perfil", ["admin", "vendedor", "financeiro", "funcionario"])
+@pytest.mark.parametrize("perfil", ["admin", "vendedor"])
 @pytest.mark.parametrize("rota", ROTAS)
 def test_deploy_e_somente_dev(perfil: str, rota: str) -> None:
     """Nem o admin entra: /deploy é manutenção, não operação da empresa.
@@ -82,7 +82,7 @@ def test_dev_acessa(rota: str) -> None:
 def test_deploy_no_menu_so_do_dev() -> None:
     """O admin da empresa não pode nem saber que a tela existe."""
     assert "Status do Deploy" in _login("dev").get("/").text
-    for perfil in ("admin", "vendedor", "financeiro", "funcionario"):
+    for perfil in ("admin", "vendedor"):
         assert "Status do Deploy" not in _login(perfil).get("/").text, perfil
 
 
@@ -424,7 +424,7 @@ def _conta_deploys() -> int:
         db.close()
 
 
-@pytest.mark.parametrize("perfil", ["admin", "vendedor", "financeiro", "funcionario"])
+@pytest.mark.parametrize("perfil", ["admin", "vendedor"])
 @pytest.mark.parametrize("rota", POSTS)
 def test_post_de_deploy_e_somente_dev(perfil: str, rota: str) -> None:
     """Quem opera a empresa não reinicia o servidor — nem com um POST na mão."""

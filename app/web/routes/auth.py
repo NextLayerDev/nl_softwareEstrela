@@ -11,8 +11,9 @@ from app.core.errors import NaoAutenticadoError
 from app.core.rate_limit import limitador_login
 from app.core.security import criar_token
 from app.core.templates import templates
-from app.deps.auth import COOKIE_NOME
+from app.deps.auth import COOKIE_NOME, get_optional_user
 from app.deps.db import get_db
+from app.models.usuario import Usuario
 from app.services.auth_service import auth_service
 
 router = APIRouter()
@@ -29,7 +30,14 @@ def _ip_cliente(request: Request) -> str:
 
 
 @router.get("/login", response_class=HTMLResponse)
-def tela_login(request: Request):
+def tela_login(request: Request, usuario: Usuario | None = Depends(get_optional_user)):
+    """Tela de login. Quem já tem sessão válida vai direto para o painel.
+
+    Nos terminais em modo aplicativo o atalho aponta para uma URL fixa, e quem já está
+    logado caía num formulário para digitar de novo o que o cookie já sabe.
+    """
+    if usuario is not None:
+        return RedirectResponse(url="/", status_code=303)
     return templates.TemplateResponse(request, "login.html", {})
 
 

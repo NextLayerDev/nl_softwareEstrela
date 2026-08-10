@@ -6,6 +6,7 @@ Rodam dentro da transação revertida do fixture `db`.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -209,14 +210,14 @@ def test_cancelar_estorna_reserva(db, usuario_vendedor):
 
 
 # --------------------------------------------------------- faturar
-def test_faturar_baixa_estoque_e_gera_conta_a_vista(db, usuario_vendedor, usuario_financeiro):
+def test_faturar_baixa_estoque_e_gera_conta_a_vista(db, usuario_vendedor, usuario_admin):
     prod = _produto(db, "F1")
     var = _variacao(db, prod, fisico=50)
     cli = _cliente(db, condicao="à vista")
     ped = _novo_pedido(db, cli, usuario_vendedor)
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
     pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
-    pedido_service.faturar(db, ped.id, usuario_financeiro.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
 
     db.refresh(var)
     assert var.estoque_fisico == 40
@@ -232,20 +233,20 @@ def test_faturar_baixa_estoque_e_gera_conta_a_vista(db, usuario_vendedor, usuari
     assert contas[0].status == StatusConta.PENDENTE
 
 
-def test_faturar_conta_30_dias(db, usuario_vendedor, usuario_financeiro):
+def test_faturar_conta_30_dias(db, usuario_vendedor, usuario_admin):
     prod = _produto(db, "F2")
     var = _variacao(db, prod, fisico=50)
     cli = _cliente(db, condicao="30 dias")
     ped = _novo_pedido(db, cli, usuario_vendedor)
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
     pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
-    pedido_service.faturar(db, ped.id, usuario_financeiro.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
     contas = list(db.scalars(select(ContaReceber).where(ContaReceber.pedido_id == ped.id)))
     assert len(contas) == 1
     assert contas[0].vencimento == date.today() + timedelta(days=30)
 
 
-def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_financeiro):
+def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_admin):
     prod = _produto(db, "F3")
     var = _variacao(db, prod, fisico=50)
     cli = _cliente(db, condicao="3x")
@@ -253,7 +254,7 @@ def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_fina
     # total 100.00 / 3 -> 33.33, 33.33, 33.34
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
     pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
-    pedido_service.faturar(db, ped.id, usuario_financeiro.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
     contas = sorted(
         db.scalars(select(ContaReceber).where(ContaReceber.pedido_id == ped.id)),
         key=lambda c: c.parcela,
@@ -298,7 +299,7 @@ def test_admin_pode_desconto_acima_do_limite(db, usuario_admin):
 
 
 # --------------------------------------------------------- separação
-def test_separacao_conclui_apos_conferencia(db, usuario_vendedor, usuario_funcionario):
+def test_separacao_conclui_apos_conferencia(db, usuario_vendedor):
     prod1 = _produto(db, "S1")
     prod2 = _produto(db, "S2")
     var1 = _variacao(db, prod1, fisico=50, cor="a")
@@ -322,8 +323,8 @@ def test_separacao_conclui_apos_conferencia(db, usuario_vendedor, usuario_funcio
 
 # --------------------------------------------------------- RBAC via HTTP
 @pytest.fixture
-def client_funcionario(db, usuario_funcionario, monkeypatch):
-    """TestClient autenticado como funcionário (override de get_current_user e get_db)."""
+def client_vendedor(db, usuario_vendedor):
+    """TestClient autenticado como vendedor (override de get_current_user e get_db)."""
     from fastapi.testclient import TestClient
 
     from app.deps.auth import get_current_user
@@ -331,17 +332,23 @@ def client_funcionario(db, usuario_funcionario, monkeypatch):
     from app.main import app
 
     app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_user] = lambda: usuario_funcionario
+    app.dependency_overrides[get_current_user] = lambda: usuario_vendedor
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
 
 
-def test_rbac_funcionario_nao_cria_pedido(client_funcionario):
-    r = client_funcionario.get("/pedidos/novo")
+def test_rbac_vendedor_nao_fatura(client_vendedor, db, usuario_vendedor):
+    """Faturar é a linha que o vendedor não cruza — mesmo no próprio pedido."""
+    prod = _produto(db, "RB1")
+    var = _variacao(db, prod, fisico=50)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("10.00"))
+    pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
+    db.flush()
+
+    r = client_vendedor.post(f"/pedidos/{ped.id}/faturar", follow_redirects=False)
     assert r.status_code == 403
-    r2 = client_funcionario.post("/pedidos", data={"cliente_id": 1})
-    assert r2.status_code == 403
 
 
 # --------------------------------------------------------- guardas extras
@@ -359,3 +366,201 @@ def test_editar_item_fora_de_rascunho_falha(db, usuario_vendedor):
 def test_get_pedido_inexistente(db):
     with pytest.raises(NaoEncontradoError):
         pedido_service.confirmar(db, 999999, 1)
+
+
+# --------------------------------------------------------- cliente livre (balcão)
+def test_pedido_sem_cliente_vira_consumidor(db, usuario_vendedor):
+    """Venda de balcão: nenhum campo de cliente preenchido."""
+    ped = pedido_service.criar(db, None, usuario_vendedor.id)
+    assert ped.cliente_id is None
+    assert ped.nome_cliente == "CONSUMIDOR"
+    assert ped.telefone_cliente is None
+    # Sem cadastro não há condição negociada: o faturamento trata como à vista.
+    assert ped.condicao_pagto == "À VISTA"
+
+
+def test_pedido_guarda_nome_e_telefone_livres(db, usuario_vendedor):
+    ped = pedido_service.criar(
+        db,
+        None,
+        usuario_vendedor.id,
+        cliente_nome="Maria do Balcão",
+        cliente_telefone="11 98888-7777",
+    )
+    assert ped.cliente_id is None
+    assert ped.nome_cliente == "Maria do Balcão"
+    assert ped.telefone_cliente == "11 98888-7777"
+
+
+def test_telefone_conhecido_vincula_o_cadastro_sozinho(db, usuario_vendedor):
+    """O vendedor digita só o telefone e o pedido cai na ficha certa."""
+    cli = Cliente(nome="Cliente Fiel", telefone="(11) 98888-7777", condicao_pagto_padrao="30 dias")
+    db.add(cli)
+    db.flush()
+
+    ped = pedido_service.criar(
+        db, None, usuario_vendedor.id, cliente_nome="digitou errado", cliente_telefone="11988887777"
+    )
+
+    assert ped.cliente_id == cli.id
+    # O nome que vale é o do cadastro, não o que foi digitado na pressa.
+    assert ped.nome_cliente == "Cliente Fiel"
+    assert ped.condicao_pagto == "30 dias"
+    assert ped.cliente_nome is None
+
+
+def test_telefone_desconhecido_nao_vincula(db, usuario_vendedor):
+    ped = pedido_service.criar(db, None, usuario_vendedor.id, cliente_telefone="11 90000-0001")
+    assert ped.cliente_id is None
+    assert ped.cliente_telefone == "11 90000-0001"
+
+
+def test_telefone_curto_nao_vincula(db, usuario_vendedor):
+    """4 dígitos não podem casar com meia agenda."""
+    cli = Cliente(nome="Curto", telefone="1234")
+    db.add(cli)
+    db.flush()
+    ped = pedido_service.criar(db, None, usuario_vendedor.id, cliente_telefone="1234")
+    assert ped.cliente_id is None
+
+
+def test_cliente_id_invalido_falha(db, usuario_vendedor):
+    with pytest.raises(NaoEncontradoError):
+        pedido_service.criar(db, 999_999_999, usuario_vendedor.id)
+
+
+def test_faturar_pedido_de_balcao_gera_conta_a_vista(db, usuario_vendedor, usuario_admin):
+    """O faturamento não pode quebrar quando o pedido não tem cliente cadastrado."""
+    prod = _produto(db, "BALC1")
+    var = _variacao(db, prod, fisico=50)
+    ped = pedido_service.criar(db, None, usuario_vendedor.id, cliente_nome="Passante")
+    _add(db, ped, var, qtd=2, preco_unit=Decimal("10.00"))
+    pedido_service.confirmar(db, ped.id, usuario_vendedor.id)
+    pedido_service.faturar(db, ped.id, usuario_admin.id)
+
+    contas = list(db.scalars(select(ContaReceber).where(ContaReceber.pedido_id == ped.id)))
+    assert len(contas) == 1
+    assert contas[0].valor == Decimal("20.00")
+    assert contas[0].vencimento == date.today()
+
+
+def test_busca_cliente_acha_por_telefone_formatado_diferente(db):
+    from app.repositories.cliente_repo import cliente_repo
+
+    cli = Cliente(nome=f"Busca {uuid.uuid4().hex[:6]}", telefone="(11) 97777-1234")
+    db.add(cli)
+    db.flush()
+
+    achados = cliente_repo.busca_rapida(db, "11977771234")
+    assert cli.id in [c.id for c in achados]
+
+
+# --------------------------------------------------------- preço mínimo
+def test_preco_minimo_bloqueia_vendedor(db, usuario_vendedor):
+    prod = _produto(db, "MIN1", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("8.00")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    with pytest.raises(RegraNegocioError) as exc:
+        _add(db, ped, var, qtd=1, preco_unit=Decimal("7.99"))
+    assert "preço mínimo" in str(exc.value).lower()
+
+
+def test_preco_minimo_aceita_valor_igual_ao_piso(db, usuario_vendedor):
+    prod = _produto(db, "MIN2", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("8.00")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    item = _add(db, ped, var, qtd=1, preco_unit=Decimal("8.00"))
+    assert item.preco_unit == Decimal("8.00")
+
+
+def test_preco_minimo_nao_e_furavel_por_desconto(db, usuario_vendedor):
+    """O piso é sobre o preço efetivo: 10,00 com 5% de desconto cai abaixo de 9,60."""
+    prod = _produto(db, "MIN3", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("9.60")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    with pytest.raises(RegraNegocioError):
+        # 10 un x 10,00 = 100,00; desconto de 5,00 (dentro do limite de 10%) -> 9,50/un
+        _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"), desconto=Decimal("5.00"))
+
+
+def test_admin_passa_por_cima_do_preco_minimo(db, usuario_admin):
+    prod = _produto(db, "MIN4", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("8.00")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_admin)
+    item = _add(db, ped, var, perfil="admin", qtd=1, preco_unit=Decimal("1.00"))
+    assert item.preco_unit == Decimal("1.00")
+
+
+def test_preco_minimo_zero_nao_trava(db, usuario_vendedor):
+    """Produto ainda não revisado (piso 0) continua vendável a qualquer preço."""
+    prod = _produto(db, "MIN5", pouca=Decimal("10.00"))
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    item = _add(db, ped, var, qtd=1, preco_unit=Decimal("0.50"))
+    assert item.preco_unit == Decimal("0.50")
+
+
+def test_desconto_total_nao_fura_o_piso(db, usuario_vendedor):
+    prod = _produto(db, "MIN6", pouca=Decimal("10.00"))
+    prod.preco_minimo = Decimal("9.80")
+    db.flush()
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
+
+    # 5,00 sobre 100,00 = 5% (dentro do limite), mas derruba a unidade para 9,50.
+    with pytest.raises(RegraNegocioError):
+        pedido_service.aplicar_desconto_total(db, ped.id, Decimal("5.00"), "vendedor")
+
+
+# --------------------------------------------------------- item repetido
+def test_mesmo_produto_mesmo_preco_soma_na_mesma_linha(db, usuario_vendedor):
+    prod = _produto(db, "REP1")
+    var = _variacao(db, prod, fisico=100)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    _add(db, ped, var, qtd=3, preco_unit=Decimal("10.00"))
+    item = _add(db, ped, var, qtd=2, preco_unit=Decimal("10.00"))
+
+    db.refresh(ped)
+    assert len(ped.itens) == 1
+    assert item.qtd == 5
+    assert item.subtotal == Decimal("50.00")
+    assert ped.total == Decimal("50.00")
+
+
+def test_mesmo_produto_preco_diferente_abre_linha_nova(db, usuario_vendedor):
+    """Preço diferente é outra negociação — juntar esconderia isso do faturamento."""
+    prod = _produto(db, "REP2")
+    var = _variacao(db, prod, fisico=100)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("10.00"))
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("9.00"))
+
+    db.refresh(ped)
+    assert len(ped.itens) == 2
+    assert ped.total == Decimal("19.00")
+
+
+def test_somar_revalida_o_desconto_consolidado(db, usuario_vendedor):
+    """Dois lançamentos dentro do limite não podem somar um desconto que estoura."""
+    prod = _produto(db, "REP3")
+    var = _variacao(db, prod, fisico=100)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    # 1 un x 100,00 com 9,00 de desconto = 9% (passa).
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("9.00"))
+    # Repetir levaria a 18,00 sobre 200,00 = 9%... ainda dentro. Um terceiro maior estoura.
+    with pytest.raises(PermissaoNegadaError):
+        _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("40.00"))

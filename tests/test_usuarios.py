@@ -53,9 +53,7 @@ def test_criar_usuario_faz_hash_da_senha(db: Session) -> None:
 def test_resetar_senha(db: Session) -> None:
     u = usuario_service.criar(
         db,
-        UsuarioCreate(
-            nome="Reset", email=_email(), senha="Antiga1Forte!", perfil=Perfil.FINANCEIRO
-        ),
+        UsuarioCreate(nome="Reset", email=_email(), senha="Antiga1Forte!", perfil=Perfil.VENDEDOR),
     )
     db.flush()
     usuario_service.resetar_senha(db, u.id, "NovaSenha9!")

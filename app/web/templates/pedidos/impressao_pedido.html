@@ -38,11 +38,11 @@
   </div>
 
   <div class="meta">
-    <strong>Cliente:</strong> {{ pedido.cliente.nome }}
-    {% if pedido.cliente.cnpj_cpf %}— {{ pedido.cliente.cnpj_cpf }}{% endif %}<br />
-    {% if pedido.cliente.telefone %}<strong>Telefone:</strong> {{ pedido.cliente.telefone }}<br />{% endif %}
-    {% if pedido.cliente.endereco %}<strong>Endereço:</strong> {{ pedido.cliente.endereco }}<br />{% endif %}
-    <strong>Pagamento:</strong> {{ pedido.cliente.condicao_pagto_padrao or "à vista" }}
+    <strong>Cliente:</strong> {{ pedido.nome_cliente }}
+    {% if pedido.cliente and pedido.cliente.cnpj_cpf %}— {{ pedido.cliente.cnpj_cpf }}{% endif %}<br />
+    {% if pedido.telefone_cliente %}<strong>Telefone:</strong> {{ pedido.telefone_cliente }}<br />{% endif %}
+    {% if pedido.cliente and pedido.cliente.endereco %}<strong>Endereço:</strong> {{ pedido.cliente.endereco }}<br />{% endif %}
+    <strong>Pagamento:</strong> {{ pedido.condicao_pagto }}
   </div>
 
   <table>

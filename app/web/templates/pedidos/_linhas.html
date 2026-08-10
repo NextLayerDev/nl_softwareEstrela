@@ -4,7 +4,7 @@
 {% for p in pedidos %}
 <tr>
   <td class="font-mono">{{ p.numero or "—" }}</td>
-  <td>{{ p.cliente.nome }}</td>
+  <td>{{ p.nome_cliente }}</td>
   <td>{{ p.vendedor.nome }}</td>
   <td><span class="selo-neutro">{{ p.status.value if p.status.value is defined else p.status }}</span></td>
   <td class="text-right">{{ p.total | moeda }}</td>

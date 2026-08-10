@@ -121,16 +121,15 @@ def test_excluir_cliente_com_pedidos_falha(db: Session, usuario_admin: Usuario) 
         cliente_service.excluir(db, c.id)
 
 
-def test_financeiro_pode_ver_mas_nao_criar() -> None:
+def test_vendedor_ve_e_cria() -> None:
+    """Cliente é ferramenta de venda: o vendedor consulta e cadastra."""
     client = TestClient(app)
-    _login(client, "financeiro")
-    # visualiza
+    _login(client, "vendedor")
     assert client.get("/clientes").status_code == 200
-    # não cria
     resp = client.post(
-        "/clientes", data={"nome": "Bloqueado", "ativo": "on"}, follow_redirects=False
+        "/clientes", data={"nome": "Novo pelo vendedor", "ativo": "on"}, follow_redirects=False
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 303
 
 
 def test_excluir_cliente_rbac_nao_admin() -> None:

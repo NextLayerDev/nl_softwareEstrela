@@ -64,6 +64,7 @@ class ProdutoCreate(BaseModel):
     preco_promocional: Decimal | None = None
     qtd_corte_atacado: int | None = None
     preco_custo: Decimal = Decimal("0")
+    preco_minimo: Decimal = Decimal("0")
     observacao: str | None = None
     ativo: bool = True
     publicar_catalogo: bool = False
@@ -90,6 +91,7 @@ class ProdutoUpdate(BaseModel):
     preco_promocional: Decimal | None = None
     qtd_corte_atacado: int | None = None
     preco_custo: Decimal | None = None
+    preco_minimo: Decimal | None = None
     observacao: str | None = None
     ativo: bool | None = None
     publicar_catalogo: bool | None = None
@@ -121,6 +123,7 @@ class ProdutoRead(BaseModel):
     preco_promocional: Decimal | None
     qtd_corte_atacado: int | None
     preco_custo: Decimal
+    preco_minimo: Decimal
     observacao: str | None
     ativo: bool
     publicar_catalogo: bool
@@ -129,12 +132,22 @@ class ProdutoRead(BaseModel):
 
 
 def produto_para_dict(produto: Any, perfil: str) -> dict[str, Any]:
-    """Serializa um Produto ocultando preco_custo para perfis sem permissão (doc §7)."""
+    """Serializa um Produto ocultando os campos restritos ao admin (doc §7).
+
+    `preco_minimo` sai junto com `preco_custo`: é o piso que o vendedor não pode furar,
+    e entregá-lo é entregar exatamente onde a margem acaba.
+    """
     dados = ProdutoRead.model_validate(produto).model_dump()
     if perfil in PERFIS_SEM_CUSTO:
         dados.pop("preco_custo", None)
+        dados.pop("preco_minimo", None)
     return dados
 
 
 def pode_ver_custo(perfil: str) -> bool:
+    return perfil not in PERFIS_SEM_CUSTO
+
+
+def pode_definir_minimo(perfil: str) -> bool:
+    """Só quem define o piso pode alterá-lo — é a trava do preço, não um dado a mais."""
     return perfil not in PERFIS_SEM_CUSTO

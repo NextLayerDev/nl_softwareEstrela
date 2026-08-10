@@ -67,20 +67,18 @@ def _conta(
     return conta
 
 
-def test_baixar_muda_status_e_grava_baixado(db: Session, usuario_financeiro: Usuario) -> None:
-    pedido = _pedido(db, usuario_financeiro)
+def test_baixar_muda_status_e_grava_baixado(db: Session, usuario_admin: Usuario) -> None:
+    pedido = _pedido(db, usuario_admin)
     conta = _conta(db, pedido)
-    financeiro_service.baixar(
-        db, conta.id, BaixaInput(forma_pagamento="pix"), usuario_financeiro.id
-    )
+    financeiro_service.baixar(db, conta.id, BaixaInput(forma_pagamento="pix"), usuario_admin.id)
     assert conta.status == StatusConta.PAGO
     assert conta.forma_pagamento == "pix"
-    assert conta.baixado_por == usuario_financeiro.id
+    assert conta.baixado_por == usuario_admin.id
     assert conta.baixado_em is not None
 
 
-def test_baixar_conta_ja_paga_falha(db: Session, usuario_financeiro: Usuario) -> None:
-    pedido = _pedido(db, usuario_financeiro)
+def test_baixar_conta_ja_paga_falha(db: Session, usuario_admin: Usuario) -> None:
+    pedido = _pedido(db, usuario_admin)
     conta = _conta(db, pedido, status=StatusConta.PAGO)
     import pytest
 
@@ -88,12 +86,12 @@ def test_baixar_conta_ja_paga_falha(db: Session, usuario_financeiro: Usuario) ->
 
     with pytest.raises(RegraNegocioError):
         financeiro_service.baixar(
-            db, conta.id, BaixaInput(forma_pagamento="boleto"), usuario_financeiro.id
+            db, conta.id, BaixaInput(forma_pagamento="boleto"), usuario_admin.id
         )
 
 
-def test_marcar_atrasados_marca_vencidos(db: Session, usuario_financeiro: Usuario) -> None:
-    pedido = _pedido(db, usuario_financeiro)
+def test_marcar_atrasados_marca_vencidos(db: Session, usuario_admin: Usuario) -> None:
+    pedido = _pedido(db, usuario_admin)
     venc = _conta(db, pedido, vencimento=date.today() - timedelta(days=5))
     no_prazo = _conta(db, pedido, vencimento=date.today() + timedelta(days=5))
     paga = _conta(db, pedido, vencimento=date.today() - timedelta(days=3), status=StatusConta.PAGO)
@@ -106,16 +104,16 @@ def test_marcar_atrasados_marca_vencidos(db: Session, usuario_financeiro: Usuari
     assert paga.status == StatusConta.PAGO
 
 
-def test_marcar_atrasados_idempotente(db: Session, usuario_financeiro: Usuario) -> None:
-    pedido = _pedido(db, usuario_financeiro)
+def test_marcar_atrasados_idempotente(db: Session, usuario_admin: Usuario) -> None:
+    pedido = _pedido(db, usuario_admin)
     _conta(db, pedido, vencimento=date.today() - timedelta(days=2))
     financeiro_service.marcar_atrasados(db)
     n2 = financeiro_service.marcar_atrasados(db)
     assert n2 == 0
 
 
-def test_listar_filtra_por_status(db: Session, usuario_financeiro: Usuario) -> None:
-    pedido = _pedido(db, usuario_financeiro)
+def test_listar_filtra_por_status(db: Session, usuario_admin: Usuario) -> None:
+    pedido = _pedido(db, usuario_admin)
     _conta(db, pedido, status=StatusConta.PENDENTE)
     pagas = financeiro_service.listar(db, FiltroContas(status=StatusConta.PAGO))
     assert all(c.status == StatusConta.PAGO for c in pagas)
@@ -127,18 +125,12 @@ def test_vendedor_nao_acessa_financeiro() -> None:
     assert resp.status_code == 403
 
 
-def test_funcionario_nao_acessa_financeiro() -> None:
-    resp = _login("funcionario").get("/financeiro", follow_redirects=False)
-    assert resp.status_code == 403
-
-
-def test_financeiro_e_admin_acessam() -> None:
-    assert _login("financeiro").get("/financeiro").status_code == 200
+def test_admin_acessa() -> None:
     assert _login("admin").get("/financeiro").status_code == 200
 
 
 def test_so_admin_marca_atrasados_via_rota() -> None:
-    resp = _login("financeiro").post("/financeiro/marcar-atrasados", follow_redirects=False)
+    resp = _login("vendedor").post("/financeiro/marcar-atrasados", follow_redirects=False)
     assert resp.status_code == 403
     resp_admin = _login("admin").post("/financeiro/marcar-atrasados", follow_redirects=False)
     assert resp_admin.status_code == 303

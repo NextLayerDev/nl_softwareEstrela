@@ -13,27 +13,22 @@ from app.core.templates import templates
 from app.deps.auth import require_role
 from app.deps.db import get_db
 from app.models.conta_receber import ContaReceber
-from app.models.enums import StatusConta, StatusPedido, tem_perfil
+from app.models.enums import StatusConta, StatusPedido, e_admin
 from app.models.pedido import Pedido
 from app.models.produto import Produto, ProdutoVariacao
 from app.models.usuario import Usuario
 
 router = APIRouter()
 
-_PERFIS = ("admin", "vendedor", "financeiro", "funcionario")
+_PERFIS = ("admin", "vendedor")
 
 
 def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
     """Monta os KPIs do painel. Compartilhado pela página e pelo fragmento do realtime."""
     hoje = date.today()
-    so_proprios = usuario.perfil == "vendedor"
-
-    def filtro_vendedor(stmt):
-        return stmt.where(Pedido.vendedor_id == usuario.id) if so_proprios else stmt
-
     total_produtos = db.scalar(select(func.count(Produto.id))) or 0
 
-    # Fila de separação (KPI relevante para o funcionário, no lugar da receita).
+    # Fila de separação (KPI que substitui a receita no painel do vendedor).
     pedidos_separar = (
         db.scalar(
             select(func.count(Pedido.id)).where(
@@ -46,22 +41,17 @@ def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
     alertas = db.scalar(select(func.count(ProdutoVariacao.id)).where(clausula_abaixo_minimo())) or 0
 
     pedidos_hoje = (
-        db.scalar(
-            filtro_vendedor(select(func.count(Pedido.id))).where(
-                func.date(Pedido.criado_em) == hoje
-            )
-        )
-        or 0
+        db.scalar(select(func.count(Pedido.id)).where(func.date(Pedido.criado_em) == hoje)) or 0
     )
     vendas_hoje = db.scalar(
-        filtro_vendedor(select(func.coalesce(func.sum(Pedido.total), 0)))
+        select(func.coalesce(func.sum(Pedido.total), 0))
         .where(Pedido.status.in_([StatusPedido.FATURADO, StatusPedido.ENTREGUE]))
         .where(func.date(Pedido.faturado_em) == hoje)
     ) or Decimal("0")
 
-    # Financeiro só para admin/financeiro.
+    # Contas a receber: só o admin.
     contas_pendentes = contas_atrasadas = 0
-    if tem_perfil(usuario.perfil, "admin", "financeiro"):
+    if e_admin(usuario.perfil):
         contas_pendentes = (
             db.scalar(
                 select(func.count(ContaReceber.id)).where(
@@ -79,16 +69,12 @@ def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
             or 0
         )
 
-    ultimos = list(
-        db.scalars(filtro_vendedor(select(Pedido)).order_by(Pedido.criado_em.desc()).limit(5))
-    )
+    ultimos = list(db.scalars(select(Pedido).order_by(Pedido.criado_em.desc()).limit(5)))
 
     # Série de vendas faturadas dos últimos 7 dias (para gráfico simples).
     inicio = hoje - timedelta(days=6)
     linhas = db.execute(
-        filtro_vendedor(
-            select(func.date(Pedido.faturado_em), func.coalesce(func.sum(Pedido.total), 0))
-        )
+        select(func.date(Pedido.faturado_em), func.coalesce(func.sum(Pedido.total), 0))
         .where(Pedido.status.in_([StatusPedido.FATURADO, StatusPedido.ENTREGUE]))
         .where(func.date(Pedido.faturado_em) >= inicio)
         .group_by(func.date(Pedido.faturado_em))
@@ -118,9 +104,10 @@ def _montar_contexto(request: Request, db: Session, usuario: Usuario) -> dict:
         "ultimos": ultimos,
         "serie": serie,
         "max_serie": max_serie,
-        "mostra_financeiro": tem_perfil(usuario.perfil, "admin", "financeiro"),
-        # Funcionário (estoque) não vê receita — mostra a fila de separação no lugar.
-        "mostra_vendas": usuario.perfil != "funcionario",
+        "mostra_financeiro": e_admin(usuario.perfil),
+        # Receita do dia e o gráfico de 7 dias são faturamento: só o admin vê. No lugar
+        # deles o vendedor recebe a fila de separação e o total de produtos.
+        "mostra_vendas": e_admin(usuario.perfil),
     }
 
 

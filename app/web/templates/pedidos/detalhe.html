@@ -27,10 +27,18 @@
      data-rt-swap="none">
   <div>
     <p class="text-sm text-gray-500">Cliente</p>
-    <p class="font-semibold">{{ pedido.cliente.nome }}</p>
+    <p class="font-semibold">
+      {{ pedido.nome_cliente }}
+      {% if pedido.telefone_cliente %}
+        <span class="ml-1 font-mono text-sm font-normal text-gray-500">{{ pedido.telefone_cliente }}</span>
+      {% endif %}
+      {% if not pedido.cliente %}
+        <span class="selo-neutro ml-1">sem cadastro</span>
+      {% endif %}
+    </p>
     <p class="mt-0.5 text-xs text-gray-400">
       Vendedor: {{ pedido.vendedor.nome }} ·
-      Pagamento: {{ pedido.cliente.condicao_pagto_padrao or "à vista" }} ·
+      Pagamento: {{ pedido.condicao_pagto }} ·
       Status: {% include "pedidos/_status.html" %}
     </p>
   </div>
@@ -38,15 +46,20 @@
 </div>
 
 {% if editavel %}
-{# ----------------------- Adicionar item (busca + saldo + preço sugerido) ----------------------- #}
+{# ----------------------- Adicionar item (busca + saldo + preço sugerido) -----------------------
+   A busca fica SEMPRE visível, e a lista de resultados sobrevive ao clique. Antes ela
+   sumia ao selecionar e o campo guardava o termo antigo; como o gatilho do HTMX é
+   "keyup changed", redigitar a mesma coisa não disparava request nenhum — e o produto
+   que acabou de ser lançado ficava inalcançável. Lançar o mesmo item três vezes tem que
+   ser três cliques. #}
 <div class="card mb-4"
      x-data="{ variacaoId: null, selCodigo: '', selDescricao: '', selCor: '', selImg: '', qtd: 1, caixas: false,
                limpar() { this.variacaoId = null; this.selCodigo = ''; this.selDescricao = ''; this.selCor = ''; this.selImg = '';
                           document.getElementById('saldo-box').innerHTML = ''; } }">
   <h3 class="mb-3 text-sm font-semibold">Adicionar item</h3>
 
-  {# 1) Busca — só aparece enquanto nenhum produto está selecionado #}
-  <div class="mb-3" x-show="!variacaoId">
+  {# 1) Busca #}
+  <div class="mb-3">
     <label class="label" for="busca-item">Buscar produto/variação</label>
     <div class="flex items-center gap-2">
       <input type="search" id="busca-item" name="q" class="input w-full" autocomplete="off"
@@ -56,7 +69,9 @@
       <span id="busca-item-load" class="carregando shrink-0" role="status">buscando…</span>
     </div>
     <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto rounded-md border border-marca-borda empty:border-0"></div>
-    <p class="mt-1 text-xs text-gray-500">Clique no resultado para <strong>selecionar</strong> o produto.</p>
+    <p class="mt-1 text-xs text-gray-500">
+      Clique no resultado para <strong>selecionar</strong>. A lista continua aí para o próximo item.
+    </p>
   </div>
 
   {# 2) Produto selecionado — cartão de confirmação #}
@@ -71,7 +86,8 @@
 
   <form method="post" action="/pedidos/{{ pedido.id }}/itens"
         hx-post="/pedidos/{{ pedido.id }}/itens" hx-target="#bloco-itens" hx-swap="outerHTML"
-        @htmx:after-request="if(event.detail.successful){ limpar(); qtd = 1; }">
+        @htmx:after-request="if(event.detail.successful){ limpar(); qtd = 1;
+                               $nextTick(() => document.getElementById('busca-item')?.focus()); }">
     <input type="hidden" name="variacao_id" :value="variacaoId" />
     <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
       <div x-show="!caixas">

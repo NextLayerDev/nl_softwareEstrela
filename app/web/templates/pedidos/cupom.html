@@ -54,7 +54,7 @@
   <div class="linha"><span class="b">Pedido nº {{ pedido.numero or pedido.id }}</span>
     <span>{{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "" }}</span></div>
   <div class="peq">Vendedor: {{ pedido.vendedor.nome }}</div>
-  <div class="peq">Cliente: {{ pedido.cliente.nome }}{% if pedido.cliente.cnpj_cpf %} — {{ pedido.cliente.cnpj_cpf }}{% endif %}</div>
+  <div class="peq">Cliente: {{ pedido.nome_cliente }}{% if pedido.cliente and pedido.cliente.cnpj_cpf %} — {{ pedido.cliente.cnpj_cpf }}{% endif %}</div>
 
   <hr />
 
@@ -89,7 +89,7 @@
   <div class="linha"><span>Desconto</span><span class="num">- {{ pedido.desconto_total | moeda }}</span></div>
   {% endif %}
   <div class="linha total"><span>TOTAL</span><span class="num">{{ pedido.total | moeda }}</span></div>
-  <div class="linha peq"><span>Pagamento</span><span>{{ pedido.cliente.condicao_pagto_padrao or "à vista" }}</span></div>
+  <div class="linha peq"><span>Pagamento</span><span>{{ pedido.condicao_pagto }}</span></div>
 
   {% if pedido.observacao %}<hr /><div class="peq">Obs.: {{ pedido.observacao }}</div>{% endif %}
 

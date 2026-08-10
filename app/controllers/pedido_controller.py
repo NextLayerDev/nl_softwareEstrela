@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import NaoEncontradoError, PermissaoNegadaError
+from app.core.errors import NaoEncontradoError
 from app.models.pedido import Pedido, PedidoItem
 from app.models.usuario import Usuario
 from app.repositories.pedido_repo import pedido_repo
@@ -13,32 +13,40 @@ from app.services.pedido_service import pedido_service
 
 
 class PedidoController:
-    """Valida entrada, aplica RBAC de propriedade e chama o service."""
+    """Valida entrada e chama o service."""
 
-    # ----------------------------------------------------------- propriedade
+    # ----------------------------------------------------------- carregamento
     def _carregar_para_usuario(self, db: Session, pedido_id: int, usuario: Usuario) -> Pedido:
+        """Carrega o pedido para quem está logado.
+
+        Não há mais filtro de propriedade: com os perfis reduzidos a admin e vendedor,
+        a loja tem um balcão só. O cliente volta e é atendido por quem estiver livre, e
+        a fila de separação virou trabalho de vendedor — travar cada pedido no seu autor
+        deixaria metade da tela inútil. Quem faz o quê continua registrado em
+        `pedido.vendedor_id` e na auditoria.
+        """
         pedido = pedido_repo.get_completo(db, pedido_id)
         if pedido is None:
             raise NaoEncontradoError("Pedido não encontrado.")
-        self._checar_propriedade(pedido, usuario)
         return pedido
-
-    def _checar_propriedade(self, pedido: Pedido, usuario: Usuario) -> None:
-        # Vendedor só acessa os próprios pedidos; admin acessa todos.
-        if usuario.perfil == "vendedor" and pedido.vendedor_id != usuario.id:
-            raise PermissaoNegadaError("Você só pode acessar os seus próprios pedidos.")
 
     # ----------------------------------------------------------- listagem
     def listar(self, db: Session, usuario: Usuario) -> list[Pedido]:
-        vendedor_id = usuario.id if usuario.perfil == "vendedor" else None
-        return pedido_repo.listar(db, vendedor_id=vendedor_id)
+        return pedido_repo.listar(db)
 
     def get(self, db: Session, pedido_id: int, usuario: Usuario) -> Pedido:
         return self._carregar_para_usuario(db, pedido_id, usuario)
 
     # ----------------------------------------------------------- criação
     def criar(self, db: Session, dados: PedidoCreate, usuario: Usuario) -> Pedido:
-        return pedido_service.criar(db, dados.cliente_id, usuario.id, dados.observacao)
+        return pedido_service.criar(
+            db,
+            dados.cliente_id,
+            usuario.id,
+            dados.observacao,
+            cliente_nome=dados.cliente_nome,
+            cliente_telefone=dados.cliente_telefone,
+        )
 
     def adicionar_item(
         self, db: Session, pedido_id: int, dados: ItemAdicionar, usuario: Usuario
@@ -66,7 +74,7 @@ class PedidoController:
         return pedido_service.cancelar(db, pedido_id, usuario.id)
 
     def faturar(self, db: Session, pedido_id: int, usuario: Usuario) -> Pedido:
-        # Faturamento é de admin/financeiro — sem filtro de propriedade.
+        # Faturar é exclusivo do admin (ver require_role da rota).
         return pedido_service.faturar(db, pedido_id, usuario.id)
 
     def entregar(self, db: Session, pedido_id: int, usuario: Usuario) -> Pedido:

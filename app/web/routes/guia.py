@@ -17,7 +17,7 @@ from app.models.usuario import Usuario
 
 router = APIRouter()
 
-_TODOS = ["admin", "vendedor", "financeiro", "funcionario"]
+_TODOS = ["admin", "vendedor"]
 
 # Cada tópico: id, grupo, titulo, icone, perfis (quem usa), resumo, passos, dicas.
 # As strings de passos/dicas aceitam HTML simples (negrito, selos) — conteúdo confiável.
@@ -70,13 +70,12 @@ TOPICOS: list[dict] = [
         "perfis": _TODOS,
         "resumo": "O que cada perfil pode fazer.",
         "passos": [
-            "<strong>Admin</strong>: acesso total — produtos, estoque, pedidos, financeiro, relatórios, importação e usuários.",
-            "<strong>Vendedor</strong>: cria e gerencia <strong>pedidos</strong> e <strong>clientes</strong>; vê estoque e produtos (sem o preço de custo).",
-            "<strong>Financeiro</strong>: cuida das <strong>contas a receber</strong> e dos <strong>relatórios</strong> (incl. valorização).",
-            "<strong>Funcionário</strong>: opera o <strong>estoque</strong> (entradas), o <strong>inventário</strong> e a <strong>separação</strong> de pedidos.",
+            "<strong>Admin</strong>: acesso total — inclui <strong>faturar</strong>, contas a receber, valorização de estoque, usuários, empresa e importação.",
+            "<strong>Vendedor</strong>: faz o dia a dia inteiro — produtos, estoque, inventário, pedidos, separação, clientes e relatórios de venda.",
+            "O vendedor <strong>não fatura</strong> e não abre o <strong>Financeiro</strong>; também não mexe em usuários, empresa nem importação.",
         ],
         "dicas": [
-            "O <strong>preço de custo</strong> fica oculto para Vendedor e Funcionário.",
+            "O <strong>preço de custo</strong> e o <strong>preço mínimo</strong> ficam ocultos para o Vendedor.",
             "Se aparecer a tela <strong>403</strong>, é porque seu perfil não tem acesso àquele recurso.",
         ],
     },
@@ -106,7 +105,7 @@ TOPICOS: list[dict] = [
         "grupo": "Operação diária",
         "titulo": "Estoque: entrada de mercadoria",
         "icone": "upload",
-        "perfis": ["admin", "funcionario"],
+        "perfis": ["admin", "vendedor"],
         "resumo": "Registrar a chegada de produtos.",
         "passos": [
             "Em <strong>Estoque</strong>, encontre a variação (cor) que chegou e clique em <strong>Entrada</strong>.",
@@ -172,12 +171,12 @@ TOPICOS: list[dict] = [
         "grupo": "Operação diária",
         "titulo": "Pedidos: confirmar, faturar e status",
         "icone": "lista",
-        "perfis": ["admin", "vendedor", "financeiro"],
+        "perfis": ["admin", "vendedor"],
         "resumo": "O ciclo de vida de um pedido.",
         "passos": [
             "<strong>Rascunho</strong> → adicione os itens e clique em <strong>Confirmar</strong>. Isso <strong>reserva o estoque</strong> e gera o número do pedido.",
             "<strong>Confirmado</strong> → o pedido entra na <strong>fila de separação</strong>.",
-            "<strong>Separado</strong> → após o funcionário conferir os itens, o pedido fica pronto para faturar.",
+            "<strong>Separado</strong> → depois da conferência dos itens, o pedido fica pronto para faturar.",
             "<strong>Faturar</strong> (Admin/Financeiro) → dá <strong>baixa definitiva</strong> no estoque e gera as <strong>contas a receber</strong>.",
             "<strong>Marcar entregue</strong> → registra a entrega ao cliente. Em qualquer ponto antes de faturar, dá para <strong>Cancelar</strong> (estorna as reservas).",
             "Use <strong>Imprimir</strong> para gerar o pedido em A4.",
@@ -192,7 +191,7 @@ TOPICOS: list[dict] = [
         "grupo": "Operação diária",
         "titulo": "Separação de pedidos",
         "icone": "lista",
-        "perfis": ["admin", "funcionario"],
+        "perfis": ["admin", "vendedor"],
         "resumo": "Conferir e preparar os pedidos confirmados.",
         "passos": [
             "Abra <strong>Separação</strong> para ver a <strong>fila</strong> de pedidos confirmados, em ordem de chegada.",
@@ -228,7 +227,7 @@ TOPICOS: list[dict] = [
         "grupo": "Gestão",
         "titulo": "Inventário (contagem)",
         "icone": "caixa",
-        "perfis": ["admin", "funcionario"],
+        "perfis": ["admin", "vendedor"],
         "resumo": "Conferir o estoque físico e corrigir saldos.",
         "passos": [
             "Em <strong>Estoque → Inventário</strong>, dê uma descrição e clique em <strong>Abrir inventário</strong> "
@@ -248,7 +247,7 @@ TOPICOS: list[dict] = [
         "grupo": "Gestão",
         "titulo": "Financeiro (contas a receber)",
         "icone": "dinheiro",
-        "perfis": ["admin", "financeiro"],
+        "perfis": ["admin"],
         "resumo": "Receber, dar baixa e controlar atrasos.",
         "passos": [
             "Ao <strong>faturar</strong> um pedido, o sistema cria as <strong>contas a receber</strong> conforme a condição de pagamento do cliente "
@@ -266,7 +265,7 @@ TOPICOS: list[dict] = [
         "grupo": "Gestão",
         "titulo": "Relatórios e exportação",
         "icone": "grafico",
-        "perfis": ["admin", "vendedor", "financeiro"],
+        "perfis": ["admin", "vendedor"],
         "resumo": "Vendas, Curva ABC e Valorização.",
         "passos": [
             "<strong>Vendas</strong>: total e lista de pedidos faturados por período (Vendedor vê só os seus).",
@@ -320,7 +319,7 @@ TOPICOS: list[dict] = [
         "passos": [
             "<strong>Rascunho</strong> — sendo montado; ainda não afeta o estoque.",
             "<strong>Confirmado</strong> — itens definidos; <strong>estoque reservado</strong>; entra na fila de separação.",
-            "<strong>Separação</strong> — funcionário conferindo os itens.",
+            "<strong>Separação</strong> — alguém conferindo os itens na fila.",
             "<strong>Separado</strong> — conferência concluída; aguardando faturamento.",
             "<strong>Faturado</strong> — <strong>baixa no estoque</strong> + <strong>contas a receber</strong> geradas.",
             "<strong>Entregue</strong> — entregue ao cliente (fim do fluxo).",

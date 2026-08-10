@@ -57,28 +57,31 @@
           {% endif %}
         {% endmacro %}
 
-        {{ item("/", "Painel", ["admin","vendedor","financeiro","funcionario"], "painel") }}
-        {{ item("/guia", "Guia", ["admin","vendedor","financeiro","funcionario"], "guia") }}
+        {{ item("/", "Painel", ["admin","vendedor"], "painel") }}
+        {{ item("/guia", "Guia", ["admin","vendedor"], "guia") }}
 
-        {% if p in ["admin","vendedor","financeiro","funcionario"] or p_ve_tudo %}
+        {% if p in ["admin","vendedor"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Estoque</p>
         {% endif %}
-        {{ item("/estoque", "Estoque", ["admin","vendedor","financeiro","funcionario"], "caixa") }}
-        {{ item("/estoque/localizacao", "Localização", ["admin","vendedor","financeiro","funcionario"], "mapa") }}
-        {{ item("/produtos", "Produtos", ["admin","vendedor","financeiro","funcionario"], "etiqueta") }}
+        {{ item("/estoque", "Estoque", ["admin","vendedor"], "caixa") }}
+        {{ item("/estoque/localizacao", "Localização", ["admin","vendedor"], "mapa") }}
+        {{ item("/produtos", "Produtos", ["admin","vendedor"], "etiqueta") }}
 
-        {% if p in ["admin","vendedor","financeiro","funcionario"] or p_ve_tudo %}
+        {% if p in ["admin","vendedor"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Vendas</p>
         {% endif %}
         {{ item("/pedidos", "Pedidos", ["admin","vendedor"], "carrinho") }}
-        {{ item("/separacao", "Separação", ["admin","funcionario"], "lista") }}
+        {# A tela em si é pública (abre sem sessão). O item aqui é só o atalho de quem
+           já está logado — quem opera o balcão chega por ele, não pela URL decorada. #}
+        {{ item("/orcamento", "Orçamento inteligente", ["admin","vendedor"], "calculadora") }}
+        {{ item("/separacao", "Separação", ["admin","vendedor"], "lista") }}
         {{ item("/clientes", "Clientes", ["admin","vendedor"], "usuarios") }}
 
-        {% if p in ["admin","vendedor","financeiro"] or p_ve_tudo %}
+        {% if p in ["admin","vendedor"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Gestão</p>
         {% endif %}
-        {{ item("/financeiro", "Financeiro", ["admin","financeiro"], "dinheiro") }}
-        {{ item("/relatorios", "Relatórios", ["admin","vendedor","financeiro"], "grafico") }}
+        {{ item("/financeiro", "Financeiro", ["admin"], "dinheiro") }}
+        {{ item("/relatorios", "Relatórios", ["admin","vendedor"], "grafico") }}
         {{ item("/importacao", "Importação", ["admin"], "upload") }}
         {{ item("/empresa", "Empresa", ["admin"], "engrenagem") }}
         {{ item("/usuarios", "Usuários", ["admin"], "engrenagem") }}

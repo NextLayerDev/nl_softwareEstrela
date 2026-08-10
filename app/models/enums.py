@@ -4,10 +4,18 @@ import enum
 
 
 class Perfil(enum.StrEnum):
+    """Os dois perfis da empresa, mais o de manutenção.
+
+    A empresa tem dono e vendedores — nada mais. O vendedor opera o dia inteiro
+    (produtos, estoque, pedidos, separação, clientes, relatórios de venda); o que
+    ele NÃO faz é faturar, mexer em contas a receber e administrar o sistema
+    (usuários, empresa, importação). Os perfis `financeiro` e `funcionario`
+    existiram até a migration `d4b1e7a95c30`, que converteu os usuários
+    (financeiro -> admin, funcionario -> vendedor).
+    """
+
     ADMIN = "admin"
     VENDEDOR = "vendedor"
-    FINANCEIRO = "financeiro"
-    FUNCIONARIO = "funcionario"
     # Perfil de manutenção (quem cuida do sistema, não quem opera a empresa).
     # Passa em qualquer require_role e é o ÚNICO que enxerga /deploy — nem o admin vê.
     # Não é atribuível pela tela de usuários: ver PERFIS_ATRIBUIVEIS.
@@ -85,7 +93,7 @@ CATEGORIA_CLIENTE_INFO: dict[str, dict[str, str]] = {
 
 
 # Perfis que NÃO podem ver preço de custo / margem (doc 01 §7).
-PERFIS_SEM_CUSTO = {Perfil.VENDEDOR.value, Perfil.FUNCIONARIO.value}
+PERFIS_SEM_CUSTO = {Perfil.VENDEDOR.value}
 
 # Perfis oferecidos na tela de usuários. `dev` fica DE FORA de propósito: se ele
 # aparecesse no select, o admin da empresa criaria um usuário dev e se auto-promoveria

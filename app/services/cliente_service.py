@@ -9,8 +9,8 @@ from app.models.enums import Perfil
 from app.repositories.cliente_repo import cliente_repo
 from app.schemas.cliente import ClienteCreate, ClienteUpdate
 
-# Quem lista clientes: admin e vendedor mexem, financeiro consulta.
-_CLI_AUD = (Perfil.ADMIN.value, Perfil.VENDEDOR.value, Perfil.FINANCEIRO.value)
+# Quem lista clientes: os dois perfis da empresa.
+_CLI_AUD = (Perfil.ADMIN.value, Perfil.VENDEDOR.value)
 
 # Campos de texto gravados em CAIXA ALTA (pedido do cliente + padronização do endereço fiscal).
 _CAMPOS_MAIUSCULOS = {
