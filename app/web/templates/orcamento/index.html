@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+{#
+  Orçamento Inteligente — a tela do balcão.
+
+  É a geometria do "Lançamentos de Reserva" (P_RESE01) que a loja usa há anos: faixa de
+  título, bloco de campos com rótulos pontilhados, a grade de itens com réguas verticais
+  e o rodapé com Valor Total e Total de Peças. O que muda é a paleta (marrom/dourado/creme
+  no lugar do azul do terminal) e a digitação, que veio do PDV: um campo só.
+
+  Página INTEIRA, sem `base.html`: ela é pública, então não pode mostrar sidebar, nome de
+  usuário nem botão de sair — nada que só faça sentido para quem tem sessão.
+
+  Nada aqui grava no servidor. O orçamento vive no navegador e sai pela impressora.
+#}
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orçamento · Estrela Gestão</title>
+  <link rel="stylesheet" href="/static/css/output.css?v={{ asset_version }}" />
+  <meta name="theme-color" content="#B98A19" />
+  <script defer src="/static/js/alpine.min.js"></script>
+  <script src="/static/js/htmx.min.js"></script>
+  <script src="/static/js/orcamento.js?v={{ asset_version }}"></script>
+</head>
+<body class="min-h-screen bg-marca-fundo font-sans text-sidebar">
+
+<main class="mx-auto max-w-5xl p-3 md:p-5"
+      x-data="{
+        /* ---------------- estado ---------------- */
+        cliente: '', vendedor: '', condicao: 'À VISTA',
+        linha: '', destacado: -1, aviso: '',
+        listaAberta: false,      /* quem escreve dentro de #sugestoes é o htmx */
+        pendente: null,          /* nome conhecido, faltou o preço */
+        precoPendente: '',
+        itens: [],
+
+        /* ---------------- derivados ---------------- */
+        get espelho() { return Orcamento.espelho(this.linha); },
+        get totalCentavos() { return this.itens.reduce((s, i) => s + i.qtd * i.preco, 0); },
+        get totalPecas() { return this.itens.reduce((s, i) => s + i.qtd, 0); },
+        moeda(c) { return Orcamento.formatarBRL(c); },
+
+        /* ---------------- busca ----------------
+           O conteúdo de #sugestoes é do htmx, e só dele: fechar a lista mexendo no
+           innerHTML na mão deixa o htmx com a árvore que ele registrou desatualizada,
+           e o swap SEGUINTE naquele nó não acontece — na prática, escolher um produto
+           e digitar o mesmo termo de novo não trazia sugestão nenhuma. Aqui a lista só
+           some da tela (`listaAberta`); o DOM continua sendo escrito pelo htmx. */
+        buscar() {
+          const termo = Orcamento.termoBusca(this.linha);
+          this.destacado = -1;
+          if (this.pendente || !termo || termo.length < 2) { this.listaAberta = false; return; }
+          this.listaAberta = true;
+          htmx.ajax('GET', '/orcamento/busca?q=' + encodeURIComponent(termo), { target: '#sugestoes' });
+        },
+        /* Com a lista fechada, o que sobrou no DOM não conta: as setas não navegam
+           nele e o Enter não escolhe por ele. */
+        get opcoes() {
+          if (!this.listaAberta) return [];
+          return Array.from(document.querySelectorAll('#sugestoes [data-id]'));
+        },
+        limparSugestoes() { this.listaAberta = false; this.destacado = -1; },
+
+        /* ---------------- carrinho ---------------- */
+        /* Mesmo produto pelo mesmo preço vira UMA linha: é o que mantém o orçamento
+           legível quando o mesmo item é lançado três vezes. Preço diferente abre
+           linha nova — são negociações distintas. */
+        lancar(nome, qtd, preco, codigo) {
+          const chave = Orcamento.normalizarNome(nome);
+          const achado = this.itens.find(i => Orcamento.normalizarNome(i.nome) === chave && i.preco === preco);
+          if (achado) { achado.qtd += qtd; }
+          else { this.itens.push({ nome, qtd, preco, codigo: codigo || '' }); }
+          this.linha = ''; this.aviso = ''; this.pendente = null; this.precoPendente = '';
+          this.limparSugestoes();
+          this.$nextTick(() => this.$refs.campo.focus());
+        },
+        escolher(dados) {
+          const r = Orcamento.parseLinha(this.linha);
+          const qtd = (r.tipo === 'item' || r.tipo === 'parcial') ? r.qtd : 1;
+          /* Preço digitado na linha vence o de tabela: é uma venda com preço combinado. */
+          const preco = r.tipo === 'item' ? r.precoCentavos : Number(dados.preco);
+          this.lancar(dados.nome, qtd, preco, dados.codigo);
+        },
+        enter() {
+          if (this.destacado >= 0 && this.opcoes[this.destacado]) {
+            this.escolher(this.opcoes[this.destacado].dataset);
+            return;
+          }
+          const r = Orcamento.parseLinha(this.linha);
+          if (r.tipo === 'vazio') return;
+          if (r.tipo === 'item') { this.lancar(r.nome, r.qtd, r.precoCentavos); return; }
+          /* Sem preço na linha: se há uma sugestão na tela, usa a primeira; senão
+             pergunta o preço em vez de recusar — no balcão, produto sem cadastro é
+             rotina, e travar aqui manda a pessoa de volta pro papel. */
+          if (this.opcoes.length > 0) { this.escolher(this.opcoes[0].dataset); return; }
+          if (r.tipo === 'codigo') {
+            this.aviso = 'Código ' + r.codigo + ' não está no catálogo. Escreva o nome e o preço.';
+            return;
+          }
+          this.pendente = { nome: r.nome, qtd: r.qtd };
+          this.limparSugestoes();
+          this.$nextTick(() => this.$refs.precoPend.focus());
+        },
+        confirmarPreco() {
+          const preco = Orcamento.parseMoedaBR(this.precoPendente);
+          if (preco === null) { this.aviso = 'Preço inválido. Exemplo: 12,50'; return; }
+          this.lancar(this.pendente.nome, this.pendente.qtd, preco);
+        },
+        remover(idx) { this.itens.splice(idx, 1); this.$refs.campo.focus(); },
+        limparTudo() { this.itens = []; this.linha = ''; this.aviso = ''; this.pendente = null; this.limparSugestoes(); },
+
+        /* ---------------- teclado ---------------- */
+        teclas(e) {
+          if (e.key === 'ArrowDown') { e.preventDefault(); this.destacado = Math.min(this.destacado + 1, this.opcoes.length - 1); return; }
+          if (e.key === 'ArrowUp')   { e.preventDefault(); this.destacado = Math.max(this.destacado - 1, -1); return; }
+          if (e.key === 'Enter')     { e.preventDefault(); this.enter(); return; }
+          if (e.key === 'Escape')    {
+            e.preventDefault();
+            /* Esc uma vez limpa o que está escrito; com o campo vazio, limpa o orçamento. */
+            if (this.linha || this.pendente) { this.linha = ''; this.pendente = null; this.aviso = ''; this.limparSugestoes(); }
+            else { this.limparTudo(); }
+            return;
+          }
+          if (e.key === 'Delete' && this.linha === '' && this.itens.length) {
+            e.preventDefault(); this.itens.pop();
+          }
+        }
+      }"
+      @keydown.window.f2.prevent="window.print()">
+
+  {# ============================ faixa de título ============================ #}
+  <header class="flex flex-wrap items-baseline justify-between gap-2 rounded-t-md bg-sidebar px-4 py-2 font-mono text-sidebar-texto">
+    {# `empresa` é None até alguém preencher /empresa — a tela pública não pode cair por isso. #}
+    {% set nome_loja = (empresa.nome_fantasia or empresa.razao_social) if empresa else None %}
+    <span class="text-sm font-bold uppercase tracking-widest text-gold-400">{{ nome_loja or "Estrela" }}</span>
+    <span class="text-base font-bold uppercase tracking-[0.3em] text-white">Orçamento</span>
+    <span class="text-sm" x-text="new Date().toLocaleDateString('pt-BR')"></span>
+  </header>
+
+  {# ============================ campos do cabeçalho ============================
+     Os quatro que importam. A tela antiga tinha dezesseis, e treze deles ficavam
+     vazios em toda reserva de balcão. #}
+  <section class="grid grid-cols-1 gap-x-6 gap-y-2 border-x border-marca-borda bg-white px-4 py-3 font-mono text-sm sm:grid-cols-2">
+    <label class="flex items-center gap-2">
+      <span class="w-24 shrink-0 text-gray-500">Cliente...:</span>
+      <input x-model="cliente" class="min-w-0 flex-1 rounded border border-marca-borda bg-gold-50 px-2 py-1 uppercase focus-visible:border-gold-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200" placeholder="CONSUMIDOR" />
+    </label>
+    <label class="flex items-center gap-2">
+      <span class="w-24 shrink-0 text-gray-500">Vendedor..:</span>
+      <input x-model="vendedor" class="min-w-0 flex-1 rounded border border-marca-borda bg-gold-50 px-2 py-1 uppercase focus-visible:border-gold-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200" placeholder="—" />
+    </label>
+    <label class="flex items-center gap-2">
+      <span class="w-24 shrink-0 text-gray-500">Cond.Pagto:</span>
+      <input x-model="condicao" class="min-w-0 flex-1 rounded border border-marca-borda bg-gold-50 px-2 py-1 uppercase focus-visible:border-gold-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-200" />
+    </label>
+    <p class="flex items-center gap-2 text-gray-400">
+      <span class="w-24 shrink-0 text-gray-500">Validade..:</span>
+      <span>orçamento — não reserva estoque</span>
+    </p>
+  </section>
+
+  {# ============================ o campo único ============================ #}
+  <section class="sem-impressao relative border-x border-marca-borda bg-white px-4 pb-3">
+    <label for="linha" class="mb-1 block text-sm font-semibold">O que o cliente está levando?</label>
+    <div class="flex items-center gap-2 rounded-md border-2 border-marca-borda bg-white px-3 focus-within:border-gold-500">
+      <input id="linha" x-ref="campo" x-model="linha" type="text"
+             class="h-14 w-full bg-transparent text-xl outline-none placeholder:text-gray-300 disabled:opacity-40"
+             placeholder="caneta 10" autocomplete="off" autocorrect="off" spellcheck="false" autofocus
+             :disabled="pendente !== null"
+             @input.debounce.200ms="buscar()"
+             @keydown="teclas($event)" />
+    </div>
+
+    {# Altura fixa de propósito: se o espelho aparecesse e sumisse, a grade de itens
+       pularia a cada primeira letra digitada. A altura precisa caber a linha INTEIRA
+       (h-7 = pt-1 + line-height), senão o `truncate` corta os descendentes e "preço"
+       aparece escrito "preco" na tela. #}
+    <p class="h-7 truncate px-1 pt-1 text-sm leading-5"
+       :class="espelho.forte ? 'font-medium text-sidebar' : 'text-gray-500'"
+       x-text="espelho.texto"></p>
+
+    {# Nome conhecido, preço faltando #}
+    <div x-show="pendente" x-cloak class="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-marca-borda bg-gold-50 px-3 py-2">
+      <span class="text-sm"><strong x-text="pendente?.nome"></strong> não está no catálogo. Quanto custa?</span>
+      <input x-ref="precoPend" x-model="precoPendente" inputmode="decimal" placeholder="0,00"
+             class="w-28 rounded border border-marca-borda bg-white px-2 py-1 font-mono outline-none focus-visible:border-gold-400"
+             @keydown.enter.prevent="confirmarPreco()"
+             @keydown.escape.prevent="pendente = null; precoPendente = ''; $refs.campo.focus()" />
+      <span class="text-xs text-gray-500">Enter confirma · Esc cancela</span>
+    </div>
+
+    <p x-show="aviso" x-cloak class="mt-1 px-1 text-sm text-aviso" x-text="aviso"></p>
+
+    {# Sugestões — lista curta, escolhida pelas setas ou pelo clique.
+       Este nó é escrito exclusivamente pelo htmx (ver `buscar`): nada de innerHTML aqui. #}
+    <div id="sugestoes" role="listbox" aria-label="Sugestões de produto"
+         class="absolute inset-x-4 z-30 mt-1 overflow-hidden rounded-md border border-marca-borda bg-white shadow-card empty:hidden"
+         x-show="listaAberta && !pendente" x-cloak></div>
+  </section>
+
+  {# ============================ grade de itens ============================ #}
+  <section class="border-x border-marca-borda bg-white px-4 pb-3">
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse font-mono text-sm">
+        <thead>
+          <tr class="bg-gold-100 text-xs uppercase tracking-wider text-sidebar">
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-left">Seq</th>
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-left">Produto</th>
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-left">Nome</th>
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-right">Qtde</th>
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-right">Uni</th>
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-right">Preço</th>
+            <th scope="col" class="border border-marca-borda px-2 py-1 text-right">Total</th>
+            <th scope="col" class="sem-impressao border border-marca-borda px-2 py-1"><span class="sr-only">Remover</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(item, idx) in itens" :key="idx">
+            <tr class="odd:bg-white even:bg-gold-50">
+              <td class="border border-marca-borda px-2 py-1 text-gray-500" x-text="idx + 1"></td>
+              <td class="border border-marca-borda px-2 py-1 text-gold-700" x-text="item.codigo || '—'"></td>
+              <td class="border border-marca-borda px-2 py-1" x-text="item.nome"></td>
+              <td class="border border-marca-borda px-2 py-1 text-right" x-text="item.qtd"></td>
+              <td class="border border-marca-borda px-2 py-1 text-right text-gray-500">UN</td>
+              <td class="border border-marca-borda px-2 py-1 text-right" x-text="moeda(item.preco)"></td>
+              <td class="border border-marca-borda px-2 py-1 text-right font-semibold" x-text="moeda(item.qtd * item.preco)"></td>
+              <td class="sem-impressao border border-marca-borda px-2 py-1 text-center">
+                <button type="button" class="text-xs text-critico hover:underline"
+                        :aria-label="'Remover ' + item.nome" @click="remover(idx)">remover</button>
+              </td>
+            </tr>
+          </template>
+          {# Linhas em branco: a grade tem altura constante, como a do terminal. Sem
+             isso o rodapé sobe e desce a cada item e o olho perde a referência. #}
+          <template x-for="n in Math.max(0, 6 - itens.length)" :key="'vazia-' + n">
+            <tr>
+              <td class="border border-marca-borda px-2 py-1 text-transparent">.</td>
+              <td class="border border-marca-borda px-2 py-1"></td>
+              <td class="border border-marca-borda px-2 py-1"></td>
+              <td class="border border-marca-borda px-2 py-1"></td>
+              <td class="border border-marca-borda px-2 py-1"></td>
+              <td class="border border-marca-borda px-2 py-1"></td>
+              <td class="border border-marca-borda px-2 py-1"></td>
+              <td class="sem-impressao border border-marca-borda px-2 py-1"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ============================ rodapé de totais ============================ #}
+  <footer class="flex flex-wrap items-center justify-between gap-4 rounded-b-md bg-sidebar px-4 py-3 font-mono text-sidebar-texto">
+    <div class="text-sm">
+      <span class="text-sidebar-texto/60">Total Pecas.:</span>
+      <span class="ml-2 text-lg font-bold text-white" x-text="totalPecas"></span>
+    </div>
+    <div class="text-right">
+      <span class="text-sm text-sidebar-texto/60">Valor Total.:</span>
+      <span class="ml-2 text-3xl font-bold text-gold-400" x-text="moeda(totalCentavos)"></span>
+    </div>
+  </footer>
+
+  {# ============================ ações e legenda ============================
+     A legenda só aparece com o orçamento vazio: enquanto a pessoa atende, ela rouba
+     a atenção do que importa; entre um cliente e outro é quando dá tempo de ler. #}
+  <div class="sem-impressao mt-3 flex flex-wrap items-center gap-2">
+    <button type="button" class="btn-primario" :disabled="!itens.length" @click="window.print()">
+      Imprimir orçamento (F2)
+    </button>
+    <button type="button" class="btn-secundario" :disabled="!itens.length" @click="limparTudo()">
+      Limpar
+    </button>
+    <a href="/pedidos/novo" class="btn-fantasma">Virar pedido</a>
+  </div>
+
+  <dl x-show="!itens.length" x-cloak
+      class="sem-impressao mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-gray-500">
+    <dt class="font-semibold text-sidebar">Enter</dt><dd>lança o item</dd>
+    <dt class="font-semibold text-sidebar">↑ ↓</dt><dd>escolhe a sugestão</dd>
+    <dt class="font-semibold text-sidebar">Del</dt><dd>tira o último item</dd>
+    <dt class="font-semibold text-sidebar">Esc</dt><dd>limpa o campo, depois o orçamento</dd>
+    <dt class="font-semibold text-sidebar">F2</dt><dd>imprime</dd>
+  </dl>
+</main>
+
+<style>
+  /* O que é ferramenta de digitação não vai para o papel: o cliente leva a grade,
+     os totais e o cabeçalho — nada de campo de busca, botão ou legenda de teclas. */
+  @media print {
+    .sem-impressao { display: none !important; }
+    body { background: #fff; }
+    @page { margin: 12mm; }
+  }
+</style>
+</body>
+</html>

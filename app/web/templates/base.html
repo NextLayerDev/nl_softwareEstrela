@@ -71,6 +71,9 @@
         <p class="nav-grupo-titulo">Vendas</p>
         {% endif %}
         {{ item("/pedidos", "Pedidos", ["admin","vendedor"], "carrinho") }}
+        {# A tela em si é pública (abre sem sessão). O item aqui é só o atalho de quem
+           já está logado — quem opera o balcão chega por ele, não pela URL decorada. #}
+        {{ item("/orcamento", "Orçamento inteligente", ["admin","vendedor"], "calculadora") }}
         {{ item("/separacao", "Separação", ["admin","vendedor"], "lista") }}
         {{ item("/clientes", "Clientes", ["admin","vendedor"], "usuarios") }}
 

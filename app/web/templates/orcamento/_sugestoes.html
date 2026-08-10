@@ -1,0 +1,33 @@
+{# Sugestões do campo único do orçamento.
+
+   Cada linha carrega o preço em CENTAVOS num data-attribute: a tela soma tudo em
+   inteiros, e converter de "R$ 12,50" de volta para número no clique seria reintroduzir
+   o erro de centavo que o resto do arquivo evita.
+
+   O estado (destacado, escolher) vive no x-data de index.html. `destacado` é o índice
+   navegado pelas setas; -1 significa "nenhum", e aí o Enter usa o que foi digitado. #}
+{% for s in sugestoes %}
+<button type="button" role="option" data-indice="{{ loop.index0 }}"
+        :aria-selected="destacado === {{ loop.index0 }}"
+        class="flex w-full items-center gap-3 border-b border-marca-borda px-3 py-2 text-left last:border-b-0"
+        :class="destacado === {{ loop.index0 }} ? 'bg-gold-100' : 'bg-white'"
+        data-id="{{ s.id }}" data-nome="{{ s.descricao }}{% if s.cor %} {{ s.cor }}{% endif %}"
+        data-codigo="{{ s.codigo }}" data-preco="{{ s.preco_centavos }}"
+        @mouseenter="destacado = {{ loop.index0 }}"
+        @mousedown.prevent
+        @click="escolher($el.dataset)">
+  <span class="shrink-0 font-mono text-xs text-gold-700">{{ s.codigo }}</span>
+  <span class="min-w-0 flex-1 truncate text-sm">{{ s.descricao }}</span>
+  {% if s.cor %}<span class="shrink-0 text-xs text-gray-500">{{ s.cor }}</span>{% endif %}
+  <span class="shrink-0 font-mono text-sm font-semibold">
+    {{ (s.preco_centavos / 100) | moeda }}
+  </span>
+</button>
+{% else %}
+{% if termo|length >= 2 %}
+<p class="px-3 py-2 text-sm text-gray-500">
+  Nada encontrado para “{{ termo }}”. Escreva o nome e o preço — por exemplo
+  <span class="font-mono">{{ termo }} 10</span> — que ele entra assim mesmo.
+</p>
+{% endif %}
+{% endfor %}
