@@ -55,7 +55,9 @@ def upgrade() -> None:
     # segurar o NOT NULL abaixo e derrubar o deploy.
     op.execute("UPDATE pedido_itens SET descricao = 'ITEM' WHERE descricao IS NULL")
 
-    op.alter_column("pedido_itens", "descricao", existing_type=sa.String(length=200), nullable=False)
+    op.alter_column(
+        "pedido_itens", "descricao", existing_type=sa.String(length=200), nullable=False
+    )
     op.alter_column(
         "pedido_itens", "produto_variacao_id", existing_type=sa.Integer(), nullable=True
     )
