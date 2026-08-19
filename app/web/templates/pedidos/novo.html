@@ -12,88 +12,282 @@
 {% endblock %}
 
 {% block content %}
-{# Duas portas para o mesmo pedido, lado a lado: à esquerda o rascunho vazio de sempre,
-   à direita a colagem da planilha. O painel da direita reaproveita os campos de cliente
-   da esquerda por hx-include (#form-cliente), então o cliente digitado vale nos dois
-   caminhos e não existe um segundo formulário de cliente para manter em dia. #}
-<div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-{# O cliente é OPCIONAL. Quem chega no balcão raramente está cadastrado, e parar a venda
-   para preencher um cadastro completo é o que fazia o vendedor abandonar o sistema.
-   Digitando o nome ou o telefone, a busca sugere quem já existe; escolhendo a sugestão,
-   o pedido se amarra ao cadastro (hidden cliente_id) e a condição de pagamento dele
-   volta a valer no faturamento. Sem nada preenchido, o pedido é de CONSUMIDOR. #}
-<form method="post" action="/pedidos" id="form-cliente" class="card"
-      x-data="{
-        clienteId: '',
-        clienteRotulo: '',
-        buscar(termo) {
-          if (this.clienteId) return;              // já vinculado: não sugere mais
-          const caixa = document.getElementById('sug-cliente');
-          if (!termo || termo.trim().length < 2) { caixa.innerHTML = ''; return; }
-          htmx.ajax('GET', '/pedidos/busca-cliente?q=' + encodeURIComponent(termo.trim()),
-                    { target: '#sug-cliente' });
-        },
-        vincular(id, nome, telefone) {
-          this.clienteId = id;
-          this.clienteRotulo = nome;
-          document.getElementById('cliente_nome').value = nome;
-          document.getElementById('cliente_telefone').value = telefone;
-          document.getElementById('sug-cliente').innerHTML = '';
-        },
-        desvincular() {
-          this.clienteId = '';
-          this.clienteRotulo = '';
-          document.getElementById('sug-cliente').innerHTML = '';
-          $nextTick(() => document.getElementById('cliente_nome').focus());
-        }
-      }">
+{# O pedido inteiro nasce nesta tela: cliente, itens, desconto e observação viram UM
+   POST em "Criar pedido". Antes daqui saía um rascunho vazio e o vendedor ia lançar
+   item a item na tela de detalhe, esperando a rede a cada linha — no balcão isso é
+   esperar a rede no meio da conversa com o cliente.
+
+   O carrinho vive no navegador (Alpine, dinheiro em centavos inteiros) e só existe no
+   banco depois do submit. Recarregar a página perde o carrinho, de propósito: rascunho
+   intermediário é lixo que alguém precisa limpar depois.
+
+   A tela de detalhe continua editando pedido já criado — é ela que abre quando este
+   formulário grava. #}
+<form method="post" action="/pedidos" id="form-pedido" x-data="PedidoNovo.carrinho()">
   <input type="hidden" name="cliente_id" :value="clienteId" />
+  <input type="hidden" name="itens_json" :value="itensJson" />
+  <input type="hidden" name="desconto_total" :value="(desconto / 100).toFixed(2)" />
 
-  <div class="grid grid-cols-1 gap-4">
-    <div class="relative">
-      <label class="label" for="cliente_nome">Nome do cliente <span class="text-gray-400">(opcional)</span></label>
-      <input type="text" id="cliente_nome" name="cliente_nome" class="input" autocomplete="off"
-             placeholder="Quem está comprando"
-             @input.debounce.250ms="buscar($el.value)" />
-    </div>
-
-    <div>
-      <label class="label" for="cliente_telefone">Telefone <span class="text-gray-400">(opcional)</span></label>
-      <input type="tel" id="cliente_telefone" name="cliente_telefone" class="input" autocomplete="off"
-             placeholder="(00) 00000-0000" inputmode="tel"
-             @input.debounce.250ms="buscar($el.value)" />
-      <p class="mt-1 text-xs text-gray-500">
-        Digitando o nome ou o telefone, quem já é cadastrado aparece abaixo.
-      </p>
+  {# ----------------------------------------------------------------- cliente #}
+  <div class="card mb-4">
+    <h3 class="mb-3 text-sm font-semibold">Cliente</h3>
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div>
+        <label class="label" for="cliente_nome">Nome do cliente <span class="text-gray-400">(opcional)</span></label>
+        <input type="text" id="cliente_nome" name="cliente_nome" class="input w-full" autocomplete="off"
+               placeholder="Quem está comprando"
+               @input.debounce.250ms="buscarCliente($el.value)" />
+      </div>
+      <div>
+        <label class="label" for="cliente_telefone">Telefone <span class="text-gray-400">(opcional)</span></label>
+        <input type="tel" id="cliente_telefone" name="cliente_telefone" class="input w-full" autocomplete="off"
+               placeholder="(00) 00000-0000" inputmode="tel"
+               @input.debounce.250ms="buscarCliente($el.value)" />
+      </div>
     </div>
 
     {# Sugestões. Fica fora dos dois campos de propósito: os dois alimentam a mesma lista. #}
     <div id="sug-cliente" x-show="!clienteId"
-         class="max-h-56 overflow-y-auto rounded-md border border-marca-borda empty:hidden"></div>
+         class="mt-3 max-h-56 overflow-y-auto rounded-md border border-marca-borda empty:hidden"></div>
 
     {# Selo do vínculo — é o que diz ao vendedor que a condição de pagamento do cadastro
        vai valer no faturamento. Sem ele, o pedido é à vista. #}
     <div x-show="clienteId" x-cloak
-         class="flex items-center gap-3 rounded-md border border-marca-borda bg-gold-50 p-2">
+         class="mt-3 flex items-center gap-3 rounded-md border border-marca-borda bg-gold-50 p-2">
       <span class="nav-icone shrink-0 text-gold-600" aria-hidden="true">{{ icone("usuarios") }}</span>
       <p class="min-w-0 flex-1 truncate text-sm">
         Vinculado ao cadastro de <strong x-text="clienteRotulo"></strong>
       </p>
       <button type="button" class="btn-secundario shrink-0" @click="desvincular()">Desvincular</button>
     </div>
+  </div>
 
-    <div>
-      <label class="label" for="observacao">Observação</label>
-      <textarea id="observacao" name="observacao" rows="2" class="input" placeholder="Opcional"></textarea>
+  {# ------------------------------------------------------- adicionar produto #}
+  <div class="card mb-4">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <h3 class="text-sm font-semibold">Adicionar produto</h3>
+      <div class="tabs">
+        <button type="button" class="tab" :class="aba === 'catalogo' ? 'bg-gold-100 font-semibold' : ''"
+                @click="aba = 'catalogo'">Do catálogo</button>
+        <button type="button" class="tab" :class="aba === 'avulso' ? 'bg-gold-100 font-semibold' : ''"
+                @click="aba = 'avulso'">Item avulso</button>
+        <button type="button" class="tab" :class="aba === 'colar' ? 'bg-gold-100 font-semibold' : ''"
+                @click="aba = 'colar'">Colar itens</button>
+      </div>
+    </div>
+
+    {# ---------------------------------------------------------- do catálogo #}
+    <div x-show="aba === 'catalogo'">
+      <div class="mb-3">
+        <label class="label" for="busca-item">Buscar produto/variação</label>
+        <div class="flex items-center gap-2">
+          <input type="search" id="busca-item" class="input w-full" autocomplete="off"
+                 placeholder="Código, descrição, cor ou localização…"
+                 hx-get="/pedidos/busca-item" hx-trigger="keyup changed delay:250ms, search"
+                 hx-target="#resultado-busca" hx-indicator="#busca-item-load" />
+          <span id="busca-item-load" class="carregando shrink-0" role="status">buscando…</span>
+        </div>
+        {# A lista NÃO é limpa no clique: é ela que permite lançar três produtos da mesma
+           busca sem redigitar o termo. #}
+        <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto rounded-md border border-marca-borda empty:border-0"></div>
+        <p class="mt-1 text-xs text-gray-500">
+          O código funciona com ou sem traço. Clique no resultado para selecionar.
+        </p>
+      </div>
+
+      <div x-show="sel" x-cloak>
+        <div class="mb-3 flex items-center gap-3 rounded-md border border-marca-borda bg-gold-50 p-2">
+          <img :src="sel?.img" x-show="sel?.img" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-semibold">
+              <span class="font-mono" x-text="sel?.codigo"></span> — <span x-text="sel?.descricao"></span>
+            </p>
+            <p class="text-xs text-gray-500">
+              Cor: <span x-text="sel?.cor || 'padrão'"></span> ·
+              Disponível: <span x-text="sel?.disponivel"></span>
+            </p>
+          </div>
+          <button type="button" class="btn-secundario shrink-0"
+                  @click="sel = null; $nextTick(() => document.getElementById('busca-item')?.focus())">Trocar</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div>
+            <label class="label" for="item-qtd" x-text="porCaixa ? 'Qtd (caixas)' : 'Qtd (un)'"></label>
+            <input type="number" id="item-qtd" min="1" x-model="qtdTexto" class="input w-full" />
+          </div>
+          <div>
+            <label class="label" for="item-preco">Preço unit.</label>
+            <input type="text" id="item-preco" x-model="precoTexto" class="input w-full"
+                   :placeholder="moeda(precoPrevisto)" />
+          </div>
+          <div>
+            <label class="label" for="item-desc">Desconto (R$)</label>
+            <input type="text" id="item-desc" x-model="descontoItemTexto" class="input w-full" placeholder="0,00" />
+          </div>
+          <div class="flex items-end">
+            <button type="button" class="btn-primario w-full" @click="adicionarDoCatalogo()">Adicionar</button>
+          </div>
+          <div class="col-span-2 flex items-end md:col-span-1">
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" x-model="porCaixa" :disabled="!sel?.unidadesCaixa" />
+              Vender por caixa
+            </label>
+          </div>
+        </div>
+
+        <p class="mt-2 text-xs text-gray-500">
+          <span x-text="qtdEfetiva"></span> un ·
+          preço <span x-text="faixaPrevista"></span> de <span x-text="moeda(precoPrevisto)"></span>
+          <template x-if="porCaixa && sel?.unidadesCaixa">
+            <span> · <span x-text="qtdTexto"></span> cx × <span x-text="sel.unidadesCaixa"></span></span>
+          </template>
+        </p>
+        {# O piso do produto virou AVISO, não trava: quem está no balcão fecha negócio
+           difícil na frente do cliente. O número continua à vista. #}
+        <p x-show="avisoPrevisto" x-cloak class="mt-1 text-xs font-semibold text-aviso" x-text="avisoPrevisto"></p>
+      </div>
+    </div>
+
+    {# -------------------------------------------------------------- avulso #}
+    <div x-show="aba === 'avulso'" x-cloak>
+      <p class="mb-3 text-xs text-gray-500">
+        Para o que não está no catálogo: produto que acabou, item novo, serviço.
+        Não reserva estoque — não há saldo a movimentar.
+      </p>
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div class="col-span-2">
+          <label class="label" for="avulso-nome">Nome do item</label>
+          <input type="text" id="avulso-nome" maxlength="200" class="input w-full"
+                 x-model="avulso.nome" placeholder="Ex.: caneca personalizada" />
+        </div>
+        <div>
+          <label class="label" for="avulso-qtd">Qtd</label>
+          <input type="number" id="avulso-qtd" min="1" class="input w-full" x-model="avulso.qtd" />
+        </div>
+        <div>
+          <label class="label" for="avulso-preco">Valor unit.</label>
+          <input type="text" id="avulso-preco" class="input w-full" x-model="avulso.preco" placeholder="0,00" />
+        </div>
+        <div>
+          <label class="label" for="avulso-codigo">Código (opcional)</label>
+          <input type="text" id="avulso-codigo" maxlength="60" class="input w-full"
+                 x-model="avulso.codigo" placeholder="Ex.: K-708" />
+        </div>
+        <div class="col-span-2">
+          <label class="label" for="avulso-detalhe">Descrição (opcional)</label>
+          <input type="text" id="avulso-detalhe" maxlength="500" class="input w-full"
+                 x-model="avulso.detalhe" placeholder="Cor, material, detalhes…" />
+        </div>
+        <div class="flex items-end">
+          <button type="button" class="btn-primario w-full" @click="adicionarAvulso()"
+                  :disabled="!avulso.nome.trim()">Adicionar</button>
+        </div>
+      </div>
+    </div>
+
+    {# --------------------------------------------------------------- colar #}
+    <div x-show="aba === 'colar'" x-cloak>
+      <textarea rows="8" class="input w-full font-mono text-xs" x-model="textoColado"
+                placeholder="H555&#9;GARRAFA LED AZUL&#9;100&#9;R$ 13,00&#10;CH916&#9;CHAVEIRO RETANGULAR&#9;126&#9;R$ 3,00"></textarea>
+      <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-xs text-gray-500">
+          Cole as linhas da planilha. O código é procurado no catálogo; o que não achar
+          entra como item avulso, com o código e a descrição preservados.
+        </p>
+        <button type="button" class="btn-secundario" @click="colarItens()"
+                :disabled="colando || !textoColado.trim()"
+                x-text="colando ? 'Lendo…' : 'Adicionar ao carrinho'"></button>
+      </div>
     </div>
   </div>
 
-  <div class="mt-6 flex gap-2">
-    <button type="submit" class="btn-primario">Criar rascunho</button>
+  {# ---------------------------------------------------------------- carrinho #}
+  <div class="card mb-4" x-show="itens.length" x-cloak>
+    <h3 class="mb-3 text-sm font-semibold">Itens (<span x-text="itens.length"></span>)</h3>
+    <div class="overflow-x-auto">
+      <table class="tabela w-full">
+        <thead>
+          <tr>
+            <th scope="col" class="text-left">Código</th>
+            <th scope="col" class="text-left">Produto</th>
+            <th scope="col" class="text-left">Cor</th>
+            <th scope="col" class="text-right">Qtd</th>
+            <th scope="col" class="text-right">Preço un.</th>
+            <th scope="col" class="text-right">Desc.</th>
+            <th scope="col" class="text-right">Subtotal</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="item in itens" :key="item.chave">
+            <tr>
+              <td class="font-mono" x-text="item.codigo || '—'"></td>
+              <td>
+                <span x-text="item.descricao"></span>
+                <span x-show="item.tipo === 'avulso'" class="selo-neutro ml-1">avulso</span>
+                <span x-show="item.qtdCaixas" class="block text-xs text-gray-400">
+                  <span x-text="item.qtdCaixas"></span> cx = <span x-text="item.qtd"></span> un
+                </span>
+                <span x-show="avisoItem(item)" class="block text-xs font-semibold text-aviso"
+                      x-text="avisoItem(item)"></span>
+              </td>
+              <td x-text="item.cor || '—'"></td>
+              <td class="text-right" x-text="item.qtd"></td>
+              <td class="text-right" x-text="moeda(item.precoCentavos)"></td>
+              <td class="text-right" x-text="moeda(item.descontoCentavos)"></td>
+              <td class="text-right" x-text="moeda(subtotalItem(item))"></td>
+              <td class="text-right">
+                <button type="button" class="btn-perigo text-xs" @click="remover(item.chave)">Remover</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-3 flex flex-col items-end gap-1 text-sm">
+      <div class="flex w-full max-w-xs items-center justify-between gap-3">
+        <span class="text-gray-500">Subtotal</span>
+        <span x-text="moeda(subtotal)"></span>
+      </div>
+      <div class="flex w-full max-w-xs items-center justify-between gap-3">
+        <label class="text-gray-500" for="desconto-total">Desconto (R$)</label>
+        <input type="text" id="desconto-total" class="input h-8 w-28 text-right"
+               x-model="descontoTexto" placeholder="0,00" />
+      </div>
+      <div class="flex w-full max-w-xs items-center justify-between gap-3 border-t border-marca-borda pt-1 font-semibold">
+        <span>Total</span>
+        <span x-text="moeda(total)"></span>
+      </div>
+    </div>
+
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <button type="button" class="btn-secundario" @click="copiarOrcamento()">Copiar orçamento</button>
+      <button type="button" class="btn-secundario" @click="gerarResumo()">Gerar resumo</button>
+      <span x-show="recado" x-cloak class="text-xs text-gray-500" x-text="recado"></span>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------- observação #}
+  <div class="card mb-4">
+    <label class="label" for="observacao">Observação</label>
+    <textarea id="observacao" name="observacao" rows="2" class="input w-full"
+              placeholder="Ex.: entregar após as 18h"></textarea>
+  </div>
+
+  <div class="flex gap-2">
+    <button type="submit" class="btn-primario" :disabled="!itens.length"
+            :title="itens.length ? '' : 'Adicione ao menos um item'">Criar pedido</button>
     <a href="/pedidos" class="btn-secundario">Cancelar</a>
   </div>
 </form>
+{% endblock %}
 
-{% include "pedidos/_colagem_painel.html" %}
-</div>
+{% block scripts %}
+{# orcamento.js primeiro: é dele que sai o dinheiro em centavos (parseMoedaBR/formatarBRL),
+   e o pedido_novo.js lê `window.Orcamento` já na definição. Sem `defer`, então a ordem
+   aqui é a ordem de execução. #}
+<script src="/static/js/orcamento.js?v={{ asset_version }}"></script>
+<script src="/static/js/pedido_novo.js?v={{ asset_version }}"></script>
 {% endblock %}

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.controllers.pedido_controller import pedido_controller
-from app.core.errors import NaoEncontradoError
+from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.core.numeros_br import parse_decimal_br
 from app.core.templates import templates
 from app.deps.auth import require_role
@@ -17,7 +19,12 @@ from app.models.pedido import Pedido
 from app.models.usuario import Usuario
 from app.repositories.cliente_repo import cliente_repo
 from app.repositories.estoque_repo import estoque_repo
-from app.schemas.pedido import ItemAdicionar, PedidoCreate
+from app.schemas.pedido import (
+    ItemAdicionar,
+    ItemAvulsoAdicionar,
+    PedidoCompletoCreate,
+    PedidoCreate,
+)
 from app.services.empresa_service import empresa_service
 from app.services.pedido_service import pedido_service
 
@@ -36,11 +43,26 @@ def _to_decimal(valor: str | None) -> Decimal:
 @router.get("/pedidos", response_class=HTMLResponse)
 def index_pedidos(
     request: Request,
+    status: str = "",
+    origem: str = "",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
-    pedidos = pedido_controller.listar(db, usuario)
-    contexto = {"user": usuario, "titulo": "Pedidos", "pedidos": pedidos}
+    """Lista de pedidos, com os filtros de status e origem na query string.
+
+    Filtrar no servidor (e não escondendo linha no navegador) é o que faz o realtime
+    continuar honesto: quando um pedido muda de status em outro terminal, a lista é
+    re-buscada JÁ com o filtro aplicado, em vez de reaparecer uma linha que o filtro
+    tinha tirado.
+    """
+    pedidos = pedido_controller.listar(db, usuario, status, origem)
+    contexto = {
+        "user": usuario,
+        "titulo": "Pedidos",
+        "pedidos": pedidos,
+        "filtro_status": status,
+        "filtro_origem": origem,
+    }
     return templates.TemplateResponse(request, "pedidos/index.html", contexto)
 
 
@@ -50,10 +72,13 @@ def index_pedidos(
 @router.get("/pedidos/lista", response_class=HTMLResponse)
 def fragmento_lista(
     request: Request,
+    status: str = "",
+    origem: str = "",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
-    pedidos = pedido_controller.listar(db, usuario)
+    """Só as linhas. Serve os dois gatilhos: os filtros da tela e o realtime."""
+    pedidos = pedido_controller.listar(db, usuario, status, origem)
     return templates.TemplateResponse(
         request, "pedidos/_linhas.html", {"user": usuario, "pedidos": pedidos}
     )
@@ -75,22 +100,62 @@ def criar_pedido(
     cliente_nome: str = Form(""),
     cliente_telefone: str = Form(""),
     observacao: str = Form(""),
+    desconto_total: str = Form("0"),
+    itens_json: str = Form(""),
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
-    """Abre o rascunho. Os três campos de cliente são opcionais (venda de balcão).
+    """Cria o pedido inteiro: cliente + itens do carrinho, numa tacada só.
 
-    `cliente_id` chega como string porque é um input hidden preenchido por JS: vazio
-    quando o vendedor só digitou o nome, e um id quando ele clicou numa sugestão.
+    Os três campos de cliente são opcionais (venda de balcão). `cliente_id` chega como
+    string porque é um input hidden preenchido por JS: vazio quando o vendedor só
+    digitou o nome, e um id quando ele clicou numa sugestão.
+
+    `itens_json` é o carrinho montado no navegador. Vem como JSON num hidden e não como
+    campos repetidos do formulário porque cada linha tem forma diferente (catálogo x
+    avulso) — desempacotar isso de `item[0][tipo]` seria reinventar um parser pior.
+    O preço de cada linha ainda é resolvido no servidor; o navegador só manda o que o
+    vendedor digitou por cima.
     """
-    dados = PedidoCreate(
-        cliente_id=int(cliente_id) if cliente_id.strip().isdigit() else None,
-        cliente_nome=cliente_nome or None,
-        cliente_telefone=cliente_telefone or None,
-        observacao=observacao or None,
-    )
-    pedido = pedido_controller.criar(db, dados, usuario)
+    try:
+        itens = json.loads(itens_json) if itens_json.strip() else []
+    except ValueError as exc:
+        raise RegraNegocioError("Não consegui ler os itens do pedido.") from exc
+    if not isinstance(itens, list) or not itens:
+        raise RegraNegocioError("Adicione ao menos um item ao pedido.")
+
+    try:
+        dados = PedidoCompletoCreate(
+            cliente_id=int(cliente_id) if cliente_id.strip().isdigit() else None,
+            cliente_nome=cliente_nome or None,
+            cliente_telefone=cliente_telefone or None,
+            observacao=observacao or None,
+            desconto_total=_to_decimal(desconto_total),
+            itens=itens,
+        )
+    except ValidationError as exc:
+        raise RegraNegocioError("Há itens inválidos no pedido.") from exc
+
+    pedido = pedido_controller.criar_completo(db, dados, usuario)
     return RedirectResponse(url=f"/pedidos/{pedido.id}", status_code=303)
+
+
+@router.post("/pedidos/resolver-colagem")
+def resolver_colagem(
+    texto: str = Form(""),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Casa o texto colado com o catálogo e devolve as linhas — SEM gravar nada.
+
+    Serve a aba "Colar itens" da tela de novo pedido: as linhas caem no carrinho do
+    navegador e só viram pedido no submit. Responde JSON porque o destino é estado de
+    cliente (o carrinho do Alpine); devolver fragmento HTML só para o JS reparsear
+    custaria mais. É a única rota JSON daqui — `app/routers/` segue reservado para a
+    API da Fase 2.
+    """
+    linhas = pedido_controller.resolver_colagem(db, texto, usuario)
+    return JSONResponse({"linhas": [linha.model_dump(mode="json") for linha in linhas]})
 
 
 # ===================================================================== COLAR PLANILHA
@@ -301,6 +366,32 @@ def adicionar_item(
         desconto=_to_decimal(desconto),
     )
     pedido_controller.adicionar_item(db, pedido_id, dados, usuario)
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
+    return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
+
+
+@router.post("/pedidos/{pedido_id}/itens-avulsos", response_class=HTMLResponse)
+def adicionar_item_avulso(
+    request: Request,
+    pedido_id: int,
+    nome: str = Form(...),
+    codigo: str = Form(""),
+    detalhe: str = Form(""),
+    qtd: int = Form(1),
+    preco_unit: str = Form("0"),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Lança no rascunho um item que não está no catálogo (produto acabou, item novo)."""
+    dados = ItemAvulsoAdicionar(
+        nome=nome,
+        codigo=codigo,
+        detalhe=detalhe,
+        qtd=max(qtd, 1),
+        preco_unit=_to_decimal(preco_unit),
+    )
+    pedido_controller.adicionar_item_avulso(db, pedido_id, dados, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
     contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
     return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)

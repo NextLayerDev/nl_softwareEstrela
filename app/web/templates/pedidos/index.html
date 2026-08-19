@@ -5,12 +5,76 @@
 {% block cabecalho %}Pedidos{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Pedidos", none)]) }}{% endblock %}
 {% block acoes %}
+  <button type="button" class="btn-secundario" @click="colagemAberta = !colagemAberta"
+          :aria-expanded="colagemAberta ? 'true' : 'false'">
+    <span class="nav-icone" aria-hidden="true">{{ icone("carrinho") }}</span> Colar planilha
+  </button>
   <a href="/pedidos/novo" class="btn-primario">
     <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo pedido
   </a>
 {% endblock %}
 
 {% block content %}
+{# O x-data cobre o cabeçalho também (o bloco `acoes` é renderizado dentro do mesmo
+   <body>, mas fora deste bloco), então o estado do painel de colagem mora no <body>
+   do base.html — ver o `colagemAberta` lá. #}
+<p class="mb-4 text-sm text-gray-500">
+  Pedidos do balcão, do catálogo e do WhatsApp, do mais recente para o mais antigo.
+</p>
+
+{# Colar a planilha do DIA — vários blocos empilhados viram um pedido por bloco.
+
+   Mora aqui, e não em /pedidos/novo, porque as duas colagens fazem coisas diferentes:
+   esta cria VÁRIOS pedidos de uma vez (é trabalho de fechamento do dia), enquanto a aba
+   "Colar itens" da tela de novo pedido enche o carrinho de UM pedido que o vendedor
+   ainda está montando. #}
+<div x-show="colagemAberta" x-cloak class="mb-4">
+  {% include "pedidos/_colagem_painel.html" %}
+</div>
+
+{# Filtros. Vão para o servidor (hx-get) e não escondem linha no navegador: é o que faz
+   a lista re-buscada pelo realtime voltar já filtrada. O `data-rt-get` do tbody é
+   reescrito junto, senão a primeira mudança de status em outro terminal traria de volta
+   tudo o que o filtro tinha tirado. #}
+<div class="mb-4 flex flex-wrap items-center gap-3"
+     x-data="{
+       status: '{{ filtro_status }}',
+       origem: '{{ filtro_origem }}',
+       aplicar() {
+         const q = new URLSearchParams();
+         if (this.status) q.set('status', this.status);
+         if (this.origem) q.set('origem', this.origem);
+         const busca = q.toString();
+         const corpo = document.getElementById('tbody-pedidos');
+         corpo.setAttribute('data-rt-get', '/pedidos/lista' + (busca ? '?' + busca : ''));
+         htmx.ajax('GET', '/pedidos/lista' + (busca ? '?' + busca : ''), { target: '#tbody-pedidos' });
+         history.replaceState(null, '', '/pedidos' + (busca ? '?' + busca : ''));
+       }
+     }">
+  <label class="sr-only" for="filtro-status">Status</label>
+  <select id="filtro-status" class="input w-48" x-model="status" @change="aplicar()">
+    <option value="">Todos os status</option>
+    <option value="rascunho">Rascunho</option>
+    <option value="confirmado">Confirmado</option>
+    <option value="separacao">Em separação</option>
+    <option value="separado">Separado</option>
+    <option value="faturado">Faturado</option>
+    <option value="entregue">Entregue</option>
+    <option value="cancelado">Cancelado</option>
+  </select>
+
+  <label class="sr-only" for="filtro-origem">Origem</label>
+  <select id="filtro-origem" class="input w-44" x-model="origem" @change="aplicar()">
+    <option value="">Toda origem</option>
+    <option value="local">Balcão</option>
+    <option value="catalogo">Catálogo</option>
+    <option value="whatsapp">WhatsApp</option>
+  </select>
+
+  <button type="button" class="btn-secundario" x-show="status || origem" x-cloak
+          @click="status = ''; origem = ''; aplicar()">Limpar filtros</button>
+</div>
+
 <div class="card">
   <div class="overflow-x-auto">
     <table class="tabela tabela-densa w-full" aria-label="Lista de pedidos">
@@ -18,9 +82,11 @@
         <tr>
           <th scope="col" class="text-left">Nº</th>
           <th scope="col" class="text-left">Cliente</th>
+          <th scope="col" class="text-left">Origem</th>
           <th scope="col" class="text-left">Vendedor</th>
-          <th scope="col" class="text-left">Status</th>
+          <th scope="col" class="text-right">Itens</th>
           <th scope="col" class="text-right">Total</th>
+          <th scope="col" class="text-left">Status</th>
           <th scope="col" class="text-left">Criado</th>
           <th scope="col"></th>
         </tr>
@@ -29,7 +95,7 @@
          (o financeiro faturando, o funcionário concluindo a separação, etc.). #}
       <tbody id="tbody-pedidos"
              data-rt="pedido.confirmado,pedido.cancelado,pedido.faturado,pedido.status_alterado,separacao.concluida"
-             data-rt-get="/pedidos/lista">
+             data-rt-get="/pedidos/lista{% if filtro_status or filtro_origem %}?{% if filtro_status %}status={{ filtro_status }}{% endif %}{% if filtro_status and filtro_origem %}&amp;{% endif %}{% if filtro_origem %}origem={{ filtro_origem }}{% endif %}{% endif %}">
         {% include "pedidos/_linhas.html" %}
       </tbody>
     </table>

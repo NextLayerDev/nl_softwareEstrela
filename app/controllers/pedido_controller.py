@@ -5,13 +5,27 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.errors import NaoEncontradoError
+from app.models.enums import OrigemPedido, StatusPedido
 from app.models.pedido import Pedido, PedidoItem
 from app.models.usuario import Usuario
 from app.repositories.pedido_repo import pedido_repo
-from app.schemas.colagem import ResultadoColagem, ResultadoLote
-from app.schemas.pedido import ItemAdicionar, PedidoCreate
+from app.schemas.colagem import LinhaResolvida, ResultadoColagem, ResultadoLote
+from app.schemas.pedido import (
+    ItemAdicionar,
+    ItemAvulsoAdicionar,
+    PedidoCompletoCreate,
+    PedidoCreate,
+)
 from app.services.colagem_service import colagem_service
 from app.services.pedido_service import pedido_service
+
+
+def _enum_ou_nada(enum_cls, valor: str):
+    """Converte a string da query em enum. Vazio ou inválido -> None (sem filtro)."""
+    try:
+        return enum_cls(valor) if valor else None
+    except ValueError:
+        return None
 
 
 class PedidoController:
@@ -33,8 +47,24 @@ class PedidoController:
         return pedido
 
     # ----------------------------------------------------------- listagem
-    def listar(self, db: Session, usuario: Usuario) -> list[Pedido]:
-        return pedido_repo.listar(db)
+    def listar(
+        self,
+        db: Session,
+        usuario: Usuario,
+        status: str = "",
+        origem: str = "",
+    ) -> list[Pedido]:
+        """Lista com os filtros da tela. Valor irreconhecível vale "sem filtro".
+
+        Os filtros chegam da query string (é o que deixa o realtime re-buscar a lista
+        JÁ filtrada); um valor inválido não é erro de operação, é link velho ou dedo no
+        endereço — mostrar tudo é melhor que estourar uma tela de erro.
+        """
+        return pedido_repo.listar(
+            db,
+            status=_enum_ou_nada(StatusPedido, status),
+            origem=_enum_ou_nada(OrigemPedido, origem),
+        )
 
     def get(self, db: Session, pedido_id: int, usuario: Usuario) -> Pedido:
         return self._carregar_para_usuario(db, pedido_id, usuario)
@@ -50,7 +80,15 @@ class PedidoController:
             cliente_telefone=dados.cliente_telefone,
         )
 
+    def criar_completo(self, db: Session, dados: PedidoCompletoCreate, usuario: Usuario) -> Pedido:
+        """Cria o pedido inteiro de uma vez — o `POST /pedidos` da tela nova."""
+        return pedido_service.criar_completo(db, dados, usuario.id, usuario.perfil)
+
     # ----------------------------------------------------------- colagem de planilha
+    def resolver_colagem(self, db: Session, texto: str, usuario: Usuario) -> list[LinhaResolvida]:
+        """Casa o texto colado com o catálogo sem gravar nada (carrinho da tela nova)."""
+        return colagem_service.resolver_para_carrinho(db, texto, usuario.perfil)
+
     def criar_colando(
         self, db: Session, dados: PedidoCreate, texto: str, usuario: Usuario
     ) -> ResultadoLote:
@@ -69,6 +107,12 @@ class PedidoController:
     ) -> PedidoItem:
         self._carregar_para_usuario(db, pedido_id, usuario)
         return pedido_service.adicionar_item(db, pedido_id, dados, usuario.perfil)
+
+    def adicionar_item_avulso(
+        self, db: Session, pedido_id: int, dados: ItemAvulsoAdicionar, usuario: Usuario
+    ) -> PedidoItem:
+        self._carregar_para_usuario(db, pedido_id, usuario)
+        return pedido_service.adicionar_item_avulso(db, pedido_id, dados)
 
     def remover_item(self, db: Session, pedido_id: int, item_id: int, usuario: Usuario) -> Pedido:
         self._carregar_para_usuario(db, pedido_id, usuario)

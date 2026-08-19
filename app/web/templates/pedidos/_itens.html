@@ -21,25 +21,31 @@
         </tr>
       </thead>
       <tbody>
+        {# Tudo aqui lê pelas propriedades de exibição do item, nunca por
+           `item.variacao.produto`: item avulso não tem variação, e o snapshot é o que
+           mantém o pedido antigo dizendo o que foi vendido de verdade. #}
         {% for item in pedido.itens %}
-        {% set v = item.variacao %}
         <tr>
           <td>
-            {% if v.imagem_url %}
-              <img src="{{ foto_url(v.imagem_url) }}" alt="{{ v.produto.codigo }}" class="h-14 w-14 rounded object-cover" />
+            {% if item.imagem_exibida %}
+              <img src="{{ foto_url(item.imagem_exibida) }}" alt="{{ item.codigo_exibido or '' }}" class="h-14 w-14 rounded object-cover" />
             {% else %}
               <span class="text-xs text-gray-300">—</span>
             {% endif %}
           </td>
           <td>
-            {{ v.produto.codigo }} — {{ v.produto.descricao }}
+            {% if item.codigo_exibido %}{{ item.codigo_exibido }} — {% endif %}{{ item.descricao_exibida }}
+            {%- if item.e_avulso %} <span class="selo-neutro">avulso</span>{% endif %}
+            {% if item.detalhe %}
+            <span class="block text-xs text-gray-400">{{ item.detalhe }}</span>
+            {% endif %}
             {% if item.qtd_caixas %}
             <span class="block text-xs text-gray-400">
-              {{ item.qtd_caixas }} cx × {{ v.produto.unidades_por_caixa }} = {{ item.qtd }} un
+              {{ item.qtd_caixas }} cx × {{ item.unidades_por_caixa }} = {{ item.qtd }} un
             </span>
             {% endif %}
           </td>
-          <td>{{ v.cor or "—" }}</td>
+          <td>{{ item.cor_exibida or "—" }}</td>
           <td class="text-right">{{ item.qtd }}</td>
           <td class="text-right">{{ item.preco_unit | moeda }}</td>
           <td class="text-right">{{ item.desconto | moeda }}</td>

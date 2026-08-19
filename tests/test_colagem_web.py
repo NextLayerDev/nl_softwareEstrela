@@ -7,6 +7,7 @@ banco de dev depois da rodada.
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from decimal import Decimal
@@ -73,13 +74,26 @@ def _colar(client, texto: str):
 
 
 # --------------------------------------------------------------------- telas
-def test_novo_pedido_mostra_o_painel_de_colar(client_admin) -> None:
-    t = client_admin.get("/pedidos/novo").text
+def test_lista_de_pedidos_mostra_o_painel_da_planilha_do_dia(client_admin) -> None:
+    """O painel que cria VÁRIOS pedidos mora na lista, não na tela de novo pedido.
+
+    As duas colagens fazem coisas diferentes: esta fatia a planilha do dia em um pedido
+    por bloco (trabalho de fechamento), enquanto a aba "Colar itens" da tela de novo
+    pedido enche o carrinho de UM pedido que está sendo montado. Juntas na mesma tela,
+    o vendedor clicava em uma achando que era a outra.
+    """
+    t = client_admin.get("/pedidos").text
     assert 'id="painel-colagem"' in t
     assert 'hx-post="/pedidos/colar"' in t
-    # o painel reaproveita os campos de cliente do formulário ao lado
-    assert 'hx-include="#form-cliente"' in t
-    assert 'id="form-cliente"' in t
+
+
+def test_novo_pedido_mostra_a_aba_de_colar_no_carrinho(client_admin) -> None:
+    t = client_admin.get("/pedidos/novo").text
+    assert "Colar itens" in t
+    assert 'name="itens_json"' in t  # o carrinho vai inteiro num POST só
+    assert "pedido_novo.js" in t  # quem resolve a colagem no carrinho
+    # o painel que cria vários pedidos NÃO aparece aqui
+    assert 'id="painel-colagem"' not in t
 
 
 def test_colagem_que_casa_tudo_manda_direto_para_o_pedido(client_admin, produto) -> None:
@@ -250,3 +264,121 @@ def test_um_bloco_so_continua_redirecionando(client_admin, produto) -> None:
     """A planilha de um pedido só não pode ganhar uma tela de resumo no caminho."""
     r = _colar(client_admin, _bloco(f"{produto.codigo}\tx\t2\tR$ 9,00\t", codigo_cliente="111"))
     assert re.fullmatch(r"/pedidos/\d+", r.headers.get("HX-Redirect", ""))
+
+
+# =================================================== tela única: POST /pedidos + carrinho
+def _variacao_de(db, produto):
+    from app.models.produto import ProdutoVariacao
+
+    return db.query(ProdutoVariacao).filter_by(produto_id=produto.id).first()
+
+
+def test_post_pedidos_cria_pedido_inteiro_com_catalogo_e_avulso(client_admin, db, produto):
+    """O contrato da tela nova: carrinho em JSON num campo só, um POST, um pedido."""
+    var = _variacao_de(db, produto)
+    itens = json.dumps(
+        [
+            {"tipo": "catalogo", "variacao_id": var.id, "qtd": 2, "preco_unit": None},
+            {
+                "tipo": "avulso",
+                "nome": "CANECA",
+                "codigo": "AV-9",
+                "detalhe": "",
+                "qtd": 1,
+                "preco_unit": "15.00",
+            },
+        ]
+    )
+
+    r = client_admin.post(
+        "/pedidos",
+        data={
+            "cliente_id": "",
+            "cliente_nome": "Joana",
+            "cliente_telefone": "",
+            "observacao": "entregar depois das 18h",
+            "desconto_total": "5,00",
+            "itens_json": itens,
+        },
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    destino = r.headers["location"]
+    assert re.fullmatch(r"/pedidos/\d+", destino)
+
+    detalhe = client_admin.get(destino).text
+    assert "CANECA" in detalhe
+    assert "avulso" in detalhe
+    # 2×10 + 1×15 = 35, menos 5 de desconto
+    assert "R$ 30,00" in detalhe
+
+
+def test_post_pedidos_sem_itens_nao_cria_rascunho_vazio(client_admin):
+    """A tela nova não abre mais rascunho vazio — pedido sem item não é pedido."""
+    r = client_admin.post(
+        "/pedidos",
+        data={"cliente_nome": "Ninguém", "itens_json": "[]"},
+        follow_redirects=False,
+    )
+    assert r.status_code != 303
+    assert "ao menos um item" in r.text.lower()
+
+
+def test_resolver_colagem_devolve_as_linhas_sem_gravar(client_admin, db, produto):
+    """Casa com o catálogo e devolve JSON — o carrinho ainda vive no navegador."""
+    from app.models.pedido import Pedido
+
+    antes = db.query(Pedido).count()
+    r = client_admin.post(
+        "/pedidos/resolver-colagem",
+        data={"texto": _tsv(f"{produto.codigo}\tqualquer\t4\tR$ 9,00\t")},
+    )
+
+    assert r.status_code == 200
+    linhas = r.json()["linhas"]
+    assert len(linhas) == 1
+    assert linhas[0]["variacao_id"] == _variacao_de(db, produto).id
+    assert linhas[0]["qtd"] == 4
+    assert Decimal(linhas[0]["preco_unit"]) == Decimal("9.00")
+    assert db.query(Pedido).count() == antes  # nada foi gravado
+
+
+def test_resolver_colagem_devolve_linha_nao_casada_para_virar_avulso(client_admin):
+    """O que não achou produto não some: volta sem variação, com código e descrição."""
+    r = client_admin.post(
+        "/pedidos/resolver-colagem",
+        data={"texto": _tsv("CODIGOQUENAOEXISTE99\tCOISA ESTRANHA\t2\tR$ 4,00\t")},
+    )
+
+    assert r.status_code == 200
+    linha = r.json()["linhas"][0]
+    assert linha["variacao_id"] is None
+    assert linha["codigo"] == "CODIGOQUENAOEXISTE99"
+    assert linha["qtd"] == 2
+    assert Decimal(linha["preco_unit"]) == Decimal("4.00")
+
+
+def test_item_avulso_no_rascunho_aberto(client_admin, db, produto):
+    """A mesma porta existe no detalhe, para os dois caminhos não divergirem."""
+    var = _variacao_de(db, produto)
+    r = client_admin.post(
+        "/pedidos",
+        data={
+            "itens_json": json.dumps(
+                [{"tipo": "catalogo", "variacao_id": var.id, "qtd": 1, "preco_unit": None}]
+            )
+        },
+        follow_redirects=False,
+    )
+    pedido_id = r.headers["location"].rsplit("/", 1)[1]
+
+    r = client_admin.post(
+        f"/pedidos/{pedido_id}/itens-avulsos",
+        data={"nome": "TAXA DE GRAVACAO", "qtd": "2", "preco_unit": "7,50"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert r.status_code == 200
+    assert "TAXA DE GRAVACAO" in r.text
+    assert "R$ 25,00" in r.text  # 1×10 + 2×7,50

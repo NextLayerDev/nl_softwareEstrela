@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.conta_receber import ContaReceber
-from app.models.enums import StatusPedido
+from app.models.enums import OrigemPedido, StatusPedido
 from app.models.pedido import Pedido, PedidoItem
 
 
@@ -41,11 +41,18 @@ class PedidoRepository:
         db: Session,
         vendedor_id: int | None = None,
         status: StatusPedido | None = None,
+        origem: OrigemPedido | None = None,
         limit: int = 100,
     ) -> list[Pedido]:
         stmt = (
             select(Pedido)
-            .options(joinedload(Pedido.cliente), joinedload(Pedido.vendedor))
+            .options(
+                joinedload(Pedido.cliente),
+                joinedload(Pedido.vendedor),
+                # A lista mostra a contagem de itens. Sem o selectinload seria um SELECT
+                # por linha — 100 pedidos viravam 101 consultas.
+                selectinload(Pedido.itens),
+            )
             .order_by(Pedido.criado_em.desc())
             .limit(limit)
         )
@@ -53,7 +60,9 @@ class PedidoRepository:
             stmt = stmt.where(Pedido.vendedor_id == vendedor_id)
         if status is not None:
             stmt = stmt.where(Pedido.status == status)
-        return list(db.scalars(stmt))
+        if origem is not None:
+            stmt = stmt.where(Pedido.origem == origem)
+        return list(db.scalars(stmt).unique())
 
     def fila_separacao(self, db: Session, limit: int = 100) -> list[Pedido]:
         """Pedidos confirmados / em separação, em ordem de chegada (criado_em ASC)."""

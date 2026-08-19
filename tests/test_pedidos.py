@@ -11,14 +11,15 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from app.core.errors import NaoEncontradoError, PermissaoNegadaError, RegraNegocioError
+from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
 from app.models.enums import EstoqueModo, StatusConta, StatusPedido
+from app.models.pedido import Pedido
 from app.models.produto import Produto, ProdutoVariacao
-from app.schemas.pedido import ItemAdicionar
+from app.schemas.pedido import ItemAdicionar, PedidoCompletoCreate
 from app.services.pedido_service import pedido_service
 
 
@@ -268,14 +269,23 @@ def test_faturar_parcelado_3x_ajusta_centavos(db, usuario_vendedor, usuario_admi
 
 
 # --------------------------------------------------------- limite de desconto
-def test_vendedor_acima_do_limite_falha(db, usuario_vendedor):
+def test_vendedor_acima_do_limite_grava_e_avisa(db, usuario_vendedor):
+    """O limite de desconto informa, não barra.
+
+    Travar a gravação empurrava a venda para fora do sistema: quem está no balcão fecha
+    o negócio de qualquer jeito e depois o pedido não existe em lugar nenhum. O número
+    continua valendo como aviso na tela.
+    """
     prod = _produto(db, "D1")
     var = _variacao(db, prod)
     cli = _cliente(db)
     ped = _novo_pedido(db, cli, usuario_vendedor)
     # bruto 100, desconto 20 -> 20% > 10%
-    with pytest.raises(PermissaoNegadaError):
-        _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"), desconto=Decimal("20.00"))
+    item = _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"), desconto=Decimal("20.00"))
+    assert item.subtotal == Decimal("80.00")
+
+    aviso = pedido_service.aviso_de_preco("vendedor", prod, 10, Decimal("10.00"), Decimal("20.00"))
+    assert aviso is not None and "limite" in aviso.lower()
 
 
 def test_vendedor_dentro_do_limite_ok(db, usuario_vendedor):
@@ -456,16 +466,18 @@ def test_busca_cliente_acha_por_telefone_formatado_diferente(db):
 
 
 # --------------------------------------------------------- preço mínimo
-def test_preco_minimo_bloqueia_vendedor(db, usuario_vendedor):
+def test_preco_minimo_avisa_mas_nao_bloqueia(db, usuario_vendedor):
     prod = _produto(db, "MIN1", pouca=Decimal("10.00"))
     prod.preco_minimo = Decimal("8.00")
     db.flush()
     var = _variacao(db, prod)
     ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
 
-    with pytest.raises(RegraNegocioError) as exc:
-        _add(db, ped, var, qtd=1, preco_unit=Decimal("7.99"))
-    assert "preço mínimo" in str(exc.value).lower()
+    item = _add(db, ped, var, qtd=1, preco_unit=Decimal("7.99"))
+    assert item.preco_unit == Decimal("7.99")
+
+    aviso = pedido_service.aviso_de_preco("vendedor", prod, 1, Decimal("7.99"))
+    assert aviso is not None and "preço mínimo" in aviso.lower()
 
 
 def test_preco_minimo_aceita_valor_igual_ao_piso(db, usuario_vendedor):
@@ -478,7 +490,7 @@ def test_preco_minimo_aceita_valor_igual_ao_piso(db, usuario_vendedor):
     assert item.preco_unit == Decimal("8.00")
 
 
-def test_preco_minimo_nao_e_furavel_por_desconto(db, usuario_vendedor):
+def test_aviso_de_piso_olha_o_preco_efetivo(db, usuario_vendedor):
     """O piso é sobre o preço efetivo: 10,00 com 5% de desconto cai abaixo de 9,60."""
     prod = _produto(db, "MIN3", pouca=Decimal("10.00"))
     prod.preco_minimo = Decimal("9.60")
@@ -486,9 +498,13 @@ def test_preco_minimo_nao_e_furavel_por_desconto(db, usuario_vendedor):
     var = _variacao(db, prod)
     ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
 
-    with pytest.raises(RegraNegocioError):
-        # 10 un x 10,00 = 100,00; desconto de 5,00 (dentro do limite de 10%) -> 9,50/un
-        _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"), desconto=Decimal("5.00"))
+    # 10 un x 10,00 = 100,00; desconto de 5,00 (dentro do limite de 10%) -> 9,50/un
+    _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"), desconto=Decimal("5.00"))
+
+    # O aviso olha o preço EFETIVO: sem isso ele ficaria mudo justamente quando é o
+    # desconto, e não o preço digitado, que derruba a margem.
+    aviso = pedido_service.aviso_de_preco("vendedor", prod, 10, Decimal("10.00"), Decimal("5.00"))
+    assert aviso is not None and "preço mínimo" in aviso.lower()
 
 
 def test_admin_passa_por_cima_do_preco_minimo(db, usuario_admin):
@@ -510,7 +526,7 @@ def test_preco_minimo_zero_nao_trava(db, usuario_vendedor):
     assert item.preco_unit == Decimal("0.50")
 
 
-def test_desconto_total_nao_fura_o_piso(db, usuario_vendedor):
+def test_desconto_total_abaixo_do_piso_passa(db, usuario_vendedor):
     prod = _produto(db, "MIN6", pouca=Decimal("10.00"))
     prod.preco_minimo = Decimal("9.80")
     db.flush()
@@ -518,9 +534,11 @@ def test_desconto_total_nao_fura_o_piso(db, usuario_vendedor):
     ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
     _add(db, ped, var, qtd=10, preco_unit=Decimal("10.00"))
 
-    # 5,00 sobre 100,00 = 5% (dentro do limite), mas derruba a unidade para 9,50.
-    with pytest.raises(RegraNegocioError):
-        pedido_service.aplicar_desconto_total(db, ped.id, Decimal("5.00"), "vendedor")
+    # 5,00 sobre 100,00 = 5%, e derruba a unidade para 9,50 — passa, com o piso valendo
+    # como informação e não como trava.
+    pedido_service.aplicar_desconto_total(db, ped.id, Decimal("5.00"), "vendedor")
+    db.refresh(ped)
+    assert ped.total == Decimal("95.00")
 
 
 # --------------------------------------------------------- item repetido
@@ -553,14 +571,304 @@ def test_mesmo_produto_preco_diferente_abre_linha_nova(db, usuario_vendedor):
     assert ped.total == Decimal("19.00")
 
 
-def test_somar_revalida_o_desconto_consolidado(db, usuario_vendedor):
-    """Dois lançamentos dentro do limite não podem somar um desconto que estoura."""
+def test_somar_consolida_qtd_e_desconto_na_mesma_linha(db, usuario_vendedor):
+    """Dois lançamentos do mesmo item pelo mesmo preço viram uma linha só."""
     prod = _produto(db, "REP3")
     var = _variacao(db, prod, fisico=100)
     ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
 
-    # 1 un x 100,00 com 9,00 de desconto = 9% (passa).
     _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("9.00"))
-    # Repetir levaria a 18,00 sobre 200,00 = 9%... ainda dentro. Um terceiro maior estoura.
-    with pytest.raises(PermissaoNegadaError):
-        _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("40.00"))
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("100.00"), desconto=Decimal("40.00"))
+
+    # Mesmo preço: uma linha só, com quantidade e desconto somados.
+    db.refresh(ped)
+    assert len(ped.itens) == 1
+    assert ped.itens[0].qtd == 2
+    assert ped.itens[0].desconto == Decimal("49.00")
+    assert ped.total == Decimal("151.00")
+
+
+# ======================================================= tela única (criar_completo)
+def _completo(**kw):
+    """PedidoCompletoCreate com os campos de cliente vazios, como o balcão manda."""
+    base = {"cliente_id": None, "cliente_nome": None, "cliente_telefone": None}
+    return PedidoCompletoCreate(**{**base, **kw})
+
+
+def test_criar_completo_grava_catalogo_e_avulso_de_uma_vez(db, usuario_vendedor):
+    """O pedido inteiro numa tacada: é o que a tela `/pedidos/novo` faz."""
+    prod = _produto(db, "TU1", pouca=Decimal("10.00"))
+    var = _variacao(db, prod)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            cliente_nome="Maria",
+            desconto_total=Decimal("5.00"),
+            itens=[
+                {"tipo": "catalogo", "variacao_id": var.id, "qtd": 3},
+                {
+                    "tipo": "avulso",
+                    "nome": "CANECA PERSONALIZADA",
+                    "codigo": "AV-1",
+                    "detalhe": "vermelha",
+                    "qtd": 2,
+                    "preco_unit": Decimal("20.00"),
+                },
+            ],
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+
+    db.refresh(pedido)
+    assert pedido.status == StatusPedido.RASCUNHO
+    assert pedido.nome_cliente == "Maria"
+    assert len(pedido.itens) == 2
+    # 3×10 + 2×20 = 70, menos 5 de desconto
+    assert pedido.total == Decimal("65.00")
+
+    catalogo = next(i for i in pedido.itens if not i.e_avulso)
+    avulso = next(i for i in pedido.itens if i.e_avulso)
+    # Preço não informado: quem resolveu foi o servidor, pelo catálogo.
+    assert catalogo.preco_unit == Decimal("10.00")
+    assert catalogo.descricao == prod.descricao  # snapshot do que foi vendido
+    assert catalogo.codigo == prod.codigo
+    assert avulso.produto_variacao_id is None
+    assert avulso.descricao == "CANECA PERSONALIZADA"
+    assert avulso.detalhe == "vermelha"
+
+
+def test_criar_completo_respeita_o_preco_digitado_e_a_faixa_de_atacado(db, usuario_vendedor):
+    prod = _produto(db, "TU2", pouca=Decimal("10.00"), muita=Decimal("8.00"), corte=10)
+    var = _variacao(db, prod)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            itens=[
+                # Sem preço: 12 un passa do corte, então vale a faixa de atacado.
+                {"tipo": "catalogo", "variacao_id": var.id, "qtd": 12},
+                # Com preço digitado: o valor do vendedor manda.
+                {
+                    "tipo": "catalogo",
+                    "variacao_id": var.id,
+                    "qtd": 1,
+                    "preco_unit": Decimal("3.00"),
+                },
+            ]
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+
+    db.refresh(pedido)
+    precos = sorted(i.preco_unit for i in pedido.itens)
+    assert precos == [Decimal("3.00"), Decimal("8.00")]
+
+
+def test_criar_completo_com_item_invalido_no_meio_nao_grava_nada(db, usuario_vendedor):
+    """Tudo é resolvido ANTES da primeira escrita — não sobra rascunho órfão."""
+    prod = _produto(db, "TU3")
+    var = _variacao(db, prod)
+    antes = db.scalar(select(func.count()).select_from(Pedido))
+
+    with pytest.raises(NaoEncontradoError):
+        pedido_service.criar_completo(
+            db,
+            _completo(
+                itens=[
+                    {"tipo": "catalogo", "variacao_id": var.id, "qtd": 1},
+                    {"tipo": "catalogo", "variacao_id": 10**9, "qtd": 1},  # não existe
+                ]
+            ),
+            usuario_vendedor.id,
+            "vendedor",
+        )
+
+    assert db.scalar(select(func.count()).select_from(Pedido)) == antes
+
+
+def test_criar_completo_recusa_produto_inativo(db, usuario_vendedor):
+    prod = _produto(db, "TU4")
+    prod.ativo = False
+    var = _variacao(db, prod)
+    db.flush()
+
+    with pytest.raises(RegraNegocioError) as exc:
+        pedido_service.criar_completo(
+            db,
+            _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd": 1}]),
+            usuario_vendedor.id,
+            "vendedor",
+        )
+    assert "inativo" in str(exc.value).lower()
+
+
+def test_criar_completo_converte_caixas_em_unidades(db, usuario_vendedor):
+    prod = _produto(db, "TU5", pouca=Decimal("2.00"), unid_caixa=12)
+    var = _variacao(db, prod)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd_caixas": 3}]),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+
+    db.refresh(pedido)
+    item = pedido.itens[0]
+    assert item.qtd == 36
+    assert item.qtd_caixas == 3
+    assert pedido.total == Decimal("72.00")
+
+
+# ======================================================= item avulso e estoque
+def test_confirmar_reserva_estoque_so_dos_itens_de_catalogo(db, usuario_vendedor):
+    """Item avulso não está no catálogo: não há saldo a reservar, e isso não pode travar."""
+    prod = _produto(db, "AV1", pouca=Decimal("10.00"))
+    var = _variacao(db, prod, fisico=50)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            itens=[
+                {"tipo": "catalogo", "variacao_id": var.id, "qtd": 4},
+                {
+                    "tipo": "avulso",
+                    "nome": "FRETE",
+                    "qtd": 1,
+                    "preco_unit": Decimal("30.00"),
+                },
+            ]
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    pedido_service.confirmar(db, pedido.id, usuario_vendedor.id)
+
+    db.refresh(var)
+    assert var.estoque_reservado == 4  # só o item de catálogo mexeu no saldo
+    assert pedido.numero is not None
+
+
+def test_cancelar_estorna_so_o_que_foi_reservado(db, usuario_vendedor):
+    prod = _produto(db, "AV2", pouca=Decimal("10.00"))
+    var = _variacao(db, prod, fisico=50)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            itens=[
+                {"tipo": "catalogo", "variacao_id": var.id, "qtd": 4},
+                {"tipo": "avulso", "nome": "MONTAGEM", "qtd": 1, "preco_unit": Decimal("5.00")},
+            ]
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    pedido_service.confirmar(db, pedido.id, usuario_vendedor.id)
+    pedido_service.cancelar(db, pedido.id, usuario_vendedor.id)
+
+    db.refresh(var)
+    assert var.estoque_reservado == 0
+
+
+def test_item_avulso_nunca_funde_com_outra_linha(db, usuario_vendedor):
+    """Sem chave de catálogo, dois nomes iguais podem ser negociações diferentes."""
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            itens=[
+                {"tipo": "avulso", "nome": "AJUSTE", "qtd": 1, "preco_unit": Decimal("10.00")},
+                {"tipo": "avulso", "nome": "AJUSTE", "qtd": 1, "preco_unit": Decimal("10.00")},
+            ]
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+
+    db.refresh(pedido)
+    assert len(pedido.itens) == 2
+    assert pedido.total == Decimal("20.00")
+
+
+def test_pedido_so_de_item_avulso_confirma_e_fatura(db, usuario_vendedor, usuario_admin):
+    """Nenhum item move estoque — o ciclo tem que andar mesmo assim."""
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            itens=[{"tipo": "avulso", "nome": "SERVICO", "qtd": 1, "preco_unit": Decimal("99.00")}]
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    pedido_service.confirmar(db, pedido.id, usuario_vendedor.id)
+    pedido_service.faturar(db, pedido.id, usuario_admin.id)
+
+    db.refresh(pedido)
+    assert pedido.status == StatusPedido.FATURADO
+    assert pedido.total == Decimal("99.00")
+
+
+def test_snapshot_nao_muda_quando_o_produto_e_renomeado(db, usuario_vendedor):
+    """O pedido é documento: renomear o produto não pode reescrever a venda de ontem."""
+    prod = _produto(db, "SNAP1", pouca=Decimal("10.00"))
+    var = _variacao(db, prod)
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd": 1}]),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+
+    prod.descricao = "NOME COMPLETAMENTE DIFERENTE"
+    prod.codigo = "OUTRO"
+    db.flush()
+
+    db.refresh(pedido)
+    assert pedido.itens[0].descricao_exibida == "Produto SNAP1"
+    assert pedido.itens[0].codigo_exibido == "SNAP1"
+
+
+# ======================================================= lista: filtros e leitura rápida
+def test_lista_filtra_por_status(client_vendedor, db, usuario_vendedor):
+    """O filtro é do SERVIDOR: linha fora do filtro não vem no HTML, não é escondida."""
+    prod = _produto(db, "FIL1")
+    var = _variacao(db, prod)
+    rascunho = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, rascunho, var, qtd=1)
+    confirmado = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, confirmado, var, qtd=1)
+    pedido_service.confirmar(db, confirmado.id, usuario_vendedor.id)
+
+    so_rascunho = client_vendedor.get("/pedidos/lista?status=rascunho").text
+    assert f'/pedidos/{rascunho.id}"' in so_rascunho
+    assert f'/pedidos/{confirmado.id}"' not in so_rascunho
+
+    so_confirmado = client_vendedor.get("/pedidos/lista?status=confirmado").text
+    assert f'/pedidos/{confirmado.id}"' in so_confirmado
+    assert f'/pedidos/{rascunho.id}"' not in so_confirmado
+
+
+def test_lista_ignora_filtro_invalido_em_vez_de_estourar(client_vendedor, db, usuario_vendedor):
+    """Link velho ou dedo no endereço mostra tudo — não é tela de erro."""
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+
+    r = client_vendedor.get("/pedidos/lista?status=coisa-que-nao-existe&origem=nada")
+    assert r.status_code == 200
+    assert f'/pedidos/{ped.id}"' in r.text
+
+
+def test_lista_mostra_selo_colorido_contagem_e_origem(client_vendedor, db, usuario_vendedor):
+    """A lista é lida de relance: cor do status, quantos itens e de onde veio."""
+    prod = _produto(db, "FIL2")
+    var = _variacao(db, prod)
+    ped = _novo_pedido(db, _cliente(db), usuario_vendedor)
+    _add(db, ped, var, qtd=1)
+    _add(db, ped, var, qtd=1, preco_unit=Decimal("3.00"))  # preço diferente = 2ª linha
+
+    t = client_vendedor.get("/pedidos").text
+    assert 'class="selo-rascunho' in t  # e não um cinza só para todo status
+    assert "Balcão" in t  # origem por extenso, com ícone
+    assert "Todos os status" in t and "Toda origem" in t  # os dois filtros na tela

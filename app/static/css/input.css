@@ -134,6 +134,29 @@
     @apply selo bg-info-bg text-info;
   }
 
+  /* Status do pedido — um por etapa da venda. Ver a macro `selo_status` em _ui.html. */
+  .selo-rascunho {
+    @apply selo bg-gold-50 text-gray-600 ring-1 ring-marca-borda;
+  }
+  .selo-confirmado {
+    @apply selo bg-info-bg text-info;
+  }
+  .selo-separacao {
+    @apply selo bg-aviso-bg text-aviso;
+  }
+  .selo-separado {
+    @apply selo bg-gold-100 text-gold-900;
+  }
+  .selo-faturado {
+    @apply selo bg-gold-500 text-white;
+  }
+  .selo-entregue {
+    @apply selo bg-ok-bg text-ok;
+  }
+  .selo-cancelado {
+    @apply selo bg-critico-bg text-critico;
+  }
+
   /* ---------- Alertas ---------- */
   .alerta {
     @apply rounded-md border px-4 py-3 text-sm;

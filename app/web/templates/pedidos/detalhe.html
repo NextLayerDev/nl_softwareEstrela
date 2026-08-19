@@ -17,32 +17,42 @@
 {% endblock %}
 
 {% block content %}
-{# Se alguém mexer neste pedido de outro terminal (o financeiro faturar, o funcionário
-   concluir a separação), o status e os botões acompanham. A resposta é toda OOB, por isso
-   o swap é "none" — mesmo padrão do estoque/_oob.html. #}
-<div class="card mb-4 flex flex-wrap items-center justify-between gap-3"
-     data-rt="pedido.confirmado,pedido.cancelado,pedido.faturado,pedido.status_alterado,separacao.concluida"
-     data-rt-se="pedido_id={{ pedido.id }}"
-     data-rt-get="/pedidos/{{ pedido.id }}/estado"
-     data-rt-swap="none">
-  <div>
-    <p class="text-sm text-gray-500">Cliente</p>
-    <p class="font-semibold">
-      {{ pedido.nome_cliente }}
-      {% if pedido.telefone_cliente %}
-        <span class="ml-1 font-mono text-sm font-normal text-gray-500">{{ pedido.telefone_cliente }}</span>
-      {% endif %}
-      {% if not pedido.cliente %}
-        <span class="selo-neutro ml-1">sem cadastro</span>
-      {% endif %}
-    </p>
-    <p class="mt-0.5 text-xs text-gray-400">
-      Vendedor: {{ pedido.vendedor.nome }} ·
-      Pagamento: {{ pedido.condicao_pagto }} ·
-      Status: {% include "pedidos/_status.html" %}
-    </p>
-  </div>
-  {% include "pedidos/_acoes.html" %}
+{# Duas colunas, como no omni: o trabalho fica à esquerda (cliente, lançamento de item,
+   itens do pedido) e as ações de status ficam presas à direita, visíveis sem rolar de
+   volta ao topo — num pedido de 40 linhas o botão "Confirmar" estava sempre fora da
+   tela. Abaixo de lg elas voltam a empilhar, que é como o tablet da loja usa. #}
+<div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+<div class="space-y-4 lg:col-span-2">
+
+{# ----------------------- Cliente ----------------------- #}
+<div class="card">
+  <h3 class="mb-3 text-sm font-semibold">Cliente</h3>
+  <p class="font-semibold">
+    {{ pedido.nome_cliente }}
+    {% if pedido.telefone_cliente %}
+      <span class="ml-1 font-mono text-sm font-normal text-gray-500">{{ pedido.telefone_cliente }}</span>
+    {% endif %}
+    {% if not pedido.cliente %}
+      <span class="selo-neutro ml-1">sem cadastro</span>
+    {% endif %}
+  </p>
+  <dl class="mt-2 grid gap-1 text-sm sm:grid-cols-2">
+    <div class="flex gap-2">
+      <dt class="text-gray-500">Vendedor:</dt><dd>{{ pedido.vendedor.nome }}</dd>
+    </div>
+    <div class="flex gap-2">
+      <dt class="text-gray-500">Pagamento:</dt><dd>{{ pedido.condicao_pagto }}</dd>
+    </div>
+    <div class="flex gap-2">
+      <dt class="text-gray-500">Origem:</dt>
+      <dd>{{ {"local": "Balcão", "catalogo": "Catálogo", "whatsapp": "WhatsApp"}.get(
+             pedido.origem.value if pedido.origem.value is defined else pedido.origem, "—") }}</dd>
+    </div>
+    <div class="flex gap-2">
+      <dt class="text-gray-500">Criado:</dt>
+      <dd>{{ pedido.criado_em.strftime("%d/%m/%Y %H:%M") if pedido.criado_em else "—" }}</dd>
+    </div>
+  </dl>
 </div>
 
 {% if editavel %}
@@ -53,11 +63,68 @@
    que acabou de ser lançado ficava inalcançável. Lançar o mesmo item três vezes tem que
    ser três cliques. #}
 <div class="card mb-4"
-     x-data="{ variacaoId: null, selCodigo: '', selDescricao: '', selCor: '', selImg: '', qtd: 1, caixas: false,
+     x-data="{ aba: 'catalogo',
+               variacaoId: null, selCodigo: '', selDescricao: '', selCor: '', selImg: '', qtd: 1, caixas: false,
+               {# `selecionar` é o contrato com `_busca_resultado.html`: o fragmento só
+                  carrega os dados e chama isto. A tela de novo pedido implementa o
+                  mesmo método, e por isso a busca serve as duas sem saber de nenhuma. #}
+               selecionar(el) {
+                 this.variacaoId = el.dataset.id;
+                 this.selCodigo = el.dataset.codigo; this.selDescricao = el.dataset.descricao;
+                 this.selCor = el.dataset.cor; this.selImg = el.dataset.img;
+                 htmx.ajax('GET', '/pedidos/saldo/' + el.dataset.id + '?qtd=' + (this.qtd || 1), {target: '#saldo-box'});
+                 this.$nextTick(() => document.getElementById('item-qtd')?.focus());
+               },
                limpar() { this.variacaoId = null; this.selCodigo = ''; this.selDescricao = ''; this.selCor = ''; this.selImg = '';
                           document.getElementById('saldo-box').innerHTML = ''; } }">
-  <h3 class="mb-3 text-sm font-semibold">Adicionar item</h3>
+  <div class="mb-3 flex items-center justify-between gap-2">
+    <h3 class="text-sm font-semibold">Adicionar item</h3>
+    {# Mesmas portas da tela de novo pedido, para os dois caminhos não divergirem. #}
+    <div class="tabs">
+      <button type="button" class="tab" :class="aba === 'catalogo' ? 'bg-gold-100 font-semibold' : ''"
+              @click="aba = 'catalogo'">Do catálogo</button>
+      <button type="button" class="tab" :class="aba === 'avulso' ? 'bg-gold-100 font-semibold' : ''"
+              @click="aba = 'avulso'">Item avulso</button>
+    </div>
+  </div>
 
+  <div x-show="aba === 'avulso'" x-cloak>
+    {# Item que não está no catálogo: acabou, é novo, ou é um serviço. Não reserva
+       estoque — não há saldo a mover. #}
+    <form method="post" action="/pedidos/{{ pedido.id }}/itens-avulsos"
+          hx-post="/pedidos/{{ pedido.id }}/itens-avulsos" hx-target="#bloco-itens" hx-swap="outerHTML"
+          @htmx:after-request="if(event.detail.successful) $el.reset()">
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div class="col-span-2">
+          <label class="label" for="avulso-nome">Nome do item</label>
+          <input type="text" id="avulso-nome" name="nome" required maxlength="200" class="input w-full"
+                 placeholder="Ex.: caneca personalizada" />
+        </div>
+        <div>
+          <label class="label" for="avulso-qtd">Qtd</label>
+          <input type="number" id="avulso-qtd" name="qtd" min="1" value="1" class="input w-full" />
+        </div>
+        <div>
+          <label class="label" for="avulso-preco">Valor unit.</label>
+          <input type="text" id="avulso-preco" name="preco_unit" class="input w-full" placeholder="0,00" />
+        </div>
+        <div>
+          <label class="label" for="avulso-codigo">Código (opcional)</label>
+          <input type="text" id="avulso-codigo" name="codigo" maxlength="60" class="input w-full" placeholder="Ex.: K-708" />
+        </div>
+        <div class="col-span-2">
+          <label class="label" for="avulso-detalhe">Descrição (opcional)</label>
+          <input type="text" id="avulso-detalhe" name="detalhe" maxlength="500" class="input w-full"
+                 placeholder="Cor, material, detalhes…" />
+        </div>
+        <div class="flex items-end">
+          <button type="submit" class="btn-primario w-full">Adicionar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div x-show="aba === 'catalogo'">
   {# 1) Busca #}
   <div class="mb-3">
     <label class="label" for="busca-item">Buscar produto/variação</label>
@@ -118,6 +185,7 @@
   </form>
 
   <div id="saldo-box" class="mt-3"></div>
+  </div>{# /aba catálogo #}
 </div>
 
 {# Colar em bloco: mesma planilha do Excel, acrescentando ao que já está no rascunho. #}
@@ -126,6 +194,31 @@
 
 {# ----------------------- Itens do pedido ----------------------- #}
 {% include "pedidos/_itens.html" %}
+
+</div>{# /coluna esquerda #}
+
+{# ----------------------- Ações (coluna fixa) -----------------------
+   Se alguém mexer neste pedido de outro terminal (o admin faturar, o vendedor concluir
+   a separação), o selo e os botões acompanham. A resposta é toda OOB, por isso o swap é
+   "none" — mesmo padrão do estoque/_oob.html. #}
+<div class="lg:sticky lg:top-4"
+     data-rt="pedido.confirmado,pedido.cancelado,pedido.faturado,pedido.status_alterado,separacao.concluida"
+     data-rt-se="pedido_id={{ pedido.id }}"
+     data-rt-get="/pedidos/{{ pedido.id }}/estado"
+     data-rt-swap="none">
+  <div class="card">
+    <div class="mb-3 flex items-center justify-between gap-2">
+      <h3 class="text-sm font-semibold">Ações</h3>
+      {% include "pedidos/_status.html" %}
+    </div>
+    {% include "pedidos/_acoes.html" %}
+    {% if pedido.status in ("entregue", "cancelado") %}
+      <p class="mt-2 text-sm text-gray-400">Pedido finalizado.</p>
+    {% endif %}
+  </div>
+</div>
+
+</div>{# /grid #}
 
 {% if pedido.observacao %}
 <div class="card mt-4">

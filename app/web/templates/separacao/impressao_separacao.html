@@ -46,12 +46,12 @@
     </thead>
     <tbody>
       {% for item in pedido.itens %}
-      {% set v = item.variacao %}
+
       <tr>
         <td class="check"><span class="box"></span></td>
-        <td class="local">{{ v.produto.localizacao or "—" }}</td>
-        <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
-        <td>{{ v.cor or "—" }}</td>
+        <td class="local">{{ item.variacao.produto.localizacao or "—" if item.variacao else "—" }}</td>
+        <td>{% if item.codigo_exibido %}{{ item.codigo_exibido }} — {% endif %}{{ item.descricao_exibida }}</td>
+        <td>{{ item.cor_exibida or "—" }}</td>
         <td class="qtd">
           {{ item.qtd }} un{% if item.qtd_caixas %}<br /><small>{{ item.qtd_caixas }} cx</small>{% endif %}
         </td>

@@ -37,7 +37,7 @@
       </thead>
       <tbody>
         {% for item in pedido.itens %}
-        {% set v = item.variacao %}
+
         <tr x-data="{ ok: {{ 'true' if item.separado else 'false' }} }" :class="ok ? 'bg-ok-bg' : ''">
           <td class="text-center">
             <input type="checkbox" {% if item.separado %}checked{% endif %}
@@ -49,15 +49,20 @@
                    aria-label="Conferir item" />
           </td>
           <td>
-            {% if v.imagem_url %}
-              <img src="{{ foto_url(v.imagem_url) }}" alt="{{ v.cor }}" class="h-14 w-14 rounded-lg object-cover" />
+            {% if item.imagem_exibida %}
+              <img src="{{ foto_url(item.imagem_exibida) }}" alt="{{ item.cor_exibida or '' }}" class="h-14 w-14 rounded-lg object-cover" />
             {% else %}
               <span class="text-xs text-gray-300">—</span>
             {% endif %}
           </td>
-          <td>{{ v.produto.codigo }} — {{ v.produto.descricao }}</td>
-          <td>{{ v.cor or "—" }}</td>
-          <td><strong class="text-gold-700">{{ v.produto.localizacao or "—" }}</strong></td>
+          <td>
+            {% if item.codigo_exibido %}{{ item.codigo_exibido }} — {% endif %}{{ item.descricao_exibida }}
+            {%- if item.e_avulso %} <span class="selo-neutro">avulso</span>{% endif %}
+          </td>
+          <td>{{ item.cor_exibida or "—" }}</td>
+          {# Item avulso não está no catálogo, então não tem prateleira: quem separa
+             confere pelo nome e pelo que estiver no detalhe da linha. #}
+          <td><strong class="text-gold-700">{{ item.variacao.produto.localizacao or "—" if item.variacao else (item.detalhe or "—") }}</strong></td>
           <td class="text-right">
             {{ item.qtd }}{% if item.qtd_caixas %} <span class="text-xs text-gray-400">({{ item.qtd_caixas }} cx)</span>{% endif %}
           </td>

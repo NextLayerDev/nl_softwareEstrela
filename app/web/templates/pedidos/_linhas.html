@@ -1,21 +1,46 @@
-{# Linhas da lista de pedidos. Fragmento: a página inclui, e o realtime re-busca em
-   /pedidos/lista quando qualquer pedido muda de status. #}
+{# Linhas da lista de pedidos. Fragmento: a página inclui, e o realtime (e os filtros)
+   re-buscam em /pedidos/lista quando qualquer pedido muda de status. #}
 {% from "_icones.html" import icone %}
+{% from "_ui.html" import selo_status %}
+{% set origens = {"local": "Balcão", "catalogo": "Catálogo", "whatsapp": "WhatsApp"} %}
 {% for p in pedidos %}
+{% set origem = p.origem.value if p.origem.value is defined else p.origem %}
 <tr>
   <td class="font-mono">{{ p.numero or "—" }}</td>
-  <td>{{ p.nome_cliente }}</td>
-  <td>{{ p.vendedor.nome }}</td>
-  <td><span class="selo-neutro">{{ p.status.value if p.status.value is defined else p.status }}</span></td>
+  <td class="font-medium">
+    {{ p.nome_cliente }}
+    {% if not p.cliente %}<span class="text-xs text-gray-400"> · sem cadastro</span>{% endif %}
+  </td>
+  <td>
+    <span class="inline-flex items-center gap-1 text-sm text-gray-500">
+      <span class="nav-icone" aria-hidden="true">
+        {%- if origem == "whatsapp" %}{{ icone("mensagem") }}
+        {%- elif origem == "catalogo" %}{{ icone("etiqueta") }}
+        {%- else %}{{ icone("carrinho") }}{% endif -%}
+      </span>
+      {{ origens.get(origem, origem) }}
+    </span>
+  </td>
+  <td class="text-gray-500">{{ p.vendedor.nome }}</td>
+  <td class="text-right">{{ p.itens | length }}</td>
   <td class="text-right">{{ p.total | moeda }}</td>
-  <td>{{ p.criado_em.strftime("%d/%m/%Y %H:%M") if p.criado_em else "" }}</td>
-  <td class="text-right"><a href="/pedidos/{{ p.id }}" class="btn-secundario">Abrir</a></td>
+  <td>{{ selo_status(p.status) }}</td>
+  <td class="text-sm text-gray-500">{{ p.criado_em.strftime("%d/%m/%Y %H:%M") if p.criado_em else "" }}</td>
+  <td class="text-right">
+    <div class="flex items-center justify-end gap-1">
+      <a href="/pedidos/{{ p.id }}/cupom" target="_blank" class="btn-fantasma" title="Cupom (80mm)"
+         aria-label="Cupom do pedido {{ p.numero or p.id }}">
+        <span class="nav-icone" aria-hidden="true">{{ icone("imprimir") }}</span>
+      </a>
+      <a href="/pedidos/{{ p.id }}" class="btn-secundario">Abrir</a>
+    </div>
+  </td>
 </tr>
 {% else %}
-<tr><td colspan="7">
+<tr><td colspan="9">
   <div class="vazio">
     <span class="vazio-icone" aria-hidden="true">{{ icone("carrinho") }}</span>
-    <p>Nenhum pedido ainda.</p>
+    <p>Nenhum pedido por aqui.</p>
     <a href="/pedidos/novo" class="btn-primario mt-1">
       <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Criar primeiro pedido
     </a>
