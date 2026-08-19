@@ -28,6 +28,7 @@ class ItemAplicado(BaseModel):
     qtd: int
     preco_unit: Decimal
     tipo_match: str  # codigo_exato | codigo_alt | codigo_normalizado | descricao:0.71
+    aviso: str | None = None  # preço abaixo do piso, por exemplo — informa, não impede
 
 
 class Pendencia(BaseModel):
@@ -92,3 +93,23 @@ class ResultadoLote(BaseModel):
     @property
     def tudo_casou(self) -> bool:
         return bool(self.pedidos) and not self.total_pendencias
+
+
+class LinhaResolvida(BaseModel):
+    """Uma linha colada, casada com o catálogo mas AINDA NÃO gravada.
+
+    É o que a tela `/pedidos/novo` precisa para encher o carrinho: o que casou volta com
+    `variacao_id`, e o que não casou volta com `variacao_id=None` para virar item avulso
+    com o código e a descrição da planilha preservados — a linha não some por não ter
+    achado produto.
+    """
+
+    linha: int
+    variacao_id: int | None = None
+    codigo: str
+    descricao: str
+    cor: str | None = None
+    qtd: int
+    preco_unit: Decimal
+    tipo_match: str = ""
+    aviso: str | None = None

@@ -1,20 +1,32 @@
-{# Resultado da busca de produto DENTRO do pedido: cada linha é um botão "Selecionar"
-   que preenche a variação (Alpine) e dispara o cálculo de saldo/preço.
+{# Resultado da busca de produto DENTRO do pedido: cada linha é um botão "Selecionar".
    A lista NÃO é limpa no clique: é ela que permite lançar o mesmo produto de novo, ou
-   três produtos da mesma busca, sem ter que redigitar o termo. #}
+   três produtos da mesma busca, sem ter que redigitar o termo.
+
+   O fragmento é burro de propósito: só carrega os dados em `data-*` e chama
+   `selecionar($el)`. Quem decide o que fazer com a seleção é o x-data da tela — o
+   detalhe dispara o painel de saldo por HTMX, a tela de novo pedido calcula o preço no
+   próprio navegador. Uma busca só serve as duas.
+
+   Os preços vão junto porque a tela nova recalcula a faixa (varejo/atacado) a cada
+   mudança de quantidade: buscá-los no servidor a cada tecla seria uma ida de rede por
+   dígito digitado. #}
 {% for v in variacoes %}
 {% set p = v.produto %}
 <button type="button"
         class="flex w-full items-center gap-3 border-b border-marca-borda px-2 py-2 text-left text-sm
                hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
-        :class="variacaoId === '{{ v.id }}' ? 'bg-gold-100 font-semibold' : ''"
+        :class="String(variacaoId) === '{{ v.id }}' ? 'bg-gold-100 font-semibold' : ''"
         data-id="{{ v.id }}" data-codigo="{{ p.codigo }}" data-descricao="{{ p.descricao }}"
         data-cor="{{ v.cor or 'padrão' }}" data-img="{{ foto_url(v.imagem_url) if v.imagem_url else '' }}"
-        @click="variacaoId = $el.dataset.id;
-                selCodigo = $el.dataset.codigo; selDescricao = $el.dataset.descricao;
-                selCor = $el.dataset.cor; selImg = $el.dataset.img;
-                htmx.ajax('GET', '/pedidos/saldo/' + $el.dataset.id + '?qtd=' + (qtd || 1), {target: '#saldo-box'});
-                $nextTick(() => document.getElementById('item-qtd')?.focus())">
+        data-preco-pouca="{{ p.preco_pouca_qtd }}" data-preco-muita="{{ p.preco_muita_qtd }}"
+        data-qtd-corte="{{ p.qtd_corte_atacado or 0 }}"
+        data-unidades-caixa="{{ p.unidades_por_caixa or 0 }}"
+        {# O piso não é dado de custo: é o aviso que a tela mostra ao vendedor. Ainda
+           assim só vai para quem pode vê-lo — `preco_minimo` é escondido do vendedor
+           na tela de produtos pelo mesmo motivo que `preco_custo`. #}
+        data-preco-minimo="{{ p.preco_minimo if e_admin(user.perfil) else 0 }}"
+        data-disponivel="{% if v.estoque_modo.value == 'EXATO' %}{{ v.estoque_fisico - v.estoque_reservado }}{% elif v.rotulo_aprox %}{{ v.rotulo_aprox.value | lower }}{% else %}aprox.{% endif %}"
+        @click="selecionar($el)">
   {% if v.imagem_url %}
     <img src="{{ foto_url(v.imagem_url) }}" alt="" class="h-10 w-10 shrink-0 rounded object-cover" />
   {% else %}

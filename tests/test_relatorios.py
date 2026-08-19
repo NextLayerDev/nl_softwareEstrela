@@ -74,6 +74,10 @@ def _pedido_faturado(
         PedidoItem(
             pedido_id=pedido.id,
             produto_variacao_id=variacao.id,
+            # Snapshot do que foi vendido: obrigatório desde que o item passou a poder
+            # existir sem variação (item avulso). Quem monta item na mão preenche.
+            descricao=variacao.produto.descricao,
+            codigo=variacao.produto.codigo,
             qtd=qtd,
             preco_unit=Decimal(preco),
             subtotal=subtotal,

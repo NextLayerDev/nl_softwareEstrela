@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core import eventos
-from app.core.errors import NaoEncontradoError, PermissaoNegadaError, RegraNegocioError
+from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
 from app.models.enums import StatusConta, StatusPedido, e_admin
@@ -15,7 +15,13 @@ from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import Produto, ProdutoVariacao
 from app.repositories.cliente_repo import cliente_repo
 from app.repositories.pedido_repo import pedido_repo
-from app.schemas.pedido import ItemAdicionar, SugestaoPreco
+from app.schemas.pedido import (
+    ItemAdicionar,
+    ItemAvulsoAdicionar,
+    ItemCarrinho,
+    PedidoCompletoCreate,
+    SugestaoPreco,
+)
 from app.services.estoque_service import estoque_service
 
 # Limite máximo de desconto (em %) que um vendedor pode aplicar sem aprovação de admin.
@@ -76,49 +82,13 @@ class PedidoService:
             raise RegraNegocioError("O desconto total não pode ser maior que a soma dos itens.")
         pedido.total = total
 
-    def _validar_limite_desconto(self, perfil: str, bruto_item: Decimal, desconto: Decimal) -> None:
-        """Vendedor só aplica desconto até o limite (%). Acima, exige admin."""
-        if desconto <= 0 or e_admin(perfil):
-            return
-        if bruto_item <= 0:
-            return
-        pct = (desconto / bruto_item) * Decimal("100")
-        if pct > LIMITE_DESCONTO_VENDEDOR_PCT:
-            raise PermissaoNegadaError(
-                f"Desconto de {pct.quantize(CENT)}% acima do limite do vendedor "
-                f"({LIMITE_DESCONTO_VENDEDOR_PCT}%). Requer aprovação do administrador."
-            )
-
     def _preco_efetivo(self, qtd: int, preco_unit: Decimal, desconto: Decimal) -> Decimal:
         """Quanto de fato sai cada unidade, já descontado o desconto do item."""
         if qtd <= 0:
             return preco_unit
         return ((Decimal(qtd) * preco_unit - desconto) / Decimal(qtd)).quantize(CENT)
 
-    def _validar_preco_minimo(
-        self, perfil: str, produto: Produto, qtd: int, preco_unit: Decimal, desconto: Decimal
-    ) -> None:
-        """Piso de venda do produto: o vendedor não desce abaixo dele.
-
-        A conta é sobre o preço EFETIVO (já com o desconto do item), não sobre o preço
-        digitado. Olhar só o `preco_unit` deixaria o piso furável pelo campo de desconto,
-        que é exatamente o buraco simétrico ao que existia antes — o limite de desconto
-        em % era contornável baixando o preço unitário.
-
-        `preco_minimo == 0` é "sem piso" (produto ainda não revisado). O admin passa:
-        é ele quem define o número, e o balcão precisa poder fechar negócio difícil.
-        """
-        piso = produto.preco_minimo or Decimal("0")
-        if piso <= 0 or e_admin(perfil):
-            return
-        efetivo = self._preco_efetivo(qtd, preco_unit, desconto)
-        if efetivo < piso:
-            raise RegraNegocioError(
-                f"{produto.codigo}: R$ {efetivo} por unidade fica abaixo do preço mínimo "
-                f"de R$ {piso.quantize(CENT)}. Peça a um administrador."
-            )
-
-    def erro_de_preco(
+    def aviso_de_preco(
         self,
         perfil: str,
         produto: Produto,
@@ -126,17 +96,41 @@ class PedidoService:
         preco_unit: Decimal,
         desconto: Decimal = Decimal("0"),
     ) -> str | None:
-        """Mesma checagem de piso do `adicionar_item`, só que sem levantar exceção.
+        """O que há de errado com este preço — em texto, sem barrar a venda.
 
-        Existe para quem precisa CLASSIFICAR antes de gravar — a colagem de planilha
-        decide linha a linha o que vira item e o que vira pendência, e não pode
-        descobrir isso estourando no meio do lote. Devolve a mensagem do erro, ou None
-        quando a venda pode sair. A regra em si continua morando num lugar só.
+        O piso do produto e o limite de desconto do vendedor deixaram de BLOQUEAR o
+        lançamento: quem está no balcão fecha negócio difícil na frente do cliente, e
+        travar a gravação só empurrava a venda para fora do sistema. O número continua
+        valendo como informação — a tela mostra este aviso em amarelo ao lado do preço,
+        e a colagem o carrega junto da linha.
+
+        As duas contas são sobre o preço EFETIVO (já com o desconto do item), não sobre
+        o `preco_unit` digitado: olhar só o preço deixaria o aviso mudo justamente
+        quando o desconto é que derrubou a margem.
+
+        `preco_minimo == 0` é "sem piso" (produto ainda não revisado). Admin não recebe
+        aviso: é ele quem define o número.
         """
-        try:
-            self._validar_preco_minimo(perfil, produto, qtd, preco_unit, desconto)
-        except RegraNegocioError as exc:
-            return exc.mensagem
+        if e_admin(perfil):
+            return None
+
+        piso = produto.preco_minimo or Decimal("0")
+        if piso > 0:
+            efetivo = self._preco_efetivo(qtd, preco_unit, desconto)
+            if efetivo < piso:
+                return (
+                    f"{produto.codigo}: R$ {efetivo} por unidade fica abaixo do preço "
+                    f"mínimo de R$ {piso.quantize(CENT)}."
+                )
+
+        bruto = (Decimal(qtd) * preco_unit).quantize(CENT)
+        if desconto > 0 and bruto > 0:
+            pct = (desconto / bruto) * Decimal("100")
+            if pct > LIMITE_DESCONTO_VENDEDOR_PCT:
+                return (
+                    f"Desconto de {pct.quantize(CENT)}% acima do limite usual do vendedor "
+                    f"({LIMITE_DESCONTO_VENDEDOR_PCT}%)."
+                )
         return None
 
     # ------------------------------------------------------------- criação
@@ -182,6 +176,79 @@ class PedidoService:
         )
         return pedido_repo.add(db, pedido)
 
+    def criar_completo(
+        self, db: Session, dados: PedidoCompletoCreate, vendedor_id: int, perfil: str
+    ) -> Pedido:
+        """Abre o pedido JÁ com todos os itens (tela `/pedidos/novo`).
+
+        O carrinho é montado no navegador e chega inteiro aqui, em vez de um rascunho
+        vazio seguido de um POST por item. O preço é sempre resolvido NO SERVIDOR a
+        partir do catálogo — o navegador só manda o que o vendedor digitou por cima
+        (`preco_unit`), nunca dita o preço sozinho. Item avulso é a exceção de sempre.
+
+        Todos os itens são resolvidos ANTES de qualquer escrita: um item inválido no
+        meio da lista levanta a exceção antes de existir pedido, e como o `get_db` só
+        commita no fim da requisição, nada fica gravado pela metade — não é preciso
+        apagar rascunho órfão depois.
+        """
+        pendentes: list[tuple[ProdutoVariacao | None, ItemCarrinho]] = []
+        for entrada in dados.itens:
+            if entrada.tipo == "avulso":
+                pendentes.append((None, entrada))
+                continue
+            variacao = self._get_variacao(db, entrada.variacao_id)
+            if not variacao.ativo or not variacao.produto.ativo:
+                raise RegraNegocioError(
+                    f"{variacao.produto.codigo} está inativo e não pode ser vendido."
+                )
+            pendentes.append((variacao, entrada))
+
+        pedido = self.criar(
+            db,
+            dados.cliente_id,
+            vendedor_id,
+            dados.observacao,
+            cliente_nome=dados.cliente_nome,
+            cliente_telefone=dados.cliente_telefone,
+        )
+        db.flush()  # precisa do id para pendurar os itens
+
+        for variacao, entrada in pendentes:
+            if variacao is None:
+                item = self._montar_item_avulso(
+                    pedido.id,
+                    ItemAvulsoAdicionar(
+                        nome=entrada.nome,
+                        codigo=entrada.codigo,
+                        detalhe=entrada.detalhe,
+                        qtd=entrada.qtd,
+                        preco_unit=entrada.preco_unit,
+                        desconto=entrada.desconto,
+                    ),
+                )
+            else:
+                produto = variacao.produto
+                qtd, qtd_caixas = self._resolver_qtd(produto, entrada.qtd, entrada.qtd_caixas)
+                if entrada.preco_unit is not None:
+                    preco_unit = Decimal(entrada.preco_unit).quantize(CENT)
+                else:
+                    preco_unit = self.sugerir_preco(produto, qtd).preco_sugerido
+                item = self._montar_item(
+                    pedido.id,
+                    variacao,
+                    qtd,
+                    qtd_caixas,
+                    preco_unit,
+                    Decimal(entrada.desconto).quantize(CENT),
+                )
+            pedido_repo.add_item(db, item)
+
+        db.refresh(pedido)
+        pedido.desconto_total = Decimal(dados.desconto_total).quantize(CENT)
+        self._recalcular_total(pedido)
+        db.flush()
+        return pedido
+
     def carregar_editavel(self, db: Session, pedido_id: int) -> Pedido:
         pedido = pedido_repo.get(db, pedido_id)
         if pedido is None:
@@ -212,9 +279,6 @@ class PedidoService:
             preco_unit = self.sugerir_preco(produto, qtd).preco_sugerido
 
         desconto = Decimal(dados.desconto).quantize(CENT)
-        bruto = (Decimal(qtd) * preco_unit).quantize(CENT)
-        self._validar_limite_desconto(perfil, bruto, desconto)
-        self._validar_preco_minimo(perfil, produto, qtd, preco_unit, desconto)
 
         # Mesma variação pelo mesmo preço vira UMA linha, somando a quantidade — é o
         # que mantém o pedido e o cupom legíveis quando o vendedor lança o produto três
@@ -231,12 +295,6 @@ class PedidoService:
         if existente is not None:
             qtd_total = existente.qtd + qtd
             desconto_total = (existente.desconto + desconto).quantize(CENT)
-            # Revalida o consolidado: dois lançamentos, cada um dentro do limite, podem
-            # somar um desconto que estoura — e o piso é por unidade, não por lançamento.
-            self._validar_limite_desconto(
-                perfil, (Decimal(qtd_total) * preco_unit).quantize(CENT), desconto_total
-            )
-            self._validar_preco_minimo(perfil, produto, qtd_total, preco_unit, desconto_total)
             existente.qtd = qtd_total
             existente.desconto = desconto_total
             if qtd_caixas is not None:
@@ -246,16 +304,62 @@ class PedidoService:
             db.flush()
             return existente
 
-        subtotal = self._calcular_subtotal(qtd, preco_unit, desconto)
-        item = PedidoItem(
-            pedido_id=pedido.id,
+        item = self._montar_item(pedido.id, variacao, qtd, qtd_caixas, preco_unit, desconto)
+        pedido_repo.add_item(db, item)
+        db.refresh(pedido)
+        self._recalcular_total(pedido)
+        db.flush()
+        return item
+
+    def _montar_item(
+        self,
+        pedido_id: int,
+        variacao: ProdutoVariacao,
+        qtd: int,
+        qtd_caixas: int | None,
+        preco_unit: Decimal,
+        desconto: Decimal,
+    ) -> PedidoItem:
+        """Item de catálogo, com o snapshot do que está sendo vendido AGORA."""
+        return PedidoItem(
+            pedido_id=pedido_id,
             produto_variacao_id=variacao.id,
+            descricao=variacao.produto.descricao[:200],
+            codigo=(variacao.produto.codigo or "")[:60] or None,
             qtd=qtd,
             qtd_caixas=qtd_caixas,
             preco_unit=preco_unit,
             desconto=desconto,
-            subtotal=subtotal,
+            subtotal=self._calcular_subtotal(qtd, preco_unit, desconto),
         )
+
+    def _montar_item_avulso(self, pedido_id: int, dados: ItemAvulsoAdicionar) -> PedidoItem:
+        """Item sem catálogo: nome e preço são o que o vendedor digitou.
+
+        Nunca funde com outra linha — sem chave de catálogo, duas linhas com o mesmo
+        nome podem ser negociações diferentes, e juntá-las escondia isso do faturamento.
+        """
+        preco_unit = Decimal(dados.preco_unit).quantize(CENT)
+        desconto = Decimal(dados.desconto).quantize(CENT)
+        return PedidoItem(
+            pedido_id=pedido_id,
+            produto_variacao_id=None,
+            descricao=dados.nome.strip()[:200],
+            codigo=(dados.codigo or "").strip()[:60] or None,
+            detalhe=(dados.detalhe or "").strip()[:500] or None,
+            qtd=dados.qtd,
+            qtd_caixas=None,
+            preco_unit=preco_unit,
+            desconto=desconto,
+            subtotal=self._calcular_subtotal(dados.qtd, preco_unit, desconto),
+        )
+
+    def adicionar_item_avulso(
+        self, db: Session, pedido_id: int, dados: ItemAvulsoAdicionar
+    ) -> PedidoItem:
+        """Lança no rascunho um item que não está no catálogo."""
+        pedido = self.carregar_editavel(db, pedido_id)
+        item = self._montar_item_avulso(pedido.id, dados)
         pedido_repo.add_item(db, item)
         db.refresh(pedido)
         self._recalcular_total(pedido)
@@ -276,41 +380,35 @@ class PedidoService:
     def aplicar_desconto_total(
         self, db: Session, pedido_id: int, desconto: Decimal, perfil: str
     ) -> Pedido:
+        """Desconto do rodapé, em R$. Não barra por percentual — ver `aviso_de_preco`.
+
+        O `_recalcular_total` continua recusando desconto maior que a soma dos itens:
+        isso não é política comercial, é conta que não fecha.
+        """
         pedido = self.carregar_editavel(db, pedido_id)
         desconto = Decimal(desconto).quantize(CENT)
         if desconto < 0:
             raise RegraNegocioError("O desconto não pode ser negativo.")
-        soma = sum((item.subtotal for item in pedido.itens), Decimal("0"))
-        if not e_admin(perfil) and soma > 0:
-            pct = (desconto / soma) * Decimal("100")
-            if pct > LIMITE_DESCONTO_VENDEDOR_PCT:
-                raise PermissaoNegadaError(
-                    f"Desconto total de {pct.quantize(CENT)}% acima do limite do vendedor "
-                    f"({LIMITE_DESCONTO_VENDEDOR_PCT}%). Requer aprovação do administrador."
-                )
-            # O desconto do rodapé derruba o preço de cada item na mesma proporção. Sem
-            # esta checagem o piso do produto seria furado por fora, sem passar por
-            # nenhum campo de item — o mesmo buraco, só que no rodapé da tela.
-            self._validar_piso_com_desconto_rateado(db, pedido, desconto, soma, perfil)
         pedido.desconto_total = desconto
         self._recalcular_total(pedido)
         db.flush()
         return pedido
 
-    def _validar_piso_com_desconto_rateado(
-        self, db: Session, pedido: Pedido, desconto: Decimal, soma: Decimal, perfil: str
-    ) -> None:
-        for item in pedido.itens:
-            variacao = self._get_variacao(db, item.produto_variacao_id)
-            produto = variacao.produto
-            if (produto.preco_minimo or Decimal("0")) <= 0:
-                continue
-            rateio = (desconto * (item.subtotal / soma)).quantize(CENT)
-            self._validar_preco_minimo(
-                perfil, produto, item.qtd, item.preco_unit, item.desconto + rateio
-            )
-
     # ------------------------------------------------------------- ciclo
+    def _itens_com_estoque(self, db: Session, pedido: Pedido) -> list[tuple[ProdutoVariacao, int]]:
+        """Só os itens que movem saldo.
+
+        Item avulso não está no catálogo, então não tem estoque a reservar, baixar ou
+        estornar. Ele segue no pedido, na impressão e na conferência da separação — o
+        que não existe é a movimentação.
+        """
+        pares: list[tuple[ProdutoVariacao, int]] = []
+        for item in pedido.itens:
+            if item.produto_variacao_id is None:
+                continue
+            pares.append((self._get_variacao(db, item.produto_variacao_id), item.qtd))
+        return pares
+
     def confirmar(self, db: Session, pedido_id: int, usuario_id: int) -> Pedido:
         pedido = pedido_repo.get(db, pedido_id)
         if pedido is None:
@@ -320,9 +418,8 @@ class PedidoService:
         if not pedido.itens:
             raise RegraNegocioError("Não é possível confirmar um pedido sem itens.")
 
-        for item in pedido.itens:
-            variacao = self._get_variacao(db, item.produto_variacao_id)
-            estoque_service.reservar(db, variacao, item.qtd, usuario_id, pedido.id)
+        for variacao, qtd in self._itens_com_estoque(db, pedido):
+            estoque_service.reservar(db, variacao, qtd, usuario_id, pedido.id)
 
         pedido.numero = pedido_repo.proximo_numero(db)
         pedido.status = StatusPedido.CONFIRMADO
@@ -421,9 +518,8 @@ class PedidoService:
                 "Apenas pedidos confirmados ou em separação podem ser faturados."
             )
 
-        for item in pedido.itens:
-            variacao = self._get_variacao(db, item.produto_variacao_id)
-            estoque_service.baixar(db, variacao, item.qtd, usuario_id, pedido.id)
+        for variacao, qtd in self._itens_com_estoque(db, pedido):
+            estoque_service.baixar(db, variacao, qtd, usuario_id, pedido.id)
 
         pedido.status = StatusPedido.FATURADO
         pedido.faturado_em = datetime.now(UTC)
@@ -453,9 +549,8 @@ class PedidoService:
             StatusPedido.SEPARACAO,
             StatusPedido.SEPARADO,
         ):
-            for item in pedido.itens:
-                variacao = self._get_variacao(db, item.produto_variacao_id)
-                estoque_service.estornar(db, variacao, item.qtd, usuario_id, pedido.id)
+            for variacao, qtd in self._itens_com_estoque(db, pedido):
+                estoque_service.estornar(db, variacao, qtd, usuario_id, pedido.id)
         pedido.status = StatusPedido.CANCELADO
         db.flush()
         # Sai da fila de separação em todos os terminais.

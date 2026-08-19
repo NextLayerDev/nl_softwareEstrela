@@ -1,2 +1,4 @@
-{# Selo de status do pedido. Trocado sozinho (OOB) quando o status muda em outro terminal. #}
-<span id="status-pedido" {% if oob %}hx-swap-oob="true"{% endif %} class="selo-neutro align-middle">{{ pedido.status.value if pedido.status.value is defined else pedido.status }}</span>
+{# Selo de status do pedido. Trocado sozinho (OOB) quando o status muda em outro
+   terminal — por isso ele carrega o id, e não a macro em si. #}
+{% from "_ui.html" import selo_status %}
+{{ selo_status(pedido.status, id="status-pedido", oob=oob) }}

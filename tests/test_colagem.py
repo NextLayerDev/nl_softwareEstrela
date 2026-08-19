@@ -17,6 +17,7 @@ from decimal import Decimal
 import pytest
 
 from app.core.colagem import consolidar, normalizar_codigo, parse_blocos, parse_colagem
+from app.core.errors import RegraNegocioError
 from app.core.numeros_br import parse_decimal_br, parse_int_br
 from app.models.cliente import Cliente
 from app.models.enums import EstoqueModo, StatusPedido
@@ -354,25 +355,36 @@ def test_quantidade_ilegivel_ou_zerada_vira_pendencia(db, usuario_vendedor):
     }
 
 
-def test_preco_abaixo_do_minimo_barra_o_vendedor_e_passa_o_admin(
-    db, usuario_vendedor, usuario_admin
-):
+def test_preco_abaixo_do_minimo_grava_com_aviso(db, usuario_vendedor, usuario_admin):
+    """O piso não segura mais a linha — e a colagem é onde isso mais importa.
+
+    A planilha do cliente traz o preço JÁ negociado; virar pendência obrigava o vendedor
+    a reconferir à mão exatamente as linhas em que o desconto foi combinado de véspera.
+    O texto continua saindo, junto do item, para a tela mostrar em amarelo.
+    """
     p = _produto(db, minimo=Decimal("9.00"))
     texto = _tsv(f"{p.codigo}\tx\t2\tR$ 1,00\t")
 
     _, do_vendedor = _colar(db, usuario_vendedor, texto)
-    assert not do_vendedor.aplicados
-    assert "preço mínimo" in do_vendedor.pendencias[0].motivo
+    assert do_vendedor.tudo_casou
+    assert "preço mínimo" in do_vendedor.aplicados[0].aviso
 
+    # O admin define o piso, então nem aviso recebe.
     _, do_admin = _colar(db, usuario_admin, texto)
-    assert do_admin.tudo_casou  # é quem define o piso; pode fechar negócio difícil
+    assert do_admin.tudo_casou
+    assert do_admin.aplicados[0].aviso is None
 
 
 # ============================================================ 4. isolamento por linha
 def test_linha_ruim_no_meio_nao_derruba_o_lote(db, usuario_vendedor):
-    """O teste-chave: 3 linhas, a do meio fura o piso. As outras duas gravam."""
+    """O teste-chave: 3 linhas, a do meio é impossível. As outras duas gravam.
+
+    A linha ruim é um produto NUNCA precificado e sem valor na planilha: sem preço não há
+    o que vender, e criando direto (sem tela de prévia) um item a R$ 0,00 seria dinheiro
+    saindo pela porta em silêncio.
+    """
     bom1 = _produto(db, pouca=Decimal("10.00"))
-    ruim = _produto(db, minimo=Decimal("50.00"))
+    ruim = _produto(db, pouca=Decimal("0.00"), muita=Decimal("0.00"))
     bom2 = _produto(db, pouca=Decimal("10.00"))
 
     pedido, r = _colar(
@@ -380,7 +392,7 @@ def test_linha_ruim_no_meio_nao_derruba_o_lote(db, usuario_vendedor):
         usuario_vendedor,
         _tsv(
             f"{bom1.codigo}\tx\t2\tR$ 5,00\t",
-            f"{ruim.codigo}\tx\t3\tR$ 1,00\t",
+            f"{ruim.codigo}\tx\t3\t\t",
             f"{bom2.codigo}\tx\t1\tR$ 7,00\t",
         ),
     )
@@ -391,13 +403,33 @@ def test_linha_ruim_no_meio_nao_derruba_o_lote(db, usuario_vendedor):
     assert pedido.total == Decimal("17.00")  # 2×5 + 1×7 — sem resquício da linha ruim
 
 
-def test_a_session_continua_utilizavel_depois_da_linha_ruim(db, usuario_vendedor):
-    """Rollback de SAVEPOINT não pode envenenar a transação da request inteira."""
-    ruim = _produto(db, minimo=Decimal("50.00"))
+def test_a_session_continua_utilizavel_depois_da_linha_ruim(db, usuario_vendedor, monkeypatch):
+    """Rollback de SAVEPOINT não pode envenenar a transação da request inteira.
+
+    A falha é injetada no `adicionar_item` de propósito. Hoje as linhas problemáticas são
+    barradas na classificação, antes de tocar o banco — mas o SAVEPOINT existe justamente
+    para a regra que alguém acrescentar ali amanhã, e um teste que dependesse da regra de
+    hoje pararia de cobrir isso no dia em que ela mudasse (foi o que aconteceu quando o
+    piso deixou de barrar).
+    """
+    ruim = _produto(db, pouca=Decimal("10.00"))
     bom = _produto(db, pouca=Decimal("10.00"))
+
+    original = pedido_service.adicionar_item
+
+    def falha_no_produto_ruim(sessao, pedido_id, dados, perfil):
+        item = original(sessao, pedido_id, dados, perfil)
+        if item.codigo == ruim.codigo:
+            raise RegraNegocioError("falha simulada depois de já ter escrito")
+        return item
+
+    monkeypatch.setattr(pedido_service, "adicionar_item", falha_no_produto_ruim)
 
     pedido, r = _colar(db, usuario_vendedor, _tsv(f"{ruim.codigo}\tx\t1\tR$ 1,00\t"))
     assert not r.aplicados
+    assert "falha simulada" in r.pendencias[0].motivo
+
+    monkeypatch.undo()
 
     # Uma segunda colagem no mesmo pedido, na mesma Session, tem que funcionar.
     segunda = colagem_service.aplicar(

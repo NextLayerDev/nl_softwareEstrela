@@ -1,6 +1,35 @@
 {# Macros de UI reutilizáveis: breadcrumbs e abas acessíveis. #}
 
 {# trilha(itens) — itens = [("Painel","/"), ("Pedidos", none)] ; href none = página atual #}
+{#
+  selo_status(status) — o selo colorido do status do pedido.
+
+  Cor por etapa, e não um cinza só para tudo: a lista de pedidos é lida de relance,
+  e é a cor que diz onde cada pedido está sem ninguém precisar ler a palavra. A escala
+  segue o caminho da venda — cinza (nem começou) → azul (confirmado) → âmbar (na mão de
+  quem separa) → dourado (pronto/faturado) → verde (entregue), com vermelho fora da via.
+
+  Aceita o enum ou a string, porque os fragmentos recebem os dois.
+#}
+{% macro selo_status(status, id="", oob=False) -%}
+{%- set valor = status.value if status.value is defined else status -%}
+{#- As classes vão por extenso, e não montadas como "selo-" ~ valor: o Tailwind varre
+    os templates procurando o nome LITERAL da classe, e um nome construído em runtime
+    é purgado do output.css — o selo sai sem cor nenhuma, que foi exatamente o que
+    aconteceu na primeira versão disto. -#}
+{%- set estilos = {
+     "rascunho":   ("selo-rascunho",   "Rascunho"),
+     "confirmado": ("selo-confirmado", "Confirmado"),
+     "separacao":  ("selo-separacao",  "Em separação"),
+     "separado":   ("selo-separado",   "Separado"),
+     "faturado":   ("selo-faturado",   "Faturado"),
+     "entregue":   ("selo-entregue",   "Entregue"),
+     "cancelado":  ("selo-cancelado",  "Cancelado")} -%}
+{%- set classe, rotulo = estilos.get(valor, ("selo-neutro", valor)) -%}
+<span {% if id %}id="{{ id }}"{% endif %}{% if oob %} hx-swap-oob="true"{% endif %}
+      class="{{ classe }} align-middle">{{ rotulo }}</span>
+{%- endmacro %}
+
 {% macro trilha(itens) -%}
 <nav class="trilha" aria-label="Você está em">
   {%- for rotulo, href in itens %}

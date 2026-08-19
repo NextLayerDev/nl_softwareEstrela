@@ -67,10 +67,10 @@
     </thead>
     <tbody>
       {% for item in pedido.itens %}
-      {% set v = item.variacao %}
+
       <tr>
         <td colspan="4" class="desc">
-          {{ v.produto.codigo }} — {{ v.produto.descricao }}{% if v.cor %} ({{ v.cor }}){% endif %}
+          {% if item.codigo_exibido %}{{ item.codigo_exibido }} — {% endif %}{{ item.descricao_exibida }}{% if item.cor_exibida %} ({{ item.cor_exibida }}){% endif %}
         </td>
       </tr>
       <tr>

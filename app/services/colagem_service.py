@@ -48,6 +48,7 @@ from app.repositories.produto_repo import produto_repo
 from app.schemas.colagem import (
     ItemAplicado,
     LinhaIgnoradaOut,
+    LinhaResolvida,
     PedidoColado,
     Pendencia,
     ResultadoColagem,
@@ -83,6 +84,7 @@ class _Caso:
     variacao: ProdutoVariacao | None = None
     tipo_match: str = ""
     pendencia: Pendencia | None = None
+    aviso: str | None = None  # piso/limite: informa, não impede
 
 
 @dataclass
@@ -251,6 +253,57 @@ class ColagemService:
                 return cliente.id, None, None, True
         return padrao.cliente_id, padrao.cliente_nome, padrao.cliente_telefone, False
 
+    # ------------------------------------------------------------- carrinho (sem gravar)
+    def resolver_para_carrinho(self, db: Session, texto: str, perfil: str) -> list[LinhaResolvida]:
+        """Casa o texto colado com o catálogo SEM criar pedido nem gravar item.
+
+        Alimenta a aba "Colar itens" da tela de novo pedido: as linhas caem no carrinho
+        do navegador e só viram pedido quando o vendedor clica em Criar. Reusa o mesmo
+        `_casar` das duas portas que gravam, então a escada de casamento (código exato,
+        alternativo, normalizado e descrição por trigrama) é uma só.
+
+        Linha que não casou não é descartada: volta sem `variacao_id` para virar item
+        avulso, levando o código, a descrição e o preço que vieram da planilha.
+        """
+        lidas, _ignoradas = parse_colagem(texto)
+        lidas = consolidar(lidas)
+        if not lidas:
+            return []
+
+        resolvidas: list[LinhaResolvida] = []
+        for caso in self._casar(db, lidas, perfil):
+            linha = caso.linha
+            if caso.dados is None or caso.variacao is None:
+                # Sem preço legível a linha não tem como virar item avulso útil; entra
+                # zerada para o vendedor completar, em vez de sumir da tela.
+                resolvidas.append(
+                    LinhaResolvida(
+                        linha=linha.numero,
+                        variacao_id=None,
+                        codigo=linha.codigo,
+                        descricao=linha.descricao or linha.codigo or "ITEM",
+                        qtd=max(linha.qtd or 1, 1),
+                        preco_unit=linha.preco_unit or Decimal("0"),
+                        aviso=caso.pendencia.motivo if caso.pendencia is not None else None,
+                    )
+                )
+                continue
+            produto = caso.variacao.produto
+            resolvidas.append(
+                LinhaResolvida(
+                    linha=linha.numero,
+                    variacao_id=caso.variacao.id,
+                    codigo=produto.codigo,
+                    descricao=produto.descricao,
+                    cor=caso.variacao.cor,
+                    qtd=caso.dados.qtd or 1,
+                    preco_unit=caso.dados.preco_unit or Decimal("0"),
+                    tipo_match=caso.tipo_match,
+                    aviso=caso.aviso,
+                )
+            )
+        return resolvidas
+
     # ------------------------------------------------------------- gravação
     def _gravar(
         self,
@@ -298,6 +351,7 @@ class ColagemService:
                 qtd=item.qtd,
                 preco_unit=item.preco_unit,
                 tipo_match=caso.tipo_match,
+                aviso=caso.aviso,
             )
         )
 
@@ -495,15 +549,17 @@ class ColagemService:
                 ),
             )
 
-        erro_preco = pedido_service.erro_de_preco(perfil, produto, linha.qtd, preco)
-        if erro_preco:
-            return _Caso(linha, pendencia=self._pendencia(linha, erro_preco))
+        # Preço abaixo do piso não segura mais a linha: o piso virou aviso, e a colagem
+        # é justamente onde a planilha do cliente traz o preço já negociado. O texto
+        # segue junto do item para a tela mostrar em amarelo.
+        aviso = pedido_service.aviso_de_preco(perfil, produto, linha.qtd, preco)
 
         return _Caso(
             linha,
             dados=ItemAdicionar(variacao_id=variacao.id, qtd=linha.qtd, preco_unit=preco),
             variacao=variacao,
             tipo_match=tipo,
+            aviso=aviso,
         )
 
     # ------------------------------------------------------------- pendências

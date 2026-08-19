@@ -18,7 +18,10 @@
   <script src="/static/js/realtime.js?v={{ asset_version }}"></script>
 </head>
 {% from "_icones.html" import icone %}
-<body x-data="{ sidebarAberta: false }" class="min-h-screen bg-marca-fundo font-sans text-sidebar">
+{# `colagemAberta` mora aqui, e não na tela de pedidos, porque o botão que o liga
+   fica no bloco `acoes` (cabeçalho do base) e o painel fica no `content` — o <body>
+   é o único ancestral comum dos dois. Mesmo motivo do `sidebarAberta`. #}
+<body x-data="{ sidebarAberta: false, colagemAberta: false }" class="min-h-screen bg-marca-fundo font-sans text-sidebar">
   <a href="#conteudo" class="skip-link">Pular para o conteúdo</a>
 
   {# Overlay escuro — só no mobile, quando o drawer está aberto #}
@@ -136,6 +139,12 @@
   {# Toasts do tempo real. Fora do #flash de propósito: aquele é da navegação (PRG). #}
   <div id="rt-toasts" aria-live="polite"
        class="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"></div>
+
+  {# JS específico de uma tela. SEM `defer` de propósito: o Alpine do <head> é
+     deferido, e script deferido só roda depois do parse — então tudo que é carregado
+     aqui, no corpo, executa ANTES do Alpine inicializar. É o que garante que
+     `x-data="PedidoNovo.carrinho()"` ache a função já definida. #}
+  {% block scripts %}{% endblock %}
 
   <script>
     if ("serviceWorker" in navigator) {

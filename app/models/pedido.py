@@ -92,7 +92,19 @@ class PedidoItem(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id"), index=True)
-    produto_variacao_id: Mapped[int] = mapped_column(ForeignKey("produto_variacoes.id"), index=True)
+    # NULL = item avulso: o vendedor lançou algo que não está no catálogo (fora de
+    # estoque, produto novo, serviço). Sem variação não há saldo para reservar nem
+    # baixar — o estoque continua mudando só por movimentação, porque não existe
+    # movimentação a fazer. Leia sempre pelas propriedades de exibição abaixo.
+    produto_variacao_id: Mapped[int | None] = mapped_column(
+        ForeignKey("produto_variacoes.id"), index=True
+    )
+    # Snapshot do que foi vendido, gravado na hora do lançamento. O pedido é documento:
+    # renomear ou recodificar um produto no catálogo não pode reescrever o que o cliente
+    # comprou mês passado. Para o item avulso, é o único lugar onde o nome existe.
+    descricao: Mapped[str] = mapped_column(String(200))
+    codigo: Mapped[str | None] = mapped_column(String(60))
+    detalhe: Mapped[str | None] = mapped_column(Text)  # observação livre do item avulso
     qtd: Mapped[int] = mapped_column(Integer)  # em unidades
     qtd_caixas: Mapped[int | None] = mapped_column(Integer)
     preco_unit: Mapped[Decimal] = mapped_column(Numeric(12, 2))
@@ -101,4 +113,47 @@ class PedidoItem(Base):
     separado: Mapped[bool] = mapped_column(default=False)  # conferência na fila de separação
 
     pedido: Mapped[Pedido] = relationship(back_populates="itens")
-    variacao: Mapped[ProdutoVariacao] = relationship()
+    variacao: Mapped[ProdutoVariacao | None] = relationship()
+
+    # ---------------------------------------------------------------- exibição
+    # Mesmo motivo das propriedades do Pedido: `item.variacao.produto.descricao` volta a
+    # ser None-unsafe no instante em que alguém vende um item avulso. Telas, impressão,
+    # cupom e separação leem daqui.
+    @property
+    def e_avulso(self) -> bool:
+        return self.produto_variacao_id is None
+
+    @property
+    def descricao_exibida(self) -> str:
+        if self.descricao:
+            return self.descricao
+        if self.variacao is not None:
+            return self.variacao.produto.descricao
+        return "ITEM AVULSO"
+
+    @property
+    def codigo_exibido(self) -> str | None:
+        if self.codigo:
+            return self.codigo
+        if self.variacao is not None:
+            return self.variacao.produto.codigo
+        return None
+
+    @property
+    def cor_exibida(self) -> str | None:
+        if self.variacao is not None:
+            return self.variacao.cor or None
+        return None
+
+    @property
+    def imagem_exibida(self) -> str | None:
+        if self.variacao is not None:
+            return self.variacao.imagem_url
+        return None
+
+    @property
+    def unidades_por_caixa(self) -> int | None:
+        """Só para a linha "N cx × M = X un" — item avulso não tem caixa no catálogo."""
+        if self.variacao is not None:
+            return self.variacao.produto.unidades_por_caixa
+        return None
