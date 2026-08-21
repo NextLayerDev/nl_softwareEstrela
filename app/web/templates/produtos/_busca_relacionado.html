@@ -1,0 +1,17 @@
+{# Candidatos do "Compre Junto" (fragmento HTMX, alvo #rel-sugestoes).
+
+   Lista curta: só o que identifica o produto. Quem monta a lista final é o Alpine do
+   formulário — clicar aqui só empurra {id, rotulo} para o array. #}
+{% for p in produtos %}
+<button type="button"
+        class="flex w-full items-center gap-3 border-b border-marca-borda px-3 py-2 text-left text-sm
+               last:border-b-0 hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
+        data-id="{{ p.id }}" data-rotulo="{{ p.codigo }} — {{ p.descricao }}"
+        @click="adicionarRelacionado($el.dataset)">
+  <span class="font-mono">{{ p.codigo }}</span>
+  <span class="min-w-0 flex-1 truncate">{{ p.descricao }}</span>
+  {% if not p.ativo %}<span class="selo-neutro shrink-0">inativo</span>{% endif %}
+</button>
+{% else %}
+<p class="px-3 py-2 text-sm text-gray-400">Nenhum produto encontrado.</p>
+{% endfor %}

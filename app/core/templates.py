@@ -93,6 +93,20 @@ def _especs_json(especificacoes: object) -> str:
 templates.env.filters["especs_json"] = _especs_json
 
 
+def _relacionados_json(relacionados: object) -> str:
+    """Compre Junto para o editor: [[12,"K-708 — CANETA"],[15,"..."]]."""
+    pares = []
+    for rel in relacionados or []:
+        alvo = getattr(rel, "alvo", None)
+        if alvo is None:
+            continue
+        pares.append([int(alvo.id), f"{alvo.codigo} — {alvo.descricao}"])
+    return json.dumps(pares, separators=(",", ":"), ensure_ascii=False)
+
+
+templates.env.filters["relacionados_json"] = _relacionados_json
+
+
 def _desde(valor: object) -> str:
     """Tempo relativo curto em pt-BR: 'há 8 min'. Acima de 30 dias, vira data.
 

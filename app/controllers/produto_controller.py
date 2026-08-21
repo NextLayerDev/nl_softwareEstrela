@@ -78,6 +78,7 @@ class ProdutoController:
             codigos_alt=self._parse_codigos(form),
             faixas=self._parse_faixas(form) or [],
             especificacoes=self._parse_especificacoes(form) or [],
+            relacionados=self._parse_relacionados(form) or [],
         )
         return produto_service.criar(db, dados)
 
@@ -112,6 +113,8 @@ class ProdutoController:
             campos["faixas"] = self._parse_faixas(form) or []
         if form.get("tem_editor_especificacoes"):
             campos["especificacoes"] = self._parse_especificacoes(form) or []
+        if form.get("tem_editor_relacionados"):
+            campos["relacionados"] = self._parse_relacionados(form) or []
         return produto_service.atualizar(db, produto_id, ProdutoUpdate(**campos))
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
@@ -167,6 +170,20 @@ class ProdutoController:
                 )
             )
         return variacoes
+
+    @staticmethod
+    def _parse_relacionados(form: dict) -> list[int] | None:
+        """Lê `rel_id[]`. `None` = o formulário não trouxe o editor (ver o sentinela)."""
+        ids = form.get("rel_id")
+        if not isinstance(ids, list):
+            return None
+        saida: list[int] = []
+        for bruto in ids:
+            try:
+                saida.append(int(bruto))
+            except (TypeError, ValueError):
+                continue
+        return saida
 
     @staticmethod
     def _parse_especificacoes(form: dict) -> list[EspecificacaoCreate] | None:

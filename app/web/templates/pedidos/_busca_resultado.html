@@ -10,26 +10,14 @@
    Os preços vão junto porque a tela nova recalcula a faixa (varejo/atacado) a cada
    mudança de quantidade: buscá-los no servidor a cada tecla seria uma ida de rede por
    dígito digitado. #}
+{% from "pedidos/_macro_dados_variacao.html" import dados_variacao, disponivel %}
 {% for v in variacoes %}
 {% set p = v.produto %}
 <button type="button"
         class="flex w-full items-center gap-3 border-b border-marca-borda px-2 py-2 text-left text-sm
                hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
         :class="String(variacaoId) === '{{ v.id }}' ? 'bg-gold-100 font-semibold' : ''"
-        data-id="{{ v.id }}" data-codigo="{{ p.codigo }}" data-descricao="{{ p.descricao }}"
-        data-cor="{{ v.cor or 'padrão' }}" data-img="{{ foto_url(v.imagem_url) if v.imagem_url else '' }}"
-        data-preco-pouca="{{ p.preco_pouca_qtd }}" data-preco-muita="{{ p.preco_muita_qtd }}"
-        {# Tabela de atacado, quando o produto tem uma. É ela que manda no preço, então
-           vai junto para a prévia do carrinho acompanhar a quantidade sem ida ao
-           servidor. Pares com o preço em string — quem converte é o parseMoedaBR. #}
-        data-faixas="{{ p.faixas | faixas_json }}"
-        data-qtd-corte="{{ p.qtd_corte_atacado or 0 }}"
-        data-unidades-caixa="{{ p.unidades_por_caixa or 0 }}"
-        {# O piso não é dado de custo: é o aviso que a tela mostra ao vendedor. Ainda
-           assim só vai para quem pode vê-lo — `preco_minimo` é escondido do vendedor
-           na tela de produtos pelo mesmo motivo que `preco_custo`. #}
-        data-preco-minimo="{{ p.preco_minimo if e_admin(user.perfil) else 0 }}"
-        data-disponivel="{% if v.estoque_modo.value == 'EXATO' %}{{ v.estoque_fisico - v.estoque_reservado }}{% elif v.rotulo_aprox %}{{ v.rotulo_aprox.value | lower }}{% else %}aprox.{% endif %}"
+        {{ dados_variacao(v, user.perfil) }}
         @click="selecionar($el)">
   {% if v.imagem_url %}
     <img src="{{ foto_url(v.imagem_url) }}" alt="" class="h-10 w-10 shrink-0 rounded object-cover" />
@@ -39,11 +27,7 @@
   <span class="font-mono">{{ p.codigo }}</span>
   <span class="min-w-0 flex-1 truncate">{{ p.descricao }}</span>
   <span class="text-gray-500">{{ v.cor or "padrão" }}</span>
-  <span class="font-semibold">
-    {% if v.estoque_modo.value == "EXATO" %}{{ v.estoque_fisico - v.estoque_reservado }}
-    {%- elif v.rotulo_aprox %}{{ v.rotulo_aprox.value | lower }}
-    {%- else %}aprox.{% endif %}
-  </span>
+  <span class="font-semibold">{{ disponivel(v) }}</span>
   <span class="selo-tem shrink-0">Selecionar</span>
 </button>
 {% else %}

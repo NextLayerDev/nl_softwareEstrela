@@ -1,0 +1,33 @@
+{# O CONTRATO `data-*` entre o servidor e o `selecionar($el)` das telas de pedido.
+
+   Mora numa macro porque DOIS fragmentos o emitem — o resultado da busca e a faixa
+   "Compre Junto" — e as duas telas leem com o mesmo `selecionar($el)`. Copiar a lista
+   de atributos no segundo fragmento seria combinar uma divergência para daqui a três
+   meses, na hora em que alguém acrescentasse o décimo primeiro atributo em um só lugar.
+
+   Quem consome: `pedido_novo.js` (calcula o preço no navegador) e o x-data do
+   `detalhe.html` (dispara o painel de saldo). #}
+{% macro dados_variacao(v, perfil) -%}
+{%- set p = v.produto -%}
+data-id="{{ v.id }}" data-codigo="{{ p.codigo }}" data-descricao="{{ p.descricao }}"
+data-cor="{{ v.cor or 'padrão' }}" data-img="{{ foto_url(v.imagem_url) if v.imagem_url else '' }}"
+data-preco-pouca="{{ p.preco_pouca_qtd }}" data-preco-muita="{{ p.preco_muita_qtd }}"
+{# Tabela de atacado, quando o produto tem uma. É ela que manda no preço, então vai
+   junto para a prévia do carrinho acompanhar a quantidade sem ida ao servidor. Pares
+   com o preço em string — quem converte é o parseMoedaBR. #}
+data-faixas="{{ p.faixas | faixas_json }}"
+data-qtd-corte="{{ p.qtd_corte_atacado or 0 }}"
+data-unidades-caixa="{{ p.unidades_por_caixa or 0 }}"
+{# O piso não é dado de custo: é o aviso que a tela mostra ao vendedor. Ainda assim só
+   vai para quem pode vê-lo — `preco_minimo` é escondido do vendedor na tela de produtos
+   pelo mesmo motivo que `preco_custo`. #}
+data-preco-minimo="{{ p.preco_minimo if e_admin(perfil) else 0 }}"
+data-disponivel="{{ disponivel(v) }}"
+{%- endmacro %}
+
+{# Saldo em texto curto, do jeito que as duas telas mostram. #}
+{% macro disponivel(v) -%}
+{%- if v.estoque_modo.value == "EXATO" -%}{{ v.estoque_fisico - v.estoque_reservado }}
+{%- elif v.rotulo_aprox -%}{{ v.rotulo_aprox.value | lower }}
+{%- else -%}aprox.{%- endif -%}
+{%- endmacro %}

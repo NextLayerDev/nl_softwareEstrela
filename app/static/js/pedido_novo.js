@@ -200,6 +200,10 @@
           this.porCaixa = false;
           this.precoTexto = "";
           this.descontoItemTexto = "";
+          // Acessórios do produto escolhido. O fragmento devolve os MESMOS data-* da
+          // busca, então o `selecionar` daqui atende os dois cliques sem saber a
+          // diferença.
+          htmx.ajax("GET", `/pedidos/compre-junto/${d.id}`, { target: "#compre-junto" });
         },
 
         /** Unidades que a linha vai lançar — em caixa, multiplica pelo fator. */

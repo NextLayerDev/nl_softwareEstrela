@@ -917,3 +917,112 @@ def test_linha_incompleta_da_ficha_e_descartada(db: Session) -> None:
     )
     db.refresh(produto)
     assert [(e.rotulo, e.valor) for e in produto.especificacoes] == [("Altura", "50 cm")]
+
+
+# ============================================================ Compre Junto
+def _cria(db: Session, descricao: str = "PRODUTO") -> Produto:
+    return produto_service.criar(db, ProdutoCreate(codigo=_codigo(), descricao=descricao))
+
+
+def test_compre_junto_guarda_a_ordem(db: Session) -> None:
+    principal = _cria(db, "GARRAFA")
+    alca = _cria(db, "ALCA")
+    tampa = _cria(db, "TAMPA")
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=[tampa.id, alca.id]))
+    db.refresh(principal)
+    assert [(r.ordem, r.relacionado_id) for r in principal.relacionados] == [
+        (0, tampa.id),
+        (1, alca.id),
+    ]
+
+
+def test_compre_junto_e_de_mao_unica(db: Session) -> None:
+    """Capa é acessório de celular; o contrário não. Criar a volta encheria o acessório."""
+    principal = _cria(db, "CELULAR")
+    capa = _cria(db, "CAPA")
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=[capa.id]))
+    db.refresh(capa)
+    assert capa.relacionados == []
+
+
+def test_compre_junto_descarta_auto_referencia_e_duplicata(db: Session) -> None:
+    """Clicar no próprio produto é engano de dedo, não pedido — some, não recusa."""
+    principal = _cria(db)
+    outro = _cria(db)
+
+    produto_service.atualizar(
+        db, principal.id, ProdutoUpdate(relacionados=[principal.id, outro.id, outro.id])
+    )
+    db.refresh(principal)
+    assert [r.relacionado_id for r in principal.relacionados] == [outro.id]
+
+
+def test_compre_junto_descarta_id_que_nao_existe(db: Session) -> None:
+    principal = _cria(db)
+    outro = _cria(db)
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=[10**9, outro.id]))
+    db.refresh(principal)
+    assert [r.relacionado_id for r in principal.relacionados] == [outro.id]
+
+
+def test_compre_junto_respeita_o_teto_de_oito(db: Session) -> None:
+    principal = _cria(db)
+    alvos = [_cria(db).id for _ in range(10)]
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=alvos))
+    db.refresh(principal)
+    assert len(principal.relacionados) == 8
+
+
+def test_salvar_sem_o_editor_de_compre_junto_nao_apaga() -> None:
+    """Terceira vez que a mesma armadilha aparece — e o terceiro sentinela."""
+    from app.core.database import SessionLocal
+
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo, codigo_alvo = _codigo(), _codigo()
+    client.post(
+        "/produtos",
+        data={"codigo": codigo_alvo, "descricao": "ACESSORIO", "ativo": "on"},
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        alvo_id = s.query(Produto).filter(Produto.codigo == codigo_alvo).one().id
+    finally:
+        s.close()
+
+    client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "PRINCIPAL",
+            "ativo": "on",
+            "tem_editor_relacionados": "1",
+            "rel_id": [str(alvo_id)],
+        },
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto = s.query(Produto).filter(Produto.codigo == codigo).one()
+        assert len(produto.relacionados) == 1
+        produto_id = produto.id
+    finally:
+        s.close()
+
+    client.post(
+        f"/produtos/{produto_id}",
+        data={"codigo": codigo, "descricao": "SEM O EDITOR", "ativo": "on"},
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto = s.get(Produto, produto_id)
+        assert produto.descricao == "SEM O EDITOR"
+        assert len(produto.relacionados) == 1, "salvar sem o editor apagou o Compre Junto"
+    finally:
+        s.close()

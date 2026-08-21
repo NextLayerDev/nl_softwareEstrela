@@ -115,6 +115,15 @@ class PedidoController:
         self._carregar_para_usuario(db, pedido_id, usuario)
         return pedido_service.adicionar_item_avulso(db, pedido_id, dados)
 
+    def compre_junto(self, db: Session, variacao) -> list:
+        """As variações a oferecer junto do produto escolhido.
+
+        Uma variação por produto relacionado: a primeira ATIVA, por id — mesma regra que
+        a colagem usa quando não há cor no texto (`_escolher_variacao`). Produto sem
+        nenhuma cor ativa some da faixa em vez de virar um botão que não lança nada.
+        """
+        return pedido_service.compre_junto(db, variacao)
+
     def montar_resumo(self, pedido: Pedido) -> ResumoPedidoOut:
         """Dados da planilha do resumo (o card "Resumo do pedido")."""
         return pedido_service.montar_resumo(pedido)

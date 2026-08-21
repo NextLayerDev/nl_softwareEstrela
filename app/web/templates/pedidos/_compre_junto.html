@@ -1,0 +1,33 @@
+{# "Compre Junto" — os acessórios do produto que o vendedor acabou de escolher.
+
+   Emite o MESMO contrato `data-*` da busca (macro compartilhada), então o
+   `selecionar($el)` que já existe nas duas telas de pedido funciona sem uma linha de JS
+   nova: clicar aqui é idêntico a clicar num resultado da busca.
+
+   Fica vazio quando o produto não tem relacionados — e o `empty:hidden` do container na
+   tela faz a faixa inteira sumir, em vez de deixar um título órfão. #}
+{% from "pedidos/_macro_dados_variacao.html" import dados_variacao, disponivel %}
+{% if sugestoes %}
+<p class="mb-2 text-xs font-semibold text-gray-500">Compre junto</p>
+<div class="flex flex-wrap gap-2">
+  {% for v in sugestoes %}
+  {% set p = v.produto %}
+  <button type="button"
+          class="flex items-center gap-2 rounded-md border border-marca-borda bg-white px-2 py-1.5 text-left text-sm
+                 hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
+          {{ dados_variacao(v, user.perfil) }}
+          @click="selecionar($el)">
+    {% if v.imagem_url %}
+      <img src="{{ foto_url(v.imagem_url) }}" alt="" class="h-8 w-8 shrink-0 rounded object-cover" />
+    {% else %}
+      <span class="h-8 w-8 shrink-0 rounded bg-gold-50"></span>
+    {% endif %}
+    <span class="min-w-0">
+      <span class="block truncate font-mono text-xs">{{ p.codigo }}</span>
+      <span class="block max-w-[14rem] truncate text-xs text-gray-600">{{ p.descricao }}</span>
+    </span>
+    <span class="shrink-0 text-xs text-gray-400">{{ disponivel(v) }}</span>
+  </button>
+  {% endfor %}
+</div>
+{% endif %}
