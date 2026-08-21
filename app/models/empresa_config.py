@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import String, Text
+from sqlalchemy import LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -24,3 +24,8 @@ class EmpresaConfig(Base):
     email: Mapped[str | None] = mapped_column(String(180))
     endereco: Mapped[str | None] = mapped_column(Text)
     observacao_cupom: Mapped[str | None] = mapped_column(Text)
+    # Logo e texto de capa do Catálogo Inteligente. Os bytes ficam no Postgres, como as
+    # fotos de variação — offline-first, sem depender de armazenamento externo.
+    logo_dados: Mapped[bytes | None] = mapped_column(LargeBinary)
+    logo_url: Mapped[str | None] = mapped_column(String(500))
+    descricao_catalogo: Mapped[str | None] = mapped_column(Text)

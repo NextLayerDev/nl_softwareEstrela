@@ -21,8 +21,12 @@ class EmpresaController:
             email=(form.get("email") or None),
             endereco=(form.get("endereco") or None),
             observacao_cupom=(form.get("observacao_cupom") or None),
+            descricao_catalogo=(form.get("descricao_catalogo") or None),
         )
         return empresa_service.salvar(db, dados)
+
+    def salvar_logo(self, db: Session, dados: bytes | None) -> EmpresaConfig:
+        return empresa_service.salvar_logo(db, dados)
 
 
 empresa_controller = EmpresaController()

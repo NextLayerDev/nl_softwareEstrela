@@ -169,6 +169,29 @@ class ProdutoRepository:
             saida.setdefault(termo, []).append((produto_id, float(sim)))
         return saida
 
+    def catalogo_publicado(
+        self, db: Session, categoria_id: int | None = None, limit: int = 400
+    ) -> list[Produto]:
+        """Produtos publicados no catálogo, com tudo o que o cartão precisa.
+
+        `selectinload` explícito para o documento não virar N+1: são até 400 produtos, e
+        cada cartão lê variações, categoria e faixa de preço.
+        """
+        stmt = (
+            select(Produto)
+            .options(
+                selectinload(Produto.variacoes),
+                selectinload(Produto.categoria),
+                selectinload(Produto.faixas),
+            )
+            .where(Produto.ativo.is_(True), Produto.publicar_catalogo.is_(True))
+            .order_by(Produto.descricao)
+            .limit(limit)
+        )
+        if categoria_id is not None:
+            stmt = stmt.where(Produto.categoria_id == categoria_id)
+        return list(db.scalars(stmt).unique())
+
     def add(self, db: Session, produto: Produto) -> Produto:
         db.add(produto)
         db.flush()

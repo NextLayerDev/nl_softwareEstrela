@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Catálogo · {{ empresa.nome_fantasia or empresa.razao_social or "Estrela Gestão" }}</title>
+{# CSS próprio, sem Tailwind: o documento é medido em MILÍMETROS e precisa de controle
+   total do @page. O Tailwind traria o preflight inteiro para dentro do PDF sem
+   contrapartida — e o WeasyPrint lida muito melhor com uma folha escrita à mão. #}
+<style>
+  :root { --marca: #B98A19; --borda: #E4DCCA; --fundo: #F6F2E8; --texto: #211B0F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Inter, system-ui, sans-serif; color: var(--texto); background: #8a8a8a; }
+
+  .tela { padding: 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 1px solid #999;
+         border-radius: 8px; background: #fff; color: #111; font-size: 14px; cursor: pointer; text-decoration: none; }
+  .aviso { max-width: 210mm; border-radius: 8px; background: #FBF1D8; color: #8A5B00; padding: 8px 12px; font-size: 13px; }
+
+  .doc { width: 210mm; max-width: 100%; padding: 12mm; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.25); }
+
+  .capa { display: flex; flex-direction: column; align-items: center; justify-content: center;
+          text-align: center; gap: 10px; min-height: 150mm; }
+  .capa-logo { max-width: 70mm; max-height: 34mm; object-fit: contain; }
+  .capa-nome { font-size: 34px; line-height: 1.1; margin: 0; }
+  .capa-regua { width: 28mm; height: 3px; background: var(--marca); border-radius: 2px; }
+  .capa-desc { font-size: 13px; max-width: 120mm; opacity: .75; margin: 0; }
+  .capa-meta { font-size: 12px; opacity: .65; margin: 0; }
+
+  .secao { margin-top: 10mm; }
+  .secao-titulo { font-size: 17px; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--marca); }
+
+  {# `inline-block` e NÃO `display:grid`: o suporte a CSS Grid no WeasyPrint é parcial e
+     o PDF sai numa coluna única. Assim navegador e PDF rendem igual. #}
+  .grade { font-size: 0; }
+  .cartao { display: inline-block; vertical-align: top; width: 32%; margin: 0 2% 5mm 0; font-size: 12px;
+            border: 1px solid var(--borda); border-radius: 6px; overflow: hidden; }
+  .cartao:nth-child(3n) { margin-right: 0; }
+  .cartao-foto { width: 100%; aspect-ratio: 1/1; background: var(--fundo); display: flex;
+                 align-items: center; justify-content: center; overflow: hidden; }
+  .cartao-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cartao-sem-foto { font-size: 10px; opacity: .5; }
+  .cartao-corpo { padding: 3mm; }
+  .cartao-cod { font-size: 10px; opacity: .6; margin: 0 0 1mm; }
+  .cartao-nome { font-size: 12px; font-weight: 600; line-height: 1.25; margin: 0; }
+  .cartao-desc { font-size: 10px; line-height: 1.35; opacity: .7; margin: 1.5mm 0 0; }
+  .cores { margin: 1.5mm 0 0; }
+  .cor { display: inline-block; font-size: 8px; line-height: 1.2; padding: .5mm 1.5mm; margin: 0 1mm 1mm 0;
+         border: 1px solid var(--borda); border-radius: 999px; opacity: .8; }
+  .cartao-preco { font-size: 14px; font-weight: 700; color: var(--marca); margin: 2mm 0 0; }
+
+  .vazio { text-align: center; padding: 30mm 10mm; }
+  .vazio h2 { font-size: 18px; margin: 0 0 3mm; }
+  .vazio p { font-size: 13px; opacity: .75; margin: 0; }
+
+  .rodape-fixo { display: none; }
+
+  @media print {
+    .sem-impressao { display: none !important; }
+    html, body { background: #fff !important; }
+    .tela { padding: 0; display: block; }
+    .doc { width: auto; max-width: none; padding: 0 0 10mm; box-shadow: none; }
+    .doc, .cartao, .cartao-foto, .capa-regua, .secao-titulo {
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .capa { break-after: page; min-height: auto; padding: 40mm 0 20mm; }
+    .cartao { break-inside: avoid; }
+    .secao-titulo { break-after: avoid; }
+    .rodape-fixo { display: block; position: fixed; bottom: 0; left: 0; right: 0;
+                   text-align: center; font-size: 9px; opacity: .6; }
+    @page { size: A4; margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="barra sem-impressao">
+    <button type="button" class="btn" onclick="window.print()">Imprimir / Salvar PDF</button>
+    <a class="btn" href="/catalogo/imprimir.pdf{{ '?categoria_id=' ~ request.query_params.get('categoria_id') if request.query_params.get('categoria_id') else '' }}">Baixar PDF</a>
+    <a class="btn" href="/produtos">Voltar aos produtos</a>
+    <span style="color:#fff;font-size:13px">{{ doc.total }} produto{{ "s" if doc.total != 1 }}</span>
+  </div>
+  {% if doc.truncado %}
+  <p class="aviso sem-impressao">
+    O catálogo foi cortado nos primeiros {{ doc.total }} produtos. Filtre por categoria
+    para gerar um documento por vez.
+  </p>
+  {% endif %}
+
+  <div class="doc">
+    {% if doc.vazio %}
+    {# Estado vazio explicando o PORQUÊ: `publicar_catalogo` nasce desmarcado, então no
+       dia da entrega o catálogo sai vazio e parece quebrado. #}
+    <div class="vazio">
+      <h2>Nenhum produto publicado no catálogo</h2>
+      <p>
+        Marque <strong>“Publicar no catálogo”</strong> no cadastro do produto para ele
+        aparecer aqui.
+      </p>
+    </div>
+    {% else %}
+    <section class="capa">
+      {% if logo %}
+      <img class="capa-logo" src="{{ logo }}" alt="" />
+      {% endif %}
+      <h1 class="capa-nome">{{ empresa.nome_fantasia or empresa.razao_social or "Estrela Gestão" }}</h1>
+      <div class="capa-regua"></div>
+      {% if empresa.descricao_catalogo %}
+      <p class="capa-desc">{{ empresa.descricao_catalogo }}</p>
+      {% endif %}
+      {% if empresa.telefone %}<p class="capa-meta">{{ empresa.telefone }}</p>{% endif %}
+      <p class="capa-meta">Catálogo de {{ hoje_por_extenso }}</p>
+    </section>
+
+    {% for secao in doc.secoes %}
+    <section class="secao">
+      <h2 class="secao-titulo">{{ secao.nome }}</h2>
+      <div class="grade">
+        {% for c in secao.cartoes %}
+        <article class="cartao">
+          <div class="cartao-foto">
+            {% if c.foto %}<img src="{{ c.foto }}" alt="" />
+            {% else %}<span class="cartao-sem-foto">sem foto</span>{% endif %}
+          </div>
+          <div class="cartao-corpo">
+            <p class="cartao-cod">{{ c.codigo }}</p>
+            <h3 class="cartao-nome">{{ c.descricao }}</h3>
+            {% if c.descricao_curta and c.descricao_curta != c.descricao %}
+            <p class="cartao-desc">{{ c.descricao_curta }}</p>
+            {% endif %}
+            {% if c.cores %}
+            <p class="cores">
+              {% for cor in c.cores %}<span class="cor">{{ cor }}</span>{% endfor %}
+              {% if c.cores_ocultas %}<span class="cor">+{{ c.cores_ocultas }}</span>{% endif %}
+            </p>
+            {% endif %}
+            <p class="cartao-preco">
+              {% if c.preco > 0 %}{{ c.preco | moeda }}{% else %}Sob consulta{% endif %}
+            </p>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="rodape-fixo">
+  {{ empresa.nome_fantasia or empresa.razao_social or "Estrela Gestão" }}
+  {%- if empresa.telefone %} · {{ empresa.telefone }}{% endif %}
+</div>
+</body>
+</html>

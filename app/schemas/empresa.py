@@ -14,6 +14,7 @@ class EmpresaConfigUpdate(BaseModel):
     email: str | None = None
     endereco: str | None = None
     observacao_cupom: str | None = None
+    descricao_catalogo: str | None = None
 
 
 class EmpresaConfigRead(EmpresaConfigUpdate):

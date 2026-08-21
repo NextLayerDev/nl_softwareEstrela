@@ -62,3 +62,47 @@ def caminho_foto_variacao(variacao_id: int) -> str:
 def url_para_exibicao(valor: str | None) -> str:
     """Recebe o caminho guardado em ``imagem_url`` e devolve-o (mesma origem, pronto p/ <img>)."""
     return valor if isinstance(valor, str) and valor else ""
+
+
+# O card do catálogo tem ~55 mm de largura ≈ 215 px a 96 dpi. As fotos são guardadas com
+# até 700 px, e um catálogo de 300 produtos embutido em `data:` URI viraria uma string de
+# dezenas de MB na memória — daí a redução na hora de montar o documento.
+_LADO_CATALOGO = 260
+
+
+def miniatura_catalogo(dados: bytes, lado: int = _LADO_CATALOGO) -> bytes:
+    """Reduz a foto para o tamanho do card do catálogo. Devolve JPEG."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.open(BytesIO(dados))
+    img = img.convert("RGB")
+    img.thumbnail((lado, lado))
+    saida = BytesIO()
+    img.save(saida, format="JPEG", quality=70, optimize=True)
+    return saida.getvalue()
+
+
+def salvar_logo(conteudo: bytes, lado: int = 600) -> bytes:
+    """Prepara o logo da empresa. Sempre PNG, PRESERVANDO transparência.
+
+    Não reusa `salvar_imagem_variacao` de propósito: aquele faz `convert("RGB")` e salva
+    JPEG, o que achata o fundo transparente de um logo em PRETO — e o logo do cliente
+    sairia com uma tarja preta em volta na capa do catálogo.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    if len(conteudo) > _MAX_BYTES:
+        raise ValueError("Imagem muito grande (máximo 8 MB).")
+    img = Image.open(BytesIO(conteudo))
+    if img.mode not in ("RGBA", "LA", "P"):
+        img = img.convert("RGBA")
+    elif img.mode == "P":
+        img = img.convert("RGBA")
+    img.thumbnail((lado, lado))
+    saida = BytesIO()
+    img.save(saida, format="PNG", optimize=True)
+    return saida.getvalue()
