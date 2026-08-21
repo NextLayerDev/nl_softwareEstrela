@@ -8,6 +8,17 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.enums import PERFIS_SEM_CUSTO, EstoqueModo, RotuloAprox
 
 
+class EspecificacaoCreate(BaseModel):
+    """Uma linha da ficha técnica. Limites copiados do omni."""
+
+    rotulo: str = Field(min_length=1, max_length=40)
+    valor: str = Field(min_length=1, max_length=120)
+
+
+class EspecificacaoRead(EspecificacaoCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+
 class FaixaPrecoCreate(BaseModel):
     """Uma linha da tabela de atacado, como veio do formulário."""
 
@@ -85,6 +96,7 @@ class ProdutoCreate(BaseModel):
     variacoes: list[VariacaoCreate] = []
     codigos_alt: list[CodigoAltCreate] = []
     faixas: list[FaixaPrecoCreate] = []
+    especificacoes: list[EspecificacaoCreate] = []
 
     @field_validator("codigo", "descricao")
     @classmethod
@@ -114,6 +126,8 @@ class ProdutoUpdate(BaseModel):
     # `None` é "não mexe" e lista vazia é "apagar a tabela" — os dois são pedidos
     # legítimos, então a diferença tem que sobreviver até o service.
     faixas: list[FaixaPrecoCreate] | None = None
+    # `None` = "não mexe"; lista vazia = "apague a ficha". Ver o sentinela no controller.
+    especificacoes: list[EspecificacaoCreate] | None = None
 
     @field_validator("codigo")
     @classmethod
@@ -148,6 +162,7 @@ class ProdutoRead(BaseModel):
     variacoes: list[VariacaoRead] = []
     codigos_alt: list[CodigoAltRead] = []
     faixas: list[FaixaPrecoRead] = []
+    especificacoes: list[EspecificacaoRead] = []
 
 
 def produto_para_dict(produto: Any, perfil: str) -> dict[str, Any]:

@@ -9,6 +9,7 @@ from app.models.enums import EstoqueModo, RotuloAprox
 from app.models.produto import Produto, ProdutoVariacao
 from app.schemas.produto import (
     CodigoAltCreate,
+    EspecificacaoCreate,
     FaixaPrecoCreate,
     ProdutoCreate,
     ProdutoUpdate,
@@ -76,6 +77,7 @@ class ProdutoController:
             variacoes=self._parse_variacoes(form),
             codigos_alt=self._parse_codigos(form),
             faixas=self._parse_faixas(form) or [],
+            especificacoes=self._parse_especificacoes(form) or [],
         )
         return produto_service.criar(db, dados)
 
@@ -108,6 +110,8 @@ class ProdutoController:
         # apagaria a tabela de preço inteira — em silêncio, e com os testes passando.
         if form.get("tem_editor_faixas"):
             campos["faixas"] = self._parse_faixas(form) or []
+        if form.get("tem_editor_especificacoes"):
+            campos["especificacoes"] = self._parse_especificacoes(form) or []
         return produto_service.atualizar(db, produto_id, ProdutoUpdate(**campos))
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
@@ -163,6 +167,25 @@ class ProdutoController:
                 )
             )
         return variacoes
+
+    @staticmethod
+    def _parse_especificacoes(form: dict) -> list[EspecificacaoCreate] | None:
+        """Lê `espec_rotulo[]` / `espec_valor[]`. `None` = o formulário não trouxe o editor.
+
+        A ORDEM das listas paralelas é a ordem da ficha — as setas ↑↓ da tela só
+        reordenam o array do Alpine, e o que chega aqui já vem na posição final.
+        """
+        rotulos = form.get("espec_rotulo")
+        valores = form.get("espec_valor")
+        if not isinstance(rotulos, list) or not isinstance(valores, list):
+            return None
+        saida: list[EspecificacaoCreate] = []
+        for rotulo, valor in zip(rotulos, valores, strict=False):
+            rotulo, valor = str(rotulo).strip(), str(valor).strip()
+            if not rotulo or not valor:
+                continue  # linha que a pessoa abriu e desistiu
+            saida.append(EspecificacaoCreate(rotulo=rotulo[:40], valor=valor[:120]))
+        return saida
 
     @staticmethod
     def _parse_faixas(form: dict) -> list[FaixaPrecoCreate] | None:

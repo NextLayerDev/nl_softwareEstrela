@@ -179,6 +179,8 @@ async def criar_produto(
     form["cod_alt"] = raw.getlist("cod_alt")
     form["faixa_min_qtd"] = raw.getlist("faixa_min_qtd")
     form["faixa_preco"] = raw.getlist("faixa_preco")
+    form["espec_rotulo"] = raw.getlist("espec_rotulo")
+    form["espec_valor"] = raw.getlist("espec_valor")
     produto = produto_controller.criar(db, form)
     # Vai direto à edição para enviar as fotos por cor (não precisa reabrir o produto).
     return redirect_ok(f"/produtos/{produto.id}/editar", "Produto cadastrado com sucesso.")
@@ -199,6 +201,8 @@ async def atualizar_produto(
     # que só existe quando o formulário renderizou o editor — ver o controller.
     form["faixa_min_qtd"] = raw.getlist("faixa_min_qtd")
     form["faixa_preco"] = raw.getlist("faixa_preco")
+    form["espec_rotulo"] = raw.getlist("espec_rotulo")
+    form["espec_valor"] = raw.getlist("espec_valor")
     produto_controller.atualizar(db, produto_id, form)
     return redirect_ok("/produtos", "Produto atualizado com sucesso.")
 

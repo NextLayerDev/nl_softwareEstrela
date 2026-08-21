@@ -800,3 +800,120 @@ def test_faixa_repetida_e_recusada(db: Session) -> None:
                 ],
             ),
         )
+
+
+# ============================================================ ficha técnica
+def test_ficha_tecnica_guarda_a_ordem_e_renumera() -> None:
+    """A ordem É o dado: as setas ↑↓ da tela só reordenam o array antes de enviar."""
+    from app.core.database import SessionLocal
+
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo = _codigo()
+    client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM FICHA",
+            "ativo": "on",
+            "tem_editor_especificacoes": "1",
+            "espec_rotulo": ["Altura", "Largura", "Material"],
+            "espec_valor": ["50 cm", "30 cm", "alumínio"],
+        },
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto = s.query(Produto).filter(Produto.codigo == codigo).one()
+        assert [(e.ordem, e.rotulo, e.valor) for e in produto.especificacoes] == [
+            (0, "Altura", "50 cm"),
+            (1, "Largura", "30 cm"),
+            (2, "Material", "alumínio"),
+        ]
+        produto_id = produto.id
+    finally:
+        s.close()
+
+    # Reordena (Material primeiro) e remove a Largura.
+    client.post(
+        f"/produtos/{produto_id}",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM FICHA",
+            "ativo": "on",
+            "tem_editor_especificacoes": "1",
+            "espec_rotulo": ["Material", "Altura"],
+            "espec_valor": ["alumínio", "50 cm"],
+        },
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto = s.get(Produto, produto_id)
+        assert [(e.ordem, e.rotulo) for e in produto.especificacoes] == [
+            (0, "Material"),
+            (1, "Altura"),
+        ]
+    finally:
+        s.close()
+
+
+def test_salvar_sem_o_editor_de_ficha_nao_apaga(db: Session) -> None:
+    """Mesma armadilha das faixas — `atualizar` seta todas as chaves do dict."""
+    from app.core.database import SessionLocal
+
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo = _codigo()
+    client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "FICHA PRESERVADA",
+            "ativo": "on",
+            "tem_editor_especificacoes": "1",
+            "espec_rotulo": ["Peso aproximado"],
+            "espec_valor": ["1,2 kg"],
+        },
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto_id = s.query(Produto).filter(Produto.codigo == codigo).one().id
+    finally:
+        s.close()
+
+    client.post(
+        f"/produtos/{produto_id}",
+        data={"codigo": codigo, "descricao": "EDITADO SEM O EDITOR", "ativo": "on"},
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto = s.get(Produto, produto_id)
+        assert produto.descricao == "EDITADO SEM O EDITOR"
+        assert len(produto.especificacoes) == 1, "salvar sem o editor apagou a ficha"
+    finally:
+        s.close()
+
+
+def test_linha_incompleta_da_ficha_e_descartada(db: Session) -> None:
+    """O editor deixa abrir uma linha e desistir dela."""
+    from app.schemas.produto import EspecificacaoCreate
+
+    produto = produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=_codigo(),
+            descricao="FICHA COM BURACO",
+            especificacoes=[EspecificacaoCreate(rotulo="Altura", valor="50 cm")],
+        ),
+    )
+    # rótulo sem valor não sobrevive à limpeza do service
+    produto_service.atualizar(
+        db,
+        produto.id,
+        ProdutoUpdate(especificacoes=[EspecificacaoCreate(rotulo="Altura", valor="50 cm")]),
+    )
+    db.refresh(produto)
+    assert [(e.rotulo, e.valor) for e in produto.especificacoes] == [("Altura", "50 cm")]

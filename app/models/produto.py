@@ -103,6 +103,12 @@ class Produto(Base):
         order_by="ProdutoFaixaPreco.min_qtd",
         lazy="selectin",
     )
+    especificacoes: Mapped[list[ProdutoEspecificacao]] = relationship(
+        back_populates="produto",
+        cascade="all, delete-orphan",
+        order_by="ProdutoEspecificacao.ordem",
+        lazy="selectin",
+    )
 
 
 class ProdutoVariacao(Base):
@@ -179,3 +185,25 @@ class ProdutoFaixaPreco(Base):
     preco: Mapped[Decimal] = mapped_column(Numeric(12, 2))
 
     produto: Mapped[Produto] = relationship(back_populates="faixas")
+
+
+class ProdutoEspecificacao(Base):
+    """Uma linha da ficha técnica: "Altura" / "50 cm".
+
+    O índice em `ordem` é NÃO único de propósito: único transformaria trocar duas linhas
+    de lugar numa dança de três updates só para não colidir no meio do caminho. São no
+    máximo 20 linhas — o service reescreve a lista inteira a cada save, e a ordem sai
+    certa por construção.
+    """
+
+    __tablename__ = "produto_especificacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    produto_id: Mapped[int] = mapped_column(
+        ForeignKey("produtos.id", ondelete="CASCADE"), index=True
+    )
+    ordem: Mapped[int] = mapped_column(Integer, default=0)
+    rotulo: Mapped[str] = mapped_column(String(40))
+    valor: Mapped[str] = mapped_column(String(120))
+
+    produto: Mapped[Produto] = relationship(back_populates="especificacoes")

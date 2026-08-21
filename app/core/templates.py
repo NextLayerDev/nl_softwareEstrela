@@ -74,6 +74,25 @@ def _faixas_json(faixas: object) -> str:
 templates.env.filters["faixas_json"] = _faixas_json
 
 
+def _especs_json(especificacoes: object) -> str:
+    """Ficha técnica para o editor do Alpine: [["Altura","50 cm"],["Material","aço"]].
+
+    Pares, e não objetos, pela mesma razão do `faixas_json`: é o formato que o editor
+    manipula, e converter de um lado só evita que a ordem se perca no caminho.
+    """
+    pares = []
+    for e in especificacoes or []:
+        rotulo = getattr(e, "rotulo", None)
+        valor = getattr(e, "valor", None)
+        if not rotulo or valor is None:
+            continue
+        pares.append([str(rotulo), str(valor)])
+    return json.dumps(pares, separators=(",", ":"), ensure_ascii=False)
+
+
+templates.env.filters["especs_json"] = _especs_json
+
+
 def _desde(valor: object) -> str:
     """Tempo relativo curto em pt-BR: 'há 8 min'. Acima de 30 dias, vira data.
 
