@@ -177,6 +177,8 @@ async def criar_produto(
     form["var_minimo"] = raw.getlist("var_minimo")
     form["var_rotulo"] = raw.getlist("var_rotulo")
     form["cod_alt"] = raw.getlist("cod_alt")
+    form["faixa_min_qtd"] = raw.getlist("faixa_min_qtd")
+    form["faixa_preco"] = raw.getlist("faixa_preco")
     produto = produto_controller.criar(db, form)
     # Vai direto à edição para enviar as fotos por cor (não precisa reabrir o produto).
     return redirect_ok(f"/produtos/{produto.id}/editar", "Produto cadastrado com sucesso.")
@@ -193,6 +195,10 @@ async def atualizar_produto(
     form = dict(raw)
     # Lista paralela para os códigos alternativos (edição pode adicionar/remover).
     form["cod_alt"] = raw.getlist("cod_alt")
+    # Faixas de preço. Quem decide se elas entram é o sentinela `tem_editor_faixas`,
+    # que só existe quando o formulário renderizou o editor — ver o controller.
+    form["faixa_min_qtd"] = raw.getlist("faixa_min_qtd")
+    form["faixa_preco"] = raw.getlist("faixa_preco")
     produto_controller.atualizar(db, produto_id, form)
     return redirect_ok("/produtos", "Produto atualizado com sucesso.")
 

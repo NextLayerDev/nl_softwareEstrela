@@ -145,3 +145,27 @@ def test_rota_nao_aceita_escrita() -> None:
     client = TestClient(app)
     assert client.post("/orcamento", follow_redirects=False).status_code == 405
     assert client.post("/orcamento/busca", follow_redirects=False).status_code == 405
+
+
+def test_busca_publica_respeita_a_tabela_de_faixas() -> None:
+    """A tela de orçamento é PÚBLICA e chama `sugerir_preco` — as faixas valem aqui também.
+
+    É o consumidor que quase ninguém lista quando mexe na regra de preço: não tem
+    `Depends` de autenticação, e cota pela faixa de 1 un (a tela é por unidade). Cotar
+    pelo `preco_pouca_qtd` enquanto o pedido cobra pela tabela seria o balcão prometer
+    um preço e o sistema cobrar outro.
+    """
+    from app.models.produto import ProdutoFaixaPreco
+
+    with produto_publicado() as produto:
+        db = SessionLocal()
+        try:
+            alvo = db.get(Produto, produto.id)
+            alvo.faixas.append(ProdutoFaixaPreco(min_qtd=1, preco=Decimal("7.77")))
+            alvo.faixas.append(ProdutoFaixaPreco(min_qtd=10, preco=Decimal("5.00")))
+            db.commit()
+        finally:
+            db.close()
+
+        html = TestClient(app).get(f"/orcamento/busca?q={produto.codigo}").text
+        assert 'data-preco="777"' in html, "a tela pública ignorou a tabela"

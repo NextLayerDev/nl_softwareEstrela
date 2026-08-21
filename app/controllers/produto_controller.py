@@ -9,6 +9,7 @@ from app.models.enums import EstoqueModo, RotuloAprox
 from app.models.produto import Produto, ProdutoVariacao
 from app.schemas.produto import (
     CodigoAltCreate,
+    FaixaPrecoCreate,
     ProdutoCreate,
     ProdutoUpdate,
     VariacaoCorUpdate,
@@ -74,6 +75,7 @@ class ProdutoController:
             publicar_catalogo=form.get("publicar_catalogo") in ("on", "true", "1", True),
             variacoes=self._parse_variacoes(form),
             codigos_alt=self._parse_codigos(form),
+            faixas=self._parse_faixas(form) or [],
         )
         return produto_service.criar(db, dados)
 
@@ -100,6 +102,12 @@ class ProdutoController:
         for campo in ("preco_custo", "preco_minimo"):
             if campo in form:
                 campos[campo] = _dec(form.get(campo))
+        # Mesma armadilha das duas linhas acima, e pior: lista VAZIA é um pedido
+        # legítimo ("apague a tabela"), então não dá para inferir pela ausência das
+        # linhas. Sem o sentinela do formulário, salvar de qualquer tela sem o editor
+        # apagaria a tabela de preço inteira — em silêncio, e com os testes passando.
+        if form.get("tem_editor_faixas"):
+            campos["faixas"] = self._parse_faixas(form) or []
         return produto_service.atualizar(db, produto_id, ProdutoUpdate(**campos))
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
@@ -155,6 +163,28 @@ class ProdutoController:
                 )
             )
         return variacoes
+
+    @staticmethod
+    def _parse_faixas(form: dict) -> list[FaixaPrecoCreate] | None:
+        """Lê as listas paralelas `faixa_min_qtd[]` / `faixa_preco[]` do formulário.
+
+        Devolve `None` quando o formulário não trouxe o editor — quem chama usa isso
+        para distinguir "não mexe" de "apague a tabela". Linha em branco é descartada:
+        o editor deixa o vendedor adicionar uma linha e desistir dela.
+        """
+        qtds = form.get("faixa_min_qtd")
+        precos = form.get("faixa_preco")
+        if not isinstance(qtds, list) or not isinstance(precos, list):
+            return None
+        saida: list[FaixaPrecoCreate] = []
+        for qtd_bruta, preco_bruto in zip(qtds, precos, strict=False):
+            if not str(qtd_bruta).strip():
+                continue
+            min_qtd = _int_opt(qtd_bruta)
+            if min_qtd is None or min_qtd < 1:
+                continue
+            saida.append(FaixaPrecoCreate(min_qtd=min_qtd, preco=_dec(preco_bruto)))
+        return saida
 
     @staticmethod
     def _parse_codigos(form: dict) -> list[CodigoAltCreate]:

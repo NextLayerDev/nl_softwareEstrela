@@ -247,6 +247,38 @@ def test_linhas_repetidas_somam_antes_de_precificar(db, usuario_vendedor):
     assert (r.aplicados[0].qtd, r.aplicados[0].preco_unit) == (12, Decimal("8.00"))
 
 
+def test_colagem_precifica_pela_tabela_sem_mudar_uma_linha(db, usuario_vendedor):
+    """A colagem não precisou de nenhuma alteração para as faixas — e este teste é a prova.
+
+    `_aplicar_linhas` roda `consolidar()` ANTES de casar, e `_montar` chama o
+    `sugerir_preco` de sempre. Então duas linhas de 6 com faixa em 10 somam 12 e saem
+    pelo preço da faixa, exatamente como já saíam pelo corte de atacado.
+    """
+    from app.models.produto import ProdutoFaixaPreco
+
+    p = _produto(db, pouca=Decimal("10.00"), muita=Decimal("9.00"), corte=100)
+    p.faixas.append(ProdutoFaixaPreco(min_qtd=1, preco=Decimal("10.00")))
+    p.faixas.append(ProdutoFaixaPreco(min_qtd=10, preco=Decimal("8.00")))
+    db.flush()
+
+    _, r = _colar(db, usuario_vendedor, _tsv(f"{p.codigo}\tx\t6\t\t", f"{p.codigo}\tx\t6\t\t"))
+
+    assert len(r.aplicados) == 1
+    assert (r.aplicados[0].qtd, r.aplicados[0].preco_unit) == (12, Decimal("8.00"))
+
+
+def test_preco_colado_ainda_vence_a_tabela(db, usuario_vendedor):
+    """O preço da planilha é o documento da venda — a tabela não o sobrescreve."""
+    from app.models.produto import ProdutoFaixaPreco
+
+    p = _produto(db, pouca=Decimal("10.00"))
+    p.faixas.append(ProdutoFaixaPreco(min_qtd=1, preco=Decimal("10.00")))
+    db.flush()
+
+    _, r = _colar(db, usuario_vendedor, _tsv(f"{p.codigo}\tx\t3\tR$ 4,00\t"))
+    assert r.aplicados[0].preco_unit == Decimal("4.00")
+
+
 def test_codigo_normalizado_acha_o_cadastro(db, usuario_vendedor):
     p = _produto(db, codigo=f"K-{uuid.uuid4().hex[:6].upper()}")
     sujo = p.codigo.replace("-", "").lower()
