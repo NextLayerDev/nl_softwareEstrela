@@ -292,6 +292,27 @@ def busca_item(
     return templates.TemplateResponse(request, "pedidos/_busca_resultado.html", contexto)
 
 
+# ===================================================================== COMPRE JUNTO
+# Antes de /pedidos/{pedido_id}: o path casa por ordem, e "compre-junto" seria lido
+# como id. Mesmo cuidado das rotas "lista", "novo" e "busca-item".
+@router.get("/pedidos/compre-junto/{variacao_id}", response_class=HTMLResponse)
+def compre_junto(
+    request: Request,
+    variacao_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Acessórios do produto recém-escolhido, prontos para lançar num clique.
+
+    Sem loja online, é aqui que o "Compre Junto" se paga: o vendedor já está com o
+    produto na mão e a sugestão aparece no fluxo, não numa tela separada.
+    """
+    variacao = estoque_repo.get_variacao(db, variacao_id)
+    sugestoes = pedido_controller.compre_junto(db, variacao) if variacao else []
+    contexto = {"user": usuario, "sugestoes": sugestoes}
+    return templates.TemplateResponse(request, "pedidos/_compre_junto.html", contexto)
+
+
 # ===================================================================== DETALHE
 @router.get("/pedidos/{pedido_id}", response_class=HTMLResponse)
 def detalhe_pedido(

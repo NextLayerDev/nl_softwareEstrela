@@ -109,6 +109,16 @@ class Produto(Base):
         order_by="ProdutoEspecificacao.ordem",
         lazy="selectin",
     )
+    # SEMPRE de mão única: `foreign_keys` amarra a coleção ao lado "quem sugere".
+    # Sem isso o SQLAlchemy não sabe qual das duas FKs usar — e criar a volta
+    # automaticamente encheria o cartão de todo acessório com o produto principal.
+    relacionados: Mapped[list[ProdutoRelacionado]] = relationship(
+        back_populates="produto",
+        cascade="all, delete-orphan",
+        order_by="ProdutoRelacionado.ordem",
+        foreign_keys="ProdutoRelacionado.produto_id",
+        lazy="selectin",
+    )
 
 
 class ProdutoVariacao(Base):
@@ -207,3 +217,30 @@ class ProdutoEspecificacao(Base):
     valor: Mapped[str] = mapped_column(String(120))
 
     produto: Mapped[Produto] = relationship(back_populates="especificacoes")
+
+
+class ProdutoRelacionado(Base):
+    """ "Compre Junto": `produto_id` sugere `relacionado_id`, nessa ordem.
+
+    A chave primária composta é o que impede duplicata no banco, e não só no formulário.
+
+    De MÃO ÚNICA de propósito: capa é acessório de celular, o contrário não. Criar a
+    volta automaticamente encheria o cartão de toda capa com o celular — e quem cadastra
+    perderia o controle de uma lista que ele nunca escreveu.
+    """
+
+    __tablename__ = "produto_relacionados"
+
+    produto_id: Mapped[int] = mapped_column(
+        ForeignKey("produtos.id", ondelete="CASCADE"), primary_key=True
+    )
+    relacionado_id: Mapped[int] = mapped_column(
+        ForeignKey("produtos.id", ondelete="CASCADE"), primary_key=True
+    )
+    ordem: Mapped[int] = mapped_column(Integer, default=0)
+
+    produto: Mapped[Produto] = relationship(
+        back_populates="relacionados", foreign_keys=[produto_id]
+    )
+    # Sem `back_populates`: o produto sugerido não sabe (nem precisa saber) quem o sugere.
+    alvo: Mapped[Produto] = relationship(foreign_keys=[relacionado_id], lazy="selectin")

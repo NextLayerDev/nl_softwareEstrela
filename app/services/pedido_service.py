@@ -280,6 +280,26 @@ class PedidoService:
         db.flush()
         return pedido
 
+    # ------------------------------------------------------------- compre junto
+    def compre_junto(self, db: Session, variacao: ProdutoVariacao) -> list[ProdutoVariacao]:
+        """Uma variação por produto relacionado, na ordem cadastrada.
+
+        A primeira ATIVA, por id — mesma regra que a colagem usa quando o texto não diz
+        a cor (`_escolher_variacao`). Produto inativo ou sem nenhuma cor ativa some da
+        lista: um botão que não consegue lançar nada é pior que botão nenhum.
+        """
+        produto = variacao.produto
+        saida: list[ProdutoVariacao] = []
+        for rel in produto.relacionados:
+            alvo = rel.alvo
+            if alvo is None or not alvo.ativo:
+                continue
+            ativas = [v for v in alvo.variacoes if v.ativo]
+            if not ativas:
+                continue
+            saida.append(min(ativas, key=lambda v: v.id))
+        return saida
+
     # ------------------------------------------------------------- resumo em imagem
     def montar_resumo(self, pedido: Pedido) -> ResumoPedidoOut:
         """Os dados da planilha amarela que o cliente recebe no WhatsApp.

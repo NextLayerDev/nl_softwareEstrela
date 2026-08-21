@@ -92,6 +92,8 @@
         {# A lista NÃO é limpa no clique: é ela que permite lançar três produtos da mesma
            busca sem redigitar o termo. #}
         <div id="resultado-busca" class="mt-2 max-h-48 overflow-y-auto rounded-md border border-marca-borda empty:border-0"></div>
+        {# `empty:hidden`: sem relacionados o fragmento volta vazio e a faixa some. #}
+        <div id="compre-junto" class="mt-3 empty:hidden"></div>
         <p class="mt-1 text-xs text-gray-500">
           O código funciona com ou sem traço. Clique no resultado para selecionar.
         </p>

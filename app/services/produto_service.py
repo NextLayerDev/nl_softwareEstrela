@@ -11,6 +11,7 @@ from app.models.produto import (
     ProdutoCodigoAlt,
     ProdutoEspecificacao,
     ProdutoFaixaPreco,
+    ProdutoRelacionado,
     ProdutoVariacao,
 )
 from app.repositories.produto_repo import produto_repo
@@ -40,6 +41,7 @@ def _dados_variacao(variacao: ProdutoVariacao) -> dict:
 
 
 MAX_ESPECIFICACOES = 20
+MAX_RELACIONADOS = 8
 
 
 class ProdutoService:
@@ -106,6 +108,7 @@ class ProdutoService:
             )
         self._aplicar_faixas(produto, dados.faixas)
         self._aplicar_especificacoes(produto, dados.especificacoes)
+        self._aplicar_relacionados(db, produto, dados.relacionados)
         produto_repo.add(db, produto)
         eventos.emitir(db, "produto.criado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
@@ -124,7 +127,13 @@ class ProdutoService:
         # passa por validação de unicidade e codigos_alt é relationship de lista).
         for campo, valor in dados.model_dump(
             exclude_unset=True,
-            exclude={"codigo", "codigos_alt", "faixas", "especificacoes"},
+            exclude={
+                "codigo",
+                "codigos_alt",
+                "faixas",
+                "especificacoes",
+                "relacionados",
+            },
         ).items():
             setattr(produto, campo, valor)
         # Códigos alternativos: reconcilia add/remove por string (preserva os
@@ -146,9 +155,42 @@ class ProdutoService:
             self._aplicar_faixas(produto, dados.faixas)
         if dados.especificacoes is not None:
             self._aplicar_especificacoes(produto, dados.especificacoes)
+        if dados.relacionados is not None:
+            self._aplicar_relacionados(db, produto, dados.relacionados)
         db.flush()
         eventos.emitir(db, "produto.atualizado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
+
+    def _aplicar_relacionados(self, db: Session, produto: Produto, ids) -> None:
+        """Reescreve a lista do "Compre Junto", preservando a ordem escolhida.
+
+        Auto-referência é DESCARTADA, não recusada: o produto aparece na própria lista de
+        candidatos e clicar nele é engano de dedo, não pedido — recusar o save inteiro
+        por isso seria punir o engano em vez de corrigi-lo. Id que não existe mais some
+        pela mesma razão.
+        """
+        vistos: set[int] = set()
+        limpos: list[int] = []
+        for bruto in ids or []:
+            try:
+                alvo_id = int(bruto)
+            except (TypeError, ValueError):
+                continue
+            if alvo_id == produto.id or alvo_id in vistos:
+                continue
+            vistos.add(alvo_id)
+            limpos.append(alvo_id)
+        limpos = limpos[:MAX_RELACIONADOS]
+
+        existentes = (
+            {p.id for p in db.query(Produto.id).filter(Produto.id.in_(limpos)).all()}
+            if limpos
+            else set()
+        )
+
+        produto.relacionados.clear()
+        for ordem, alvo_id in enumerate(i for i in limpos if i in existentes):
+            produto.relacionados.append(ProdutoRelacionado(relacionado_id=alvo_id, ordem=ordem))
 
     def _aplicar_especificacoes(self, produto: Produto, itens) -> None:
         """Reescreve a ficha técnica inteira, renumerando a ordem.

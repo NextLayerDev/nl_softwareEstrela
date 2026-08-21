@@ -30,6 +30,21 @@
         codigos: {{ (produto.codigos_alt | map(attribute='codigo_alt') | list) | tojson if produto else '[]' }},
         faixas: {{ produto.faixas | faixas_json if produto else '[]' }},
         especificacoes: {{ produto.especificacoes | especs_json if produto else '[]' }},
+        relacionados: {{ produto.relacionados | relacionados_json if produto else '[]' }},
+        adicionarRelacionado(d) {
+          const id = Number(d.id);
+          if (this.relacionados.length >= 8) return;
+          if (this.relacionados.some((r) => Number(r[0]) === id)) return;
+          this.relacionados.push([id, d.rotulo]);
+          document.getElementById('rel-busca').value = '';
+          document.getElementById('rel-sugestoes').innerHTML = '';
+        },
+        moverRelacionado(i, delta) {
+          const j = i + delta;
+          if (j < 0 || j >= this.relacionados.length) return;
+          const [linha] = this.relacionados.splice(i, 1);
+          this.relacionados.splice(j, 0, linha);
+        },
         moverEspec(i, delta) {
           const j = i + delta;
           if (j < 0 || j >= this.especificacoes.length) return;
@@ -281,6 +296,50 @@
     </div>
     <p class="mt-1 text-xs text-gray-500" x-show="especificacoes.length >= 20" x-cloak>
       Limite de 20 especificações.
+    </p>
+  </div>
+
+  {# --------------------------------------------------------------- Compre Junto #}
+  <div class="mt-6">
+    <h3 class="mb-2 font-semibold">Compre Junto</h3>
+    <p class="mb-2 text-sm text-gray-500">
+      Até 8 acessórios, na ordem em que devem aparecer. Eles são oferecidos no pedido
+      logo depois que este produto é escolhido — um clique lança o acessório.
+      A sugestão é de <strong>mão única</strong>: cadastrar a alça aqui não faz a garrafa
+      aparecer no cartão da alça.
+    </p>
+
+    {# SENTINELA, mesmo motivo das faixas e da ficha. #}
+    <input type="hidden" name="tem_editor_relacionados" value="1" />
+
+    <template x-for="(r, i) in relacionados" :key="r[0]">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <input type="hidden" name="rel_id" :value="r[0]" />
+        <span class="min-w-0 flex-1 truncate text-sm" x-text="r[1]"></span>
+        <button type="button" class="btn-secundario !px-2" title="Mover para cima"
+                aria-label="Mover para cima" :disabled="i === 0"
+                @click="moverRelacionado(i, -1)">↑</button>
+        <button type="button" class="btn-secundario !px-2" title="Mover para baixo"
+                aria-label="Mover para baixo" :disabled="i === relacionados.length - 1"
+                @click="moverRelacionado(i, 1)">↓</button>
+        <button type="button" class="btn-perigo text-xs"
+                @click="relacionados.splice(i, 1)">Remover</button>
+      </div>
+    </template>
+
+    <div class="relative" x-show="relacionados.length < 8">
+      <label class="label" for="rel-busca">Adicionar produto</label>
+      <input type="search" id="rel-busca" class="input w-full" autocomplete="off"
+             placeholder="Código ou descrição…"
+             hx-get="/produtos/relacionados/busca"
+             hx-trigger="keyup changed delay:250ms, search"
+             hx-target="#rel-sugestoes"
+             hx-vals='{"excluir": {{ produto.id if produto else 0 }}}' />
+      <div id="rel-sugestoes"
+           class="mt-1 max-h-48 overflow-y-auto rounded-md border border-marca-borda empty:hidden"></div>
+    </div>
+    <p class="mt-1 text-xs text-gray-500" x-show="relacionados.length >= 8" x-cloak>
+      Limite de 8 produtos.
     </p>
   </div>
 

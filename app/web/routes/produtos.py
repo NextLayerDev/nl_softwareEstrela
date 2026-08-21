@@ -15,6 +15,7 @@ from app.models.categoria import Categoria
 from app.models.enums import tem_perfil
 from app.models.produto import ProdutoVariacao
 from app.models.usuario import Usuario
+from app.repositories.produto_repo import produto_repo
 from app.schemas.produto import pode_definir_minimo, pode_ver_custo
 from app.web.routes._flash import redirect_ok
 
@@ -126,6 +127,29 @@ def fragmento_linha_produto(
     return templates.TemplateResponse(request, "produtos/_linhas.html", contexto)
 
 
+# Antes de /produtos/{produto_id}: o path casa por ordem, e "relacionados" seria lido
+# como id. Mesmo cuidado das rotas "busca" e "linha" acima.
+@router.get("/produtos/relacionados/busca", response_class=HTMLResponse)
+def busca_relacionado(
+    request: Request,
+    q: str = "",
+    excluir: int = 0,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_EDITA)),
+):
+    """Candidatos para o "Compre Junto" — lista curta, só código e descrição.
+
+    Não reusa `/produtos/busca` porque aquela devolve a LINHA da tabela inteira, com
+    foto, preços e ações; aqui o que se quer é um botão por resultado.
+    """
+    achados = produto_repo.busca_rapida(db, q, limit=8) if q.strip() else []
+    contexto = {
+        "user": usuario,
+        "produtos": [p for p in achados if p.id != excluir],
+    }
+    return templates.TemplateResponse(request, "produtos/_busca_relacionado.html", contexto)
+
+
 @router.get("/produtos/novo", response_class=HTMLResponse)
 def form_novo_produto(
     request: Request,
@@ -181,6 +205,7 @@ async def criar_produto(
     form["faixa_preco"] = raw.getlist("faixa_preco")
     form["espec_rotulo"] = raw.getlist("espec_rotulo")
     form["espec_valor"] = raw.getlist("espec_valor")
+    form["rel_id"] = raw.getlist("rel_id")
     produto = produto_controller.criar(db, form)
     # Vai direto à edição para enviar as fotos por cor (não precisa reabrir o produto).
     return redirect_ok(f"/produtos/{produto.id}/editar", "Produto cadastrado com sucesso.")
@@ -203,6 +228,7 @@ async def atualizar_produto(
     form["faixa_preco"] = raw.getlist("faixa_preco")
     form["espec_rotulo"] = raw.getlist("espec_rotulo")
     form["espec_valor"] = raw.getlist("espec_valor")
+    form["rel_id"] = raw.getlist("rel_id")
     produto_controller.atualizar(db, produto_id, form)
     return redirect_ok("/produtos", "Produto atualizado com sucesso.")
 

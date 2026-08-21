@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.enums import PERFIS_SEM_CUSTO, EstoqueModo, RotuloAprox
 
 
+class RelacionadoRead(BaseModel):
+    """Um produto sugerido pelo "Compre Junto"."""
+
+    model_config = ConfigDict(from_attributes=True)
+    relacionado_id: int
+    ordem: int = 0
+
+
 class EspecificacaoCreate(BaseModel):
     """Uma linha da ficha técnica. Limites copiados do omni."""
 
@@ -97,6 +105,7 @@ class ProdutoCreate(BaseModel):
     codigos_alt: list[CodigoAltCreate] = []
     faixas: list[FaixaPrecoCreate] = []
     especificacoes: list[EspecificacaoCreate] = []
+    relacionados: list[int] = []
 
     @field_validator("codigo", "descricao")
     @classmethod
@@ -128,6 +137,7 @@ class ProdutoUpdate(BaseModel):
     faixas: list[FaixaPrecoCreate] | None = None
     # `None` = "não mexe"; lista vazia = "apague a ficha". Ver o sentinela no controller.
     especificacoes: list[EspecificacaoCreate] | None = None
+    relacionados: list[int] | None = None
 
     @field_validator("codigo")
     @classmethod
@@ -163,6 +173,7 @@ class ProdutoRead(BaseModel):
     codigos_alt: list[CodigoAltRead] = []
     faixas: list[FaixaPrecoRead] = []
     especificacoes: list[EspecificacaoRead] = []
+    relacionados: list[RelacionadoRead] = []
 
 
 def produto_para_dict(produto: Any, perfil: str) -> dict[str, Any]:

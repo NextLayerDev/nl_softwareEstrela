@@ -80,6 +80,7 @@
                  this.selCodigo = el.dataset.codigo; this.selDescricao = el.dataset.descricao;
                  this.selCor = el.dataset.cor; this.selImg = el.dataset.img;
                  htmx.ajax('GET', '/pedidos/saldo/' + el.dataset.id + '?qtd=' + (this.qtd || 1), {target: '#saldo-box'});
+                 htmx.ajax('GET', '/pedidos/compre-junto/' + el.dataset.id, {target: '#compre-junto'});
                  this.$nextTick(() => document.getElementById('item-qtd')?.focus());
                },
                limpar() { this.variacaoId = null; this.selCodigo = ''; this.selDescricao = ''; this.selCor = ''; this.selImg = '';
@@ -194,6 +195,9 @@
   </form>
 
   <div id="saldo-box" class="mt-3"></div>
+  {# `empty:hidden`: sem relacionados o fragmento volta vazio e a faixa some inteira,
+     em vez de deixar um título órfão. #}
+  <div id="compre-junto" class="mt-3 empty:hidden"></div>
   </div>{# /aba catálogo #}
 
   {# Colar em bloco: mesma planilha do Excel, acrescentando ao que já está no rascunho.

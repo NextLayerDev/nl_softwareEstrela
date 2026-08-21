@@ -131,3 +131,41 @@ def test_estados_vazios_usam_o_componente() -> None:
         html = templates.env.get_template(nome).render(**ctx)
         assert 'class="vazio' in html, nome
         assert "vazio-icone" in html, nome
+
+
+def test_compre_junto_usa_o_mesmo_contrato_da_busca() -> None:
+    """É essa igualdade que faz o `selecionar($el)` das duas telas funcionar sem JS novo.
+
+    Se um dos fragmentos ganhar um `data-*` que o outro não tem, clicar num acessório
+    passa a lançar um item com menos informação que clicar num resultado da busca — e o
+    preço da prévia sai errado sem nada quebrar.
+    """
+    import re
+
+    from app.core.templates import templates
+
+    fontes = [
+        templates.env.loader.get_source(templates.env, nome)[0]
+        for nome in ("pedidos/_busca_resultado.html", "pedidos/_compre_junto.html")
+    ]
+    # Os dois têm que emitir pela MESMA macro, não por listas copiadas.
+    for fonte in fontes:
+        assert "dados_variacao(v, user.perfil)" in fonte
+        assert not re.search(r"data-preco-pouca=", fonte), "atributo copiado fora da macro"
+
+    macro = templates.env.loader.get_source(templates.env, "pedidos/_macro_dados_variacao.html")[0]
+    esperados = {
+        "data-id",
+        "data-codigo",
+        "data-descricao",
+        "data-cor",
+        "data-img",
+        "data-preco-pouca",
+        "data-preco-muita",
+        "data-faixas",
+        "data-qtd-corte",
+        "data-unidades-caixa",
+        "data-preco-minimo",
+        "data-disponivel",
+    }
+    assert esperados <= set(re.findall(r"(data-[a-z-]+)=", macro))

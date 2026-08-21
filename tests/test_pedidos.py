@@ -1080,3 +1080,57 @@ def test_preco_digitado_ainda_vence_a_tabela(db, usuario_vendedor):
     )
     db.refresh(pedido)
     assert pedido.itens[0].preco_unit == Decimal("7.00")
+
+
+# ======================================================= Compre Junto no pedido
+def test_compre_junto_oferece_uma_variacao_por_produto(db, usuario_vendedor):
+    """A primeira cor ATIVA, por id — mesma regra que a colagem usa sem cor no texto."""
+    from app.schemas.produto import ProdutoUpdate
+    from app.services.produto_service import produto_service
+
+    principal = _produto(db, "CJ1")
+    var_principal = _variacao(db, principal)
+    alca = _produto(db, "CJ2")
+    primeira = _variacao(db, alca, cor="azul")
+    _variacao(db, alca, cor="verde")
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=[alca.id]))
+    db.refresh(principal)
+
+    sugestoes = pedido_service.compre_junto(db, var_principal)
+    assert [v.id for v in sugestoes] == [primeira.id]
+
+
+def test_compre_junto_pula_produto_sem_cor_ativa(db, usuario_vendedor):
+    """Botão que não consegue lançar nada é pior que botão nenhum."""
+    from app.schemas.produto import ProdutoUpdate
+    from app.services.produto_service import produto_service
+
+    principal = _produto(db, "CJ3")
+    var_principal = _variacao(db, principal)
+    sem_cor = _produto(db, "CJ4")
+    morta = _variacao(db, sem_cor)
+    morta.ativo = False
+    db.flush()
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=[sem_cor.id]))
+    db.refresh(principal)
+
+    assert pedido_service.compre_junto(db, var_principal) == []
+
+
+def test_compre_junto_pula_produto_inativo(db, usuario_vendedor):
+    from app.schemas.produto import ProdutoUpdate
+    from app.services.produto_service import produto_service
+
+    principal = _produto(db, "CJ5")
+    var_principal = _variacao(db, principal)
+    inativo = _produto(db, "CJ6")
+    _variacao(db, inativo)
+    inativo.ativo = False
+    db.flush()
+
+    produto_service.atualizar(db, principal.id, ProdutoUpdate(relacionados=[inativo.id]))
+    db.refresh(principal)
+
+    assert pedido_service.compre_junto(db, var_principal) == []
