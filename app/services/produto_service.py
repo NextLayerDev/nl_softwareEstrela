@@ -9,6 +9,7 @@ from app.models.enums import EstoqueModo, OrigemMov
 from app.models.produto import (
     Produto,
     ProdutoCodigoAlt,
+    ProdutoEspecificacao,
     ProdutoFaixaPreco,
     ProdutoVariacao,
 )
@@ -36,6 +37,9 @@ def _dados_variacao(variacao: ProdutoVariacao) -> dict:
         "cor": variacao.cor,
         "ativo": variacao.ativo,
     }
+
+
+MAX_ESPECIFICACOES = 20
 
 
 class ProdutoService:
@@ -101,6 +105,7 @@ class ProdutoService:
                 ProdutoCodigoAlt(codigo_alt=c.codigo_alt, fornecedor_id=c.fornecedor_id)
             )
         self._aplicar_faixas(produto, dados.faixas)
+        self._aplicar_especificacoes(produto, dados.especificacoes)
         produto_repo.add(db, produto)
         eventos.emitir(db, "produto.criado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
@@ -118,7 +123,8 @@ class ProdutoService:
         # Campos simples (codigo e codigos_alt são tratados à parte: o código
         # passa por validação de unicidade e codigos_alt é relationship de lista).
         for campo, valor in dados.model_dump(
-            exclude_unset=True, exclude={"codigo", "codigos_alt", "faixas"}
+            exclude_unset=True,
+            exclude={"codigo", "codigos_alt", "faixas", "especificacoes"},
         ).items():
             setattr(produto, campo, valor)
         # Códigos alternativos: reconcilia add/remove por string (preserva os
@@ -138,9 +144,29 @@ class ProdutoService:
         # silêncio — o mesmo buraco que `preco_custo`/`preco_minimo` têm no controller.
         if dados.faixas is not None:
             self._aplicar_faixas(produto, dados.faixas)
+        if dados.especificacoes is not None:
+            self._aplicar_especificacoes(produto, dados.especificacoes)
         db.flush()
         eventos.emitir(db, "produto.atualizado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
+
+    def _aplicar_especificacoes(self, produto: Produto, itens) -> None:
+        """Reescreve a ficha técnica inteira, renumerando a ordem.
+
+        Reescrever em vez de reconciliar porque a ORDEM é o dado: as setas ↑↓ da tela
+        só continuam triviais se a posição sair de `enumerate` a cada save. São no
+        máximo 20 linhas — a rotatividade é grátis.
+        """
+        limpas = [
+            (str(getattr(i, "rotulo", "")).strip(), str(getattr(i, "valor", "")).strip())
+            for i in itens or []
+        ]
+        limpas = [(r, v) for r, v in limpas if r and v][:MAX_ESPECIFICACOES]
+        produto.especificacoes.clear()
+        for ordem, (rotulo, valor) in enumerate(limpas):
+            produto.especificacoes.append(
+                ProdutoEspecificacao(ordem=ordem, rotulo=rotulo[:40], valor=valor[:120])
+            )
 
     def _aplicar_faixas(self, produto: Produto, faixas) -> None:
         """Reescreve a tabela de preço do produto por inteiro.
