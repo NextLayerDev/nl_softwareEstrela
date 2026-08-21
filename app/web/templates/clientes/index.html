@@ -14,8 +14,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="card" x-data="modal()" @keydown.escape.window="fechar()">
-  <div class="mb-4 flex items-center gap-3">
+{# Mesmo desenho de /pedidos e /produtos: lede, filtros soltos, tabela no card. #}
+<div x-data="modal()" @keydown.escape.window="fechar()">
+  <p class="mb-4 text-sm text-gray-500">
+    Quem já comprou. O cadastro é opcional — o balcão vende sem ele.
+  </p>
+
+  <div class="mb-4 flex flex-wrap items-center gap-3">
     <div class="relative w-full max-w-md">
       <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
       <input
@@ -36,6 +41,8 @@
     <span id="busca-load" class="carregando text-sm text-gray-400" role="status">buscando…</span>
   </div>
 
+  <div class="card">
+
   <div class="overflow-x-auto">
     <table class="tabela tabela-densa w-full" aria-label="Lista de clientes">
       <thead>
@@ -53,6 +60,8 @@
       </tbody>
     </table>
   </div>
+  </div>{# /card #}
+
   {{ confirmar_modal() }}
 </div>
 {% endblock %}

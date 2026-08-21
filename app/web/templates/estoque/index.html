@@ -7,11 +7,15 @@
 
 {% block content %}
 {% include "estoque/_tabs_nav.html" %}
-<div class="card" x-data="{ entrada: null, ajuste: null }"
+<div x-data="{ entrada: null, ajuste: null }"
      @abrir-entrada.window="entrada = $event.detail; ajuste = null; $nextTick(() => $refs.qtdEntrada?.focus())"
      @abrir-ajuste.window="ajuste = $event.detail; entrada = null; $nextTick(() => $refs.saldoAjuste?.focus())">
+  {# Mesmo desenho de /pedidos e /produtos: lede, filtros soltos, tabela no card. #}
+  <p class="mb-4 text-sm text-gray-500">
+    Saldo por cor. O estoque só muda por movimentação — entrada, ajuste ou pedido.
+  </p>
 
-  <div class="mb-4 flex items-center gap-3">
+  <div class="mb-4 flex flex-wrap items-center gap-3">
     <div class="relative w-full max-w-md">
       <span class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true">{{ icone("lupa") }}</span>
       <label for="busca-estoque" class="sr-only">Buscar no estoque</label>
@@ -98,6 +102,7 @@
   </div>
   {% endif %}
 
+  <div class="card">
   <div class="overflow-x-auto">
     <table class="tabela tabela-densa w-full" aria-label="Lista de estoque">
       <thead>
@@ -123,5 +128,6 @@
       </tbody>
     </table>
   </div>
+  </div>{# /card #}
 </div>
 {% endblock %}

@@ -3,6 +3,7 @@
 {% from "_ui.html" import trilha %}
 {% block titulo %}Curva ABC{% endblock %}
 {% block cabecalho %}Curva ABC de produtos{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Relatórios","/relatorios"), ("Curva ABC", none)]) }}{% endblock %}
 
 {% block acoes %}
 <a href="/relatorios/abc/export?de={{ filtros.de }}&ate={{ filtros.ate }}" class="btn-secundario">
@@ -12,7 +13,6 @@
 {% endblock %}
 
 {% block content %}
-{{ trilha([("Painel","/"), ("Relatórios","/relatorios"), ("Curva ABC", none)]) }}
 {% include "relatorios/_tabs_nav.html" %}
 {% set classe_selo = {"A": "selo-muito", "B": "selo-tem", "C": "selo-acabou"} %}
 <div class="card">

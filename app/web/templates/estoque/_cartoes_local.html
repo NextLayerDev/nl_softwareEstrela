@@ -1,8 +1,13 @@
+{% from "_icones.html" import icone %}
 {% from "estoque/_macro_cartao_local.html" import cartao %}
 {% for v in variacoes %}
 {{ cartao(v) }}
 {% else %}
-<div class="col-span-full py-10 text-center text-2xl text-gray-400">
-  {% if q %}Nada encontrado para "{{ q }}".{% else %}Digite para buscar um produto.{% endif %}
+<div class="vazio col-span-full">
+  <span class="vazio-icone" aria-hidden="true">{{ icone("lupa") }}</span>
+  {# Tela de tablet: o texto é maior que o padrão de propósito, para ser lido de longe. #}
+  <p class="text-xl">
+    {% if q %}Nada encontrado para "{{ q }}".{% else %}Digite para buscar um produto.{% endif %}
+  </p>
 </div>
 {% endfor %}

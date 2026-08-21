@@ -14,8 +14,8 @@
 {% block content %}
 {% if produto and not produto.ativo %}
 {# Ação direta de reativação: form separado do form de edição (não pode aninhar). #}
-<form method="post" action="/produtos/{{ produto.id }}/reativar" class="card mb-4 flex items-center justify-between gap-4 border-amber-400 bg-amber-50">
-  <p class="text-sm text-amber-800">
+<form method="post" action="/produtos/{{ produto.id }}/reativar" class="card mb-4 flex items-center justify-between gap-4 border-aviso/30 bg-aviso-bg">
+  <p class="text-sm text-aviso">
     Este produto está <strong>inativo</strong>. Reative para que volte a aparecer em novos pedidos.
   </p>
   <button type="submit" class="btn-primario">

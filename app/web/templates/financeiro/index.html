@@ -3,9 +3,9 @@
 {% from "_ui.html" import trilha %}
 {% block titulo %}Financeiro{% endblock %}
 {% block cabecalho %}Financeiro — Contas a receber{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Financeiro", none)]) }}{% endblock %}
 
 {% block content %}
-{{ trilha([("Painel","/"), ("Financeiro", none)]) }}
 <div class="space-y-4">
   {# Resumo do dia #}
   <div class="card">

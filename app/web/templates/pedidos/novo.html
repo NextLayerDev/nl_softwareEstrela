@@ -66,12 +66,14 @@
   <div class="card mb-4">
     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
       <h3 class="text-sm font-semibold">Adicionar produto</h3>
-      <div class="tabs">
-        <button type="button" class="tab" :class="aba === 'catalogo' ? 'bg-gold-100 font-semibold' : ''"
+      {# `aria-selected` é o que o `.tab` do input.css estiliza. Antes o estado ativo
+         era pintado à mão e passava por fora da folha de estilo. #}
+      <div class="tabs" role="tablist" aria-label="Como adicionar o produto">
+        <button type="button" class="tab" role="tab" :aria-selected="aba === 'catalogo'"
                 @click="aba = 'catalogo'">Do catálogo</button>
-        <button type="button" class="tab" :class="aba === 'avulso' ? 'bg-gold-100 font-semibold' : ''"
+        <button type="button" class="tab" role="tab" :aria-selected="aba === 'avulso'"
                 @click="aba = 'avulso'">Item avulso</button>
-        <button type="button" class="tab" :class="aba === 'colar' ? 'bg-gold-100 font-semibold' : ''"
+        <button type="button" class="tab" role="tab" :aria-selected="aba === 'colar'"
                 @click="aba = 'colar'">Colar itens</button>
       </div>
     </div>
