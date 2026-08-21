@@ -195,6 +195,7 @@ def _registrar_routers() -> None:
         "dashboard",
         "estoque",
         "produtos",
+        "catalogo",
         "clientes",
         "usuarios",
         "pedidos",

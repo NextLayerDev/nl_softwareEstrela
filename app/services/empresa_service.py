@@ -35,5 +35,13 @@ class EmpresaService:
         db.flush()
         return empresa
 
+    def salvar_logo(self, db: Session, dados: bytes | None) -> EmpresaConfig:
+        """Grava (ou apaga) o logo. NÃO faz commit — o get_db fecha a transação."""
+        empresa = self.obter(db)
+        empresa.logo_dados = dados
+        empresa.logo_url = "/empresa/logo" if dados else None
+        db.flush()
+        return empresa
+
 
 empresa_service = EmpresaService()

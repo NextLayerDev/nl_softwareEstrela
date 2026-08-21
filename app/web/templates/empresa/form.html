@@ -51,6 +51,12 @@
       <textarea id="observacao_cupom" class="input" name="observacao_cupom" rows="2"
                 placeholder="Ex.: Obrigado pela preferência!">{{ empresa.observacao_cupom if empresa and empresa.observacao_cupom else '' }}</textarea>
     </div>
+
+    <div class="sm:col-span-2">
+      <label class="label" for="descricao_catalogo">Descrição para a capa do catálogo</label>
+      <textarea id="descricao_catalogo" name="descricao_catalogo" rows="2" class="input w-full"
+                placeholder="Ex.: brindes e utilidades para revenda">{{ empresa.descricao_catalogo or "" }}</textarea>
+    </div>
   </div>
 
   <div class="mt-6 flex gap-2">
@@ -59,4 +65,32 @@
     </button>
   </div>
 </form>
+
+{# Card separado: upload é multipart e o formulário acima é urlencoded — juntar os dois
+   obrigaria a mandar tudo como multipart a cada save de texto. #}
+<div class="card mt-4">
+  <h3 class="mb-2 font-semibold">Logo do catálogo</h3>
+  <p class="mb-3 text-sm text-gray-500">
+    Aparece na capa do Catálogo Inteligente. Guardado como PNG — fundo transparente é
+    preservado.
+  </p>
+  <div class="flex flex-wrap items-center gap-4">
+    {% if empresa.logo_url %}
+    <img src="{{ empresa.logo_url }}" alt="Logo da empresa"
+         class="h-20 w-auto max-w-[12rem] rounded border border-marca-borda bg-white object-contain p-2" />
+    {% else %}
+    <span class="text-sm text-gray-400">Sem logo.</span>
+    {% endif %}
+    <form method="post" action="/empresa/logo" enctype="multipart/form-data"
+          class="flex items-center gap-2">
+      <input type="file" name="arquivo" accept="image/*" required class="input" />
+      <button type="submit" class="btn-secundario">Enviar</button>
+    </form>
+    {% if empresa.logo_url %}
+    <form method="post" action="/empresa/logo/remover">
+      <button type="submit" class="btn-perigo">Remover logo</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

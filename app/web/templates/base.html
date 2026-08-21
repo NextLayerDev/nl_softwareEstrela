@@ -69,6 +69,7 @@
         {{ item("/estoque", "Estoque", ["admin","vendedor"], "caixa") }}
         {{ item("/estoque/localizacao", "Localização", ["admin","vendedor"], "mapa") }}
         {{ item("/produtos", "Produtos", ["admin","vendedor"], "etiqueta") }}
+        {{ item("/catalogo/imprimir", "Catálogo", ["admin","vendedor"], "imprimir") }}
 
         {% if p in ["admin","vendedor"] or p_ve_tudo %}
         <p class="nav-grupo-titulo">Vendas</p>
