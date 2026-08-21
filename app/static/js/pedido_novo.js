@@ -74,124 +74,9 @@
     return partes.join("\n");
   }
 
-  /* ---------------------------------------------------------------- resumo em PNG
-   * Desenhado à mão no <canvas> em vez de "printar" o DOM com uma biblioteca: a CSP é
-   * `default-src 'self'` e o sistema roda offline num mini-PC, então não há npm nem CDN
-   * de onde tirar um html-to-image. Canvas é API do navegador — custa zero dependência.
-   */
-  const RESUMO = {
-    largura: 900,
-    margem: 24,
-    alturaLinha: 34,
-    alturaCabecalho: 96,
-    fundo: "#F6F2E8", // creme da marca
-    faixa: "#B98A19", // dourado da marca
-    texto: "#211B0F",
-    grade: "#D9CFB4",
-  };
-
-  function desenharResumo(canvas, dados) {
-    const { largura, margem, alturaLinha, alturaCabecalho } = RESUMO;
-    // +2 linhas: uma para o total e uma de respiro. Com +3 sobrava um vazio do
-    // tamanho de duas linhas embaixo de um orçamento de item único.
-    const linhasExtras = dados.descontoCentavos > 0 ? 3 : 2;
-    const altura = alturaCabecalho + (dados.itens.length + linhasExtras) * alturaLinha + margem;
-
-    // devicePixelRatio: sem isto o PNG sai borrado em tela retina e ilegível no zoom
-    // de quem recebe no WhatsApp.
-    const escala = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = largura * escala;
-    canvas.height = altura * escala;
-    const ctx = canvas.getContext("2d");
-    ctx.scale(escala, escala);
-
-    ctx.fillStyle = RESUMO.fundo;
-    ctx.fillRect(0, 0, largura, altura);
-
-    ctx.fillStyle = RESUMO.faixa;
-    ctx.fillRect(0, 0, largura, 8);
-
-    ctx.fillStyle = RESUMO.texto;
-    ctx.font = "bold 26px Inter, system-ui, sans-serif";
-    ctx.fillText(dados.titulo, margem, 48);
-    ctx.font = "15px Inter, system-ui, sans-serif";
-    ctx.fillText(`${dados.cliente}  ·  ${dados.data}`, margem, 74);
-
-    const colunas = [
-      { rotulo: "Código", x: margem, alinhar: "left" },
-      { rotulo: "Descrição", x: margem + 120, alinhar: "left" },
-      { rotulo: "Qtd", x: largura - margem - 300, alinhar: "right" },
-      { rotulo: "Unit.", x: largura - margem - 170, alinhar: "right" },
-      { rotulo: "Subtotal", x: largura - margem, alinhar: "right" },
-    ];
-
-    let y = alturaCabecalho;
-    ctx.font = "bold 14px Inter, system-ui, sans-serif";
-    colunas.forEach((c) => {
-      ctx.textAlign = c.alinhar;
-      ctx.fillText(c.rotulo, c.x, y);
-    });
-    ctx.textAlign = "left";
-
-    ctx.strokeStyle = RESUMO.grade;
-    ctx.lineWidth = 1;
-    y += 10;
-    ctx.beginPath();
-    ctx.moveTo(margem, y);
-    ctx.lineTo(largura - margem, y);
-    ctx.stroke();
-
-    ctx.font = "14px Inter, system-ui, sans-serif";
-    dados.itens.forEach((item) => {
-      y += alturaLinha;
-      const valores = [
-        item.codigo || "—",
-        item.descricao,
-        String(item.qtd),
-        formatarBRL(item.precoCentavos),
-        formatarBRL(subtotalDe(item)),
-      ];
-      colunas.forEach((c, i) => {
-        ctx.textAlign = c.alinhar;
-        let texto = valores[i];
-        // A descrição é a única coluna que pode estourar; corta com reticência em vez
-        // de invadir a coluna de quantidade.
-        if (i === 1) {
-          const limite = largura - margem - 320 - c.x;
-          while (ctx.measureText(texto).width > limite && texto.length > 4) {
-            texto = `${texto.slice(0, -2)}…`;
-          }
-        }
-        ctx.fillText(texto, c.x, y);
-      });
-      ctx.textAlign = "left";
-      ctx.strokeStyle = RESUMO.grade;
-      ctx.beginPath();
-      ctx.moveTo(margem, y + 10);
-      ctx.lineTo(largura - margem, y + 10);
-      ctx.stroke();
-    });
-
-    y += alturaLinha + 12;
-    ctx.textAlign = "right";
-    if (dados.descontoCentavos > 0) {
-      ctx.font = "14px Inter, system-ui, sans-serif";
-      ctx.fillText(`Desconto: ${formatarBRL(dados.descontoCentavos)}`, largura - margem, y);
-      y += alturaLinha - 8;
-    }
-    ctx.font = "bold 20px Inter, system-ui, sans-serif";
-    ctx.fillText(`Total: ${formatarBRL(dados.totalCentavos)}`, largura - margem, y);
-    ctx.textAlign = "left";
-  }
-
-  async function gerarPng(dados) {
-    // Sem isto a Inter local ainda não está pronta e o canvas desenha com a fonte de
-    // fallback — o PNG sai com outra cara da tela.
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    const canvas = document.createElement("canvas");
-    desenharResumo(canvas, dados);
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-  }
+  /* O desenho da planilha mora em resumo_pedido.js — o detalhe do pedido mostra o
+     mesmo resumo, e duplicar o canvas era garantir que um dia os dois divergissem. */
+  const { ResumoPedido } = window;
 
   window.PedidoNovo = {
     /** Componente Alpine da tela inteira. */
@@ -490,29 +375,18 @@
         async gerarResumo() {
           if (!this.itens.length) return;
           const nome = document.getElementById("cliente_nome")?.value.trim();
-          const blob = await gerarPng({
-            titulo: "Orçamento",
-            cliente: nome || "CONSUMIDOR",
-            data: new Date().toLocaleDateString("pt-BR"),
-            itens: this.itens,
-            descontoCentavos: this.desconto,
-            totalCentavos: this.total,
-          });
-          if (!blob) return;
-          // Copiar direto para a área de transferência é o caminho curto para o
-          // WhatsApp; onde o navegador não deixa, cai no download.
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-            this.avisar("Resumo copiado como imagem.");
-          } catch {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "orcamento.png";
-            a.click();
-            URL.revokeObjectURL(url);
-            this.avisar("Resumo baixado.");
-          }
+          this.avisar(
+            await ResumoPedido.copiar({
+              titulo: "Orçamento",
+              cliente: nome || "CONSUMIDOR",
+              data: new Date().toLocaleDateString("pt-BR"),
+              numero: "RASCUNHO",
+              // O módulo do resumo não recalcula dinheiro: o subtotal vai pronto.
+              itens: this.itens.map((i) => ({ ...i, subtotalCentavos: subtotalDe(i) })),
+              descontoCentavos: this.desconto,
+              totalCentavos: this.total,
+            })
+          );
         },
 
         recado: "",

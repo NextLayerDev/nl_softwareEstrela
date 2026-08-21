@@ -15,6 +15,7 @@ from app.schemas.pedido import (
     ItemAvulsoAdicionar,
     PedidoCompletoCreate,
     PedidoCreate,
+    ResumoPedidoOut,
 )
 from app.services.colagem_service import colagem_service
 from app.services.pedido_service import pedido_service
@@ -113,6 +114,16 @@ class PedidoController:
     ) -> PedidoItem:
         self._carregar_para_usuario(db, pedido_id, usuario)
         return pedido_service.adicionar_item_avulso(db, pedido_id, dados)
+
+    def montar_resumo(self, pedido: Pedido) -> ResumoPedidoOut:
+        """Dados da planilha do resumo (o card "Resumo do pedido")."""
+        return pedido_service.montar_resumo(pedido)
+
+    def definir_observacao(
+        self, db: Session, pedido_id: int, texto: str, usuario: Usuario
+    ) -> Pedido:
+        self._carregar_para_usuario(db, pedido_id, usuario)
+        return pedido_service.definir_observacao(db, pedido_id, texto)
 
     def remover_item(self, db: Session, pedido_id: int, item_id: int, usuario: Usuario) -> Pedido:
         self._carregar_para_usuario(db, pedido_id, usuario)

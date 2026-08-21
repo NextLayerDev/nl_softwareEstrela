@@ -1,0 +1,87 @@
+{# Card "Resumo do pedido" — a planilha que o cliente recebe no WhatsApp, sempre à vista.
+
+   No omni ela fica visível o tempo todo, sem precisar clicar em "gerar": é o que o
+   atendente confere antes de mandar. Aqui é o mesmo desenho em HTML, e os dois botões
+   do cabeçalho redesenham a MESMA planilha no <canvas> (resumo_pedido.js) para virar
+   PNG. Os dados vão no <script type="application/json"> abaixo em centavos inteiros,
+   já prontos — o JS não recalcula dinheiro.
+
+   Trocado por OOB junto com a tabela de itens: adicionar um item tem que mudar o
+   resumo na mesma resposta, senão ele mente até a próxima navegação. #}
+<div id="bloco-resumo"{% if oob %} hx-swap-oob="true"{% endif %} class="card"
+     x-data="{ recado: '',
+               dados() { return JSON.parse(document.getElementById('resumo-dados').textContent); },
+               async acao(qual) {
+                 this.recado = await (qual === 'copiar'
+                   ? ResumoPedido.copiar(this.dados())
+                   : ResumoPedido.baixar(this.dados()));
+                 setTimeout(() => { this.recado = ''; }, 2500);
+               } }">
+  <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <h3 class="text-sm font-semibold">Resumo do pedido</h3>
+    <div class="flex items-center gap-2">
+      <span x-show="recado" x-cloak class="text-xs text-gray-500" x-text="recado"></span>
+      <button type="button" class="btn-secundario !px-2 !py-1" title="Copiar imagem"
+              aria-label="Copiar o resumo como imagem" @click="acao('copiar')">
+        <span class="nav-icone" aria-hidden="true">{{ icone("etiqueta") }}</span>
+      </button>
+      <button type="button" class="btn-secundario !px-2 !py-1" title="Baixar PNG"
+              aria-label="Baixar o resumo em PNG" @click="acao('baixar')">
+        <span class="nav-icone" aria-hidden="true">{{ icone("upload") }}</span>
+      </button>
+    </div>
+  </div>
+
+  {# A planilha. Cores literais (amarelo/preto) de propósito: ela é um documento, não
+     parte do tema — sai igual na tela, no PNG e no papel. #}
+  <div class="overflow-x-auto">
+    <table class="w-full border-collapse text-sm" style="min-width: 34rem">
+      <caption class="sr-only">Resumo dos itens do pedido</caption>
+      <tbody>
+        <tr>
+          <td class="border border-black px-2 py-1">{{ resumo.data }}</td>
+          <td class="border border-black px-2 py-1" colspan="2">{{ resumo.cliente }}</td>
+          <td class="border border-black px-2 py-1" colspan="2">{{ resumo.numero }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <table class="mt-2 w-full border-collapse text-sm" style="min-width: 34rem">
+      <thead>
+        <tr class="bg-[#FFEB00] font-bold">
+          <th scope="col" class="border border-black px-2 py-1 text-left">CODIGO</th>
+          <th scope="col" class="border border-black px-2 py-1 text-left">DESCRICAO</th>
+          <th scope="col" class="border border-black px-2 py-1 text-right">QUANT.</th>
+          <th scope="col" class="border border-black px-2 py-1 text-right">V. UNIT.</th>
+          <th scope="col" class="border border-black px-2 py-1 text-right">SUB. TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in resumo.itens %}
+        <tr>
+          <td class="border border-black px-2 py-1 font-mono">{{ item.codigo or "—" }}</td>
+          <td class="border border-black px-2 py-1">{{ item.descricao }}</td>
+          <td class="border border-black px-2 py-1 text-right">{{ item.qtd }}</td>
+          <td class="border border-black px-2 py-1 text-right">{{ (item.preco_centavos / 100) | moeda }}</td>
+          <td class="border border-black px-2 py-1 text-right">{{ (item.subtotal_centavos / 100) | moeda }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="border border-black px-2 py-3 text-center text-gray-400" colspan="5">
+            Sem itens para resumir.
+          </td>
+        </tr>
+        {% endfor %}
+        {% if resumo.itens %}
+        <tr class="bg-[#FFEB00] font-bold">
+          <td class="border border-black px-2 py-1" colspan="3"></td>
+          <td class="border border-black px-2 py-1 text-right">TOTAL</td>
+          <td class="border border-black px-2 py-1 text-right">{{ (resumo.total_centavos / 100) | moeda }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Os mesmos dados que a tabela acima, em centavos, para o <canvas> desenhar o PNG. #}
+  <script type="application/json" id="resumo-dados">{{ resumo.model_dump_json(by_alias=True) | safe }}</script>
+</div>

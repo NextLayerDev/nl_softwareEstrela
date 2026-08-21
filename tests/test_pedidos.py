@@ -872,3 +872,91 @@ def test_lista_mostra_selo_colorido_contagem_e_origem(client_vendedor, db, usuar
     assert 'class="selo-rascunho' in t  # e não um cinza só para todo status
     assert "Balcão" in t  # origem por extenso, com ícone
     assert "Todos os status" in t and "Toda origem" in t  # os dois filtros na tela
+
+
+# ======================================================= resumo e observação
+def test_montar_resumo_traz_os_itens_em_centavos(db, usuario_vendedor):
+    """O `<canvas>` desenha a partir daqui e não recalcula dinheiro."""
+    prod = _produto(db, "RES1", pouca=Decimal("15.50"))
+    var = _variacao(db, prod)
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            cliente_nome="Maria",
+            itens=[
+                {"tipo": "catalogo", "variacao_id": var.id, "qtd": 3},
+                {"tipo": "avulso", "nome": "FRETE", "qtd": 1, "preco_unit": Decimal("20.00")},
+            ],
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    db.refresh(pedido)
+
+    resumo = pedido_service.montar_resumo(pedido)
+    assert resumo.cliente == "Maria"
+    assert resumo.numero == "RASCUNHO"  # ainda não confirmado
+    assert [i.descricao for i in resumo.itens] == ["Produto RES1", "FRETE"]
+    assert resumo.itens[0].preco_centavos == 1550
+    assert resumo.itens[0].subtotal_centavos == 4650
+    assert resumo.total_centavos == 6650
+
+    pedido_service.confirmar(db, pedido.id, usuario_vendedor.id)
+    assert pedido_service.montar_resumo(pedido).numero == f"#{pedido.numero}"
+
+
+def test_resumo_sai_em_camel_case_para_o_javascript(db, usuario_vendedor):
+    """O carrinho do navegador monta as chaves em camelCase; o servidor fala a mesma língua."""
+    prod = _produto(db, "RES2")
+    var = _variacao(db, prod)
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd": 1}]),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    db.refresh(pedido)
+
+    bruto = pedido_service.montar_resumo(pedido).model_dump_json(by_alias=True)
+    assert '"precoCentavos"' in bruto
+    assert '"totalCentavos"' in bruto
+    assert "preco_centavos" not in bruto
+
+
+def test_observacao_editavel_depois_de_confirmar(db, usuario_vendedor):
+    """O recado de entrega quase sempre chega DEPOIS que o pedido fechou."""
+    prod = _produto(db, "OBS1")
+    var = _variacao(db, prod, fisico=50)
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd": 1}]),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    pedido_service.confirmar(db, pedido.id, usuario_vendedor.id)
+
+    pedido_service.definir_observacao(db, pedido.id, "  entregar após as 18h  ")
+    db.refresh(pedido)
+    assert pedido.observacao == "entregar após as 18h"
+
+    # Vazio volta a ser None, não string vazia.
+    pedido_service.definir_observacao(db, pedido.id, "   ")
+    db.refresh(pedido)
+    assert pedido.observacao is None
+
+
+def test_observacao_recusada_no_pedido_finalizado(db, usuario_vendedor, usuario_admin):
+    prod = _produto(db, "OBS2")
+    var = _variacao(db, prod, fisico=50)
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd": 1}]),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    pedido_service.confirmar(db, pedido.id, usuario_vendedor.id)
+    pedido_service.faturar(db, pedido.id, usuario_admin.id)
+    pedido_service.entregar(db, pedido.id)
+
+    with pytest.raises(RegraNegocioError):
+        pedido_service.definir_observacao(db, pedido.id, "tarde demais")
