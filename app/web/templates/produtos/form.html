@@ -25,7 +25,54 @@
 {% endif %}
 {% set acao = "/produtos/" ~ produto.id if produto else "/produtos" %}
 <form method="post" action="{{ acao }}" class="card max-w-3xl"
-      x-data="{ variacoes: [], codigos: {{ (produto.codigos_alt | map(attribute='codigo_alt') | list) | tojson if produto else '[]' }} }">
+      x-data="{
+        variacoes: [],
+        codigos: {{ (produto.codigos_alt | map(attribute='codigo_alt') | list) | tojson if produto else '[]' }},
+        faixas: {{ produto.faixas | faixas_json if produto else '[]' }},
+        get faixasOrdenadas() {
+          return [...this.faixas].sort((a, b) => Number(a[0]) - Number(b[0]));
+        },
+        {# Os três avisos que o servidor também calcula. Aqui é só para a pessoa ver
+           enquanto digita; quem recusa o save é o `validar_faixas`. #}
+        get avisosFaixas() {
+          const linhas = this.faixas
+            .map(([q, p]) => [Number(q), Number(String(p).replace(',', '.'))])
+            .filter(([q]) => Number.isFinite(q) && q >= 1)
+            .sort((a, b) => a[0] - b[0]);
+          const avisos = [];
+          const vistos = new Set();
+          for (const [q] of linhas) {
+            if (vistos.has(q)) avisos.push(`Há duas faixas começando em ${q} un — deixe só uma.`);
+            vistos.add(q);
+          }
+          if (linhas.length && linhas[0][0] !== 1) {
+            avisos.push('Falta a faixa a partir de 1 un. Sem ela não dá para salvar: é o preço de quem leva pouco.');
+          }
+          for (let i = 1; i < linhas.length; i++) {
+            if (linhas[i][1] > linhas[i - 1][1]) {
+              avisos.push(`A faixa de ${linhas[i][0]} un está mais cara que a anterior. Se for de propósito, pode salvar.`);
+            }
+          }
+          return avisos;
+        },
+        rotuloFaixa(i) {
+          const ord = this.faixasOrdenadas;
+          const atual = Number(ord[i]?.[0]);
+          if (!Number.isFinite(atual)) return '';
+          const seguinte = ord[i + 1] ? Number(ord[i + 1][0]) : null;
+          return seguinte ? `${atual} a ${seguinte - 1} un` : `${atual}+ un`;
+        },
+        adicionarFaixa() {
+          const ult = this.faixasOrdenadas.at(-1);
+          this.faixas.push([ult ? Number(ult[0]) + 10 : 1, ult ? ult[1] : '']);
+        },
+        gerarDoVarejoAtacado() {
+          const varejo = document.getElementById('preco_pouca_qtd')?.value || '';
+          const atacado = document.getElementById('preco_muita_qtd')?.value || '';
+          const corte = Number(document.getElementById('qtd_corte_atacado')?.value || 0);
+          this.faixas = corte > 1 ? [[1, varejo], [corte, atacado]] : [[1, varejo]];
+        }
+      }">
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
       <label class="label" for="codigo">Código *</label>
@@ -137,6 +184,51 @@
       </div>
     </template>
     <button type="button" class="btn-secundario" @click="codigos.push('')">+ Adicionar código</button>
+  </div>
+
+  {# ------------------------------------------------ Preço por quantidade (atacado) #}
+  <div class="mt-6">
+    <h3 class="mb-2 font-semibold">Preço por quantidade (atacado)</h3>
+    <p class="mb-2 text-sm text-gray-500">
+      A partir de X unidades, o preço unitário muda. <strong>Quando há tabela, ela manda</strong> —
+      varejo, atacado e corte ficam valendo só para os produtos sem tabela. Deixe vazio para
+      manter o preço único de sempre.
+    </p>
+
+    {# SENTINELA. Sem este campo o controller não mexe nas faixas — e é o que impede
+       que salvar de um formulário sem o editor apague a tabela em silêncio. #}
+    <input type="hidden" name="tem_editor_faixas" value="1" />
+
+    <template x-for="aviso in avisosFaixas" :key="aviso">
+      <p class="mb-2 rounded-md bg-aviso-bg px-2.5 py-1.5 text-xs font-semibold text-aviso" x-text="aviso"></p>
+    </template>
+
+    <template x-for="(f, i) in faixasOrdenadas" :key="i">
+      <div class="mb-2 flex flex-wrap items-center gap-2 text-sm">
+        <span class="w-24 shrink-0 text-right text-xs text-gray-500" x-text="rotuloFaixa(i)"></span>
+        <span class="text-gray-500">a partir de</span>
+        <input class="input w-24" type="number" min="1" name="faixa_min_qtd"
+               aria-label="Quantidade mínima da faixa" :value="f[0]"
+               @input="faixas[faixas.indexOf(f)][0] = $el.value" />
+        <span class="text-gray-500">un =</span>
+        <input class="input w-28" name="faixa_preco" placeholder="0,00"
+               aria-label="Preço da faixa" :value="f[1]"
+               @input="faixas[faixas.indexOf(f)][1] = $el.value" />
+        <span class="text-gray-500">/un</span>
+        <button type="button" class="btn-perigo text-xs"
+                @click="faixas.splice(faixas.indexOf(f), 1)">Remover</button>
+      </div>
+    </template>
+
+    <div class="mt-2 flex flex-wrap gap-2">
+      <button type="button" class="btn-secundario" x-show="faixas.length < 10"
+              @click="adicionarFaixa()">+ Adicionar faixa</button>
+      {# Em vez de um backfill na migration: preenche o editor e espera a confirmação.
+         Gerar sozinho fixaria os preços de hoje num lugar de precedência maior, e
+         editar "preço varejo" depois pararia de ter efeito sem ninguém entender. #}
+      <button type="button" class="btn-secundario" x-show="!faixas.length"
+              @click="gerarDoVarejoAtacado()">Gerar a partir de varejo/atacado</button>
+    </div>
   </div>
 
   <div class="mt-6 flex gap-2">

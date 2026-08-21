@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,6 +49,28 @@ def _moeda(valor: object) -> str:
 
 
 templates.env.filters["moeda"] = _moeda
+
+
+def _faixas_json(faixas: object) -> str:
+    """Faixas para o `data-faixas` do fragmento de busca: [[1,"10.00"],[10,"8.00"]].
+
+    Pares e não objetos porque o fragmento renderiza uma dezena de linhas a cada tecla
+    digitada — `[[1,"10.00"]]` é metade dos bytes de `[{"min_qtd":1,"preco":"10.00"}]`.
+
+    Preço como STRING: quem converte no navegador é o `parseMoedaBR`, que devolve
+    centavos inteiros. Number() em dinheiro é como se perde centavo.
+    """
+    pares = []
+    for faixa in faixas or []:
+        min_qtd = getattr(faixa, "min_qtd", None)
+        preco = getattr(faixa, "preco", None)
+        if min_qtd is None or preco is None:
+            continue
+        pares.append([int(min_qtd), f"{preco:.2f}"])
+    return json.dumps(pares, separators=(",", ":"))
+
+
+templates.env.filters["faixas_json"] = _faixas_json
 
 
 def _desde(valor: object) -> str:

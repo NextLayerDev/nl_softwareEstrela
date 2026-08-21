@@ -5,6 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.produto import FaixaPrecoRead
+
 
 class PedidoCreate(BaseModel):
     """Abre um rascunho de pedido.
@@ -134,11 +136,21 @@ class PedidoItemRead(BaseModel):
 
 
 class SugestaoPreco(BaseModel):
-    """Preço sugerido por faixa para uma quantidade informada."""
+    """Preço sugerido para uma quantidade informada.
+
+    Os campos novos têm default de propósito: quem constrói isto parcialmente (teste,
+    fixture) continua funcionando, e a mudança para tabela de faixas fica aditiva.
+    """
 
     preco_sugerido: Decimal
-    faixa: str  # "atacado" | "varejo"
+    # Chave de máquina — comparada em código e em teste. "varejo" | "atacado" | "tabela".
+    faixa: str
+    # Texto para a tela: "10 a 49 un". Fica separado da chave porque `faixa == "tabela"`
+    # não diz nada a quem está olhando o pedido.
+    faixa_rotulo: str = ""
     preco_pouca_qtd: Decimal
     preco_muita_qtd: Decimal
     preco_promocional: Decimal | None
     qtd_corte_atacado: int | None
+    faixas: list[FaixaPrecoRead] = []
+    proxima_faixa: FaixaPrecoRead | None = None

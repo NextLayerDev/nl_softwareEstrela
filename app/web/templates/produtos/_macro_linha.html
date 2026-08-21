@@ -14,7 +14,12 @@
   <td>{{ p.descricao }}</td>
   <td>{{ p.categoria.nome if p.categoria else "—" }}</td>
   <td class="text-right">{{ p.preco_pouca_qtd | moeda }}</td>
-  <td class="text-right">{{ p.preco_muita_qtd | moeda }}</td>
+  <td class="text-right">
+    {{ p.preco_muita_qtd | moeda }}
+    {# Com tabela, os dois preços acima não estão valendo — o selo evita alguém
+       cotar por eles olhando a lista. #}
+    {% if p.faixas %}<span class="selo-neutro ml-1">tabela</span>{% endif %}
+  </td>
   {% if ver_custo %}<td class="text-right">{{ p.preco_custo | moeda }}</td>{% endif %}
   <td>
     {% for v in p.variacoes %}

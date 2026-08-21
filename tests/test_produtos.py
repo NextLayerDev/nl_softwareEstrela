@@ -652,3 +652,151 @@ def test_codigo_alternativo_do_fornecedor_tambem_e_versatil(db):
     assert estoque_repo.por_codigo_exato(db, "forn7788") is not None
     assert p.codigo in [x.codigo for x in produto_repo.busca_rapida(db, "forn7788")]
     assert p.codigo in [v.produto.codigo for v in estoque_repo.busca_localizacao(db, "forn7788")]
+
+
+# ============================================================ faixas de preço
+def test_salvar_sem_o_editor_de_faixas_nao_apaga_a_tabela() -> None:
+    """A armadilha: `atualizar` monta o dict com TODAS as chaves setadas.
+
+    O `exclude_unset` do service não protege nada nesse caminho, e lista vazia é um
+    pedido legítimo ("apague a tabela") — então não dá para inferir pela ausência das
+    linhas. Sem o sentinela `tem_editor_faixas`, qualquer save vindo de um formulário
+    sem o editor apagaria a tabela de preço inteira, em silêncio e com os testes
+    passando. Este teste é o que fecha esse buraco.
+    """
+    from app.core.database import SessionLocal
+
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo = _codigo()
+
+    resp = client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM TABELA",
+            "preco_pouca_qtd": "10,00",
+            "ativo": "on",
+            "tem_editor_faixas": "1",
+            "faixa_min_qtd": ["1", "10", "50"],
+            "faixa_preco": ["10,00", "8,00", "6,50"],
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    s = SessionLocal()
+    try:
+        produto = s.query(Produto).filter(Produto.codigo == codigo).one()
+        assert [(f.min_qtd, f.preco) for f in produto.faixas] == [
+            (1, Decimal("10.00")),
+            (10, Decimal("8.00")),
+            (50, Decimal("6.50")),
+        ]
+        produto_id = produto.id
+    finally:
+        s.close()
+
+    # Agora salva de um formulário SEM o editor (nenhum campo de faixa).
+    resp = client.post(
+        f"/produtos/{produto_id}",
+        data={
+            "codigo": codigo,
+            "descricao": "EDITADO SEM O EDITOR",
+            "preco_pouca_qtd": "12,00",
+            "ativo": "on",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    s = SessionLocal()
+    try:
+        produto = s.get(Produto, produto_id)
+        assert produto.descricao == "EDITADO SEM O EDITOR"
+        assert len(produto.faixas) == 3, "salvar sem o editor apagou a tabela de preço"
+    finally:
+        s.close()
+
+
+def test_editor_presente_e_vazio_apaga_a_tabela() -> None:
+    """Tirar todas as linhas E salvar é um pedido de verdade: "esse produto não tem tabela"."""
+    from app.core.database import SessionLocal
+
+    client = TestClient(app)
+    _login(client, "admin")
+    codigo = _codigo()
+    client.post(
+        "/produtos",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM TABELA 2",
+            "preco_pouca_qtd": "10,00",
+            "ativo": "on",
+            "tem_editor_faixas": "1",
+            "faixa_min_qtd": ["1"],
+            "faixa_preco": ["10,00"],
+        },
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        produto_id = s.query(Produto).filter(Produto.codigo == codigo).one().id
+    finally:
+        s.close()
+
+    client.post(
+        f"/produtos/{produto_id}",
+        data={
+            "codigo": codigo,
+            "descricao": "PRODUTO COM TABELA 2",
+            "preco_pouca_qtd": "10,00",
+            "ativo": "on",
+            "tem_editor_faixas": "1",
+        },
+        follow_redirects=False,
+    )
+    s = SessionLocal()
+    try:
+        assert s.get(Produto, produto_id).faixas == []
+    finally:
+        s.close()
+
+
+def test_tabela_sem_a_faixa_de_uma_unidade_e_recusada(db: Session) -> None:
+    from app.core.errors import RegraNegocioError
+    from app.schemas.produto import FaixaPrecoCreate
+
+    with pytest.raises(RegraNegocioError) as exc:
+        produto_service.criar(
+            db,
+            ProdutoCreate(
+                codigo=_codigo(),
+                descricao="SEM FAIXA DE 1",
+                faixas=[
+                    FaixaPrecoCreate(min_qtd=10, preco=Decimal("8.00")),
+                    FaixaPrecoCreate(min_qtd=50, preco=Decimal("6.50")),
+                ],
+            ),
+        )
+    assert "1 un" in str(exc.value)
+
+
+def test_faixa_repetida_e_recusada(db: Session) -> None:
+    from app.core.errors import RegraNegocioError
+    from app.schemas.produto import FaixaPrecoCreate
+
+    # `normalizar_faixas` derruba a repetida antes de validar, então o que sobra é uma
+    # tabela sem a faixa de 1 un — a recusa vem por ali, e a tabela ambígua não passa.
+    with pytest.raises(RegraNegocioError):
+        produto_service.criar(
+            db,
+            ProdutoCreate(
+                codigo=_codigo(),
+                descricao="FAIXA REPETIDA",
+                faixas=[
+                    FaixaPrecoCreate(min_qtd=10, preco=Decimal("8.00")),
+                    FaixaPrecoCreate(min_qtd=10, preco=Decimal("7.00")),
+                ],
+            ),
+        )

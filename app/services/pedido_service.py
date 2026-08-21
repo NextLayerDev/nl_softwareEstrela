@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
+from app.core.precos import Faixa, faixa_para, normalizar_faixas, proxima_faixa, rotulo_para
 from app.models.cliente import Cliente
 from app.models.conta_receber import ContaReceber
 from app.models.enums import StatusConta, StatusPedido, e_admin
@@ -22,6 +23,7 @@ from app.schemas.pedido import (
     PedidoCompletoCreate,
     SugestaoPreco,
 )
+from app.schemas.produto import FaixaPrecoRead
 from app.services.estoque_service import estoque_service
 
 # Limite máximo de desconto (em %) que um vendedor pode aplicar sem aprovação de admin.
@@ -35,22 +37,49 @@ class PedidoService:
 
     # ------------------------------------------------------------- precificação
     def sugerir_preco(self, produto: Produto, qtd: int) -> SugestaoPreco:
-        """Sugere preço por faixa: atacado quando qtd >= corte, senão varejo."""
+        """Preço sugerido para `qtd` unidades.
+
+        A regra: **se o produto tem tabela de faixas, a faixa que vale para a quantidade
+        manda; se não tem — ou se a quantidade fica abaixo da menor faixa —, vale a
+        regra de sempre (atacado a partir do corte, senão varejo).**
+
+        A tabela sobrepõe varejo/atacado de propósito: é a única versão explicável no
+        balcão ("esse produto tem tabela; a tabela manda"). Como o formulário exige a
+        faixa de 1 un, o desvio de baixo só acontece com tabela escrita na mão ou vinda
+        do ETL — e aí é melhor cair no preço antigo do que vender a R$ 0,00.
+
+        A ASSINATURA NÃO MUDOU, e isso é o desenho inteiro: os sete consumidores
+        (`adicionar_item`, `criar_completo`, a colagem, a rota de saldo, o fragmento de
+        busca, o espelho em JS e a tela pública de orçamento) seguem sem uma edição.
+        """
+        faixas = normalizar_faixas(produto.faixas)
+        escolhida = faixa_para(faixas, qtd)
         corte = produto.qtd_corte_atacado
-        if corte is not None and qtd >= corte:
-            preco = produto.preco_muita_qtd
-            faixa = "atacado"
+
+        if escolhida is not None:
+            preco, faixa = escolhida.preco, "tabela"
+            rotulo = rotulo_para(faixas, qtd)
+        elif corte is not None and qtd >= corte:
+            preco, faixa, rotulo = produto.preco_muita_qtd, "atacado", "atacado"
         else:
-            preco = produto.preco_pouca_qtd
-            faixa = "varejo"
+            preco, faixa, rotulo = produto.preco_pouca_qtd, "varejo", "varejo"
+
+        seguinte = proxima_faixa(faixas, qtd)
         return SugestaoPreco(
             preco_sugerido=preco,
             faixa=faixa,
+            faixa_rotulo=rotulo,
             preco_pouca_qtd=produto.preco_pouca_qtd,
             preco_muita_qtd=produto.preco_muita_qtd,
             preco_promocional=produto.preco_promocional,
             qtd_corte_atacado=corte,
+            faixas=[self._faixa_out(f) for f in faixas],
+            proxima_faixa=self._faixa_out(seguinte) if seguinte else None,
         )
+
+    @staticmethod
+    def _faixa_out(faixa: Faixa) -> FaixaPrecoRead:
+        return FaixaPrecoRead(min_qtd=faixa.min_qtd, preco=faixa.preco)
 
     # ------------------------------------------------------------- caixa -> un
     def _resolver_qtd(

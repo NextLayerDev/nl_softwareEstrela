@@ -33,15 +33,49 @@
   /** Reais com ponto decimal, do jeito que o Decimal do Python lê. */
   const paraDecimal = (cents) => (cents / 100).toFixed(2);
 
-  /* Mesma regra do `pedido_service.sugerir_preco`: atacado quando a quantidade
-     alcança o corte, senão varejo. Duplicada aqui de propósito — é a única forma de a
-     prévia acompanhar a quantidade sem uma ida ao servidor por tecla digitada. O
-     servidor recalcula do zero no submit, então uma divergência vira preço certo no
-     pedido, nunca preço errado gravado. */
+  /* Mesma regra do `pedido_service.sugerir_preco`: se o produto tem tabela, a faixa
+     que vale para a quantidade manda; senão, atacado a partir do corte. Duplicada aqui
+     de propósito — é a única forma de a prévia acompanhar a quantidade sem uma ida ao
+     servidor por tecla digitada. O servidor recalcula do zero no submit, então uma
+     divergência vira preço certo no pedido, nunca preço errado gravado. */
   function precoSugerido(produto, qtd) {
+    const daTabela = faixaPara(produto.faixas, qtd);
+    if (daTabela !== null) return daTabela.preco;
     const corte = produto.qtdCorte;
     if (corte && qtd >= corte) return produto.precoMuita;
     return produto.precoPouca;
+  }
+
+  /** A faixa de maior minQtd que ainda seja <= qtd. null abaixo da primeira. */
+  function faixaPara(faixas, qtd) {
+    let escolhida = null;
+    for (const faixa of faixas || []) {
+      if (faixa.minQtd <= qtd) escolhida = faixa;
+      else break; // ordenado por minQtd: daqui pra frente é tudo maior
+    }
+    return escolhida;
+  }
+
+  /** "10 a 49 un" / "50+ un" — o mesmo rótulo que o servidor monta. */
+  function rotuloFaixa(faixas, qtd) {
+    const escolhida = faixaPara(faixas, qtd);
+    if (escolhida === null) return "";
+    const i = faixas.indexOf(escolhida);
+    const seguinte = faixas[i + 1];
+    return seguinte ? `${escolhida.minQtd} a ${seguinte.minQtd - 1} un` : `${escolhida.minQtd}+ un`;
+  }
+
+  /* Lê o data-faixas do resultado da busca. Preço vem em string e passa pelo
+     parseMoedaBR — dinheiro nunca por Number(). Texto ilegível vira "sem tabela". */
+  function faixasDe(dataset) {
+    try {
+      return JSON.parse(dataset.faixas || "[]").map(([minQtd, preco]) => ({
+        minQtd: Number(minQtd),
+        preco: centavos(preco),
+      }));
+    } catch {
+      return [];
+    }
   }
 
   /* O piso e o limite de desconto deixaram de barrar a venda (quem está no balcão
@@ -273,6 +307,7 @@
             precoMuita: centavos(d.precoMuita),
             precoMinimo: centavos(d.precoMinimo),
             qtdCorte: inteiro(d.qtdCorte, 0),
+            faixas: faixasDe(d),
             unidadesCaixa: inteiro(d.unidadesCaixa, 0),
             disponivel: d.disponivel || "",
           };
@@ -296,6 +331,8 @@
         },
 
         get faixaPrevista() {
+          const daTabela = rotuloFaixa(this.sel?.faixas, this.qtdEfetiva);
+          if (daTabela) return daTabela;
           if (!this.sel?.qtdCorte) return "varejo";
           return this.qtdEfetiva >= this.sel.qtdCorte ? "atacado" : "varejo";
         },

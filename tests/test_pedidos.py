@@ -872,3 +872,123 @@ def test_lista_mostra_selo_colorido_contagem_e_origem(client_vendedor, db, usuar
     assert 'class="selo-rascunho' in t  # e não um cinza só para todo status
     assert "Balcão" in t  # origem por extenso, com ícone
     assert "Todos os status" in t and "Toda origem" in t  # os dois filtros na tela
+
+
+# ======================================================= faixas de preço
+def _com_faixas(db, codigo, faixas, **kw):
+    """Produto com tabela de atacado, criado pelo service (passa pela validação)."""
+    from app.schemas.produto import FaixaPrecoCreate, ProdutoCreate
+    from app.services.produto_service import produto_service
+
+    return produto_service.criar(
+        db,
+        ProdutoCreate(
+            codigo=codigo,
+            descricao=f"Produto {codigo}",
+            preco_pouca_qtd=kw.get("pouca", Decimal("10.00")),
+            preco_muita_qtd=kw.get("muita", Decimal("9.00")),
+            qtd_corte_atacado=kw.get("corte"),
+            faixas=[FaixaPrecoCreate(min_qtd=q, preco=Decimal(p)) for q, p in faixas],
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("qtd", "preco", "rotulo"),
+    [
+        (1, "10.00", "1 a 9 un"),
+        (9, "10.00", "1 a 9 un"),
+        (10, "8.00", "10 a 49 un"),
+        (49, "8.00", "10 a 49 un"),
+        (50, "6.50", "50+ un"),
+        (900, "6.50", "50+ un"),
+    ],
+)
+def test_a_tabela_manda_no_preco(db, qtd, preco, rotulo):
+    """A regra em uma frase: se o produto tem tabela, a faixa da quantidade manda."""
+    prod = _com_faixas(db, f"FX{qtd}", [(1, "10.00"), (10, "8.00"), (50, "6.50")], corte=5)
+
+    s = pedido_service.sugerir_preco(prod, qtd)
+    assert s.preco_sugerido == Decimal(preco)
+    assert s.faixa == "tabela"
+    assert s.faixa_rotulo == rotulo
+
+
+def test_tabela_vence_varejo_e_atacado(db):
+    """O corte em 5 diria "atacado" (R$ 9,00) para 10 un; a tabela diz R$ 8,00."""
+    prod = _com_faixas(db, "FXV", [(1, "10.00"), (10, "8.00")], muita=Decimal("9.00"), corte=5)
+    assert pedido_service.sugerir_preco(prod, 10).preco_sugerido == Decimal("8.00")
+
+
+def test_sem_tabela_continua_na_regra_de_sempre(db):
+    """Produto sem faixas é, byte a byte, o comportamento de antes da migration."""
+    prod = _produto(db, "FXS", pouca=Decimal("10.00"), muita=Decimal("9.00"), corte=50)
+
+    assert pedido_service.sugerir_preco(prod, 1).faixa == "varejo"
+    assert pedido_service.sugerir_preco(prod, 50).faixa == "atacado"
+    assert pedido_service.sugerir_preco(prod, 50).preco_sugerido == Decimal("9.00")
+    assert pedido_service.sugerir_preco(prod, 1).faixas == []
+
+
+def test_abaixo_da_primeira_faixa_cai_no_corte(db):
+    """Tabela começando em 10: quem leva 3 volta para varejo/atacado.
+
+    Só acontece com tabela escrita na mão ou vinda do ETL — o formulário exige a faixa
+    de 1 un. Mas é melhor cair no preço antigo do que vender a R$ 0,00.
+    """
+    from app.models.produto import ProdutoFaixaPreco
+
+    prod = _produto(db, "FXB", pouca=Decimal("10.00"), muita=Decimal("9.00"), corte=100)
+    prod.faixas.append(ProdutoFaixaPreco(min_qtd=10, preco=Decimal("8.00")))
+    db.flush()
+
+    assert pedido_service.sugerir_preco(prod, 3).faixa == "varejo"
+    assert pedido_service.sugerir_preco(prod, 3).preco_sugerido == Decimal("10.00")
+    assert pedido_service.sugerir_preco(prod, 10).faixa == "tabela"
+
+
+def test_proxima_faixa_e_o_empurraozinho(db):
+    prod = _com_faixas(db, "FXP", [(1, "10.00"), (10, "8.00"), (50, "6.50")])
+
+    assert pedido_service.sugerir_preco(prod, 5).proxima_faixa.min_qtd == 10
+    assert pedido_service.sugerir_preco(prod, 50).proxima_faixa is None
+
+
+def test_pedido_grava_o_preco_da_faixa(db, usuario_vendedor):
+    """O caminho inteiro: carrinho sem preço digitado sai pela tabela."""
+    prod = _com_faixas(db, "FXPED", [(1, "10.00"), (10, "8.00")])
+    var = _variacao(db, prod, fisico=200)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(itens=[{"tipo": "catalogo", "variacao_id": var.id, "qtd": 12}]),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    db.refresh(pedido)
+    assert pedido.itens[0].preco_unit == Decimal("8.00")
+    assert pedido.total == Decimal("96.00")
+
+
+def test_preco_digitado_ainda_vence_a_tabela(db, usuario_vendedor):
+    """A tabela manda sobre varejo/atacado, não sobre o que o vendedor negociou."""
+    prod = _com_faixas(db, "FXD", [(1, "10.00"), (10, "8.00")])
+    var = _variacao(db, prod, fisico=200)
+
+    pedido = pedido_service.criar_completo(
+        db,
+        _completo(
+            itens=[
+                {
+                    "tipo": "catalogo",
+                    "variacao_id": var.id,
+                    "qtd": 12,
+                    "preco_unit": Decimal("7.00"),
+                }
+            ]
+        ),
+        usuario_vendedor.id,
+        "vendedor",
+    )
+    db.refresh(pedido)
+    assert pedido.itens[0].preco_unit == Decimal("7.00")

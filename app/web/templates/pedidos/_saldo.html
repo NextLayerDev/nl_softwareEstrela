@@ -26,12 +26,47 @@
 
   <div class="mt-2">
     <p>
-      Sugestão ({{ sugestao.faixa }}): <strong>{{ sugestao.preco_sugerido | moeda }}</strong>
+      Sugestão ({{ sugestao.faixa_rotulo or sugestao.faixa }}):
+      <strong>{{ sugestao.preco_sugerido | moeda }}</strong>
+      {# Com tabela, varejo/atacado NÃO estão valendo — mostrá-los aqui seria oferecer
+         dois preços ao mesmo tempo para quem está fechando a venda. #}
+      {% if not sugestao.faixas %}
       <span class="text-gray-500">
         — varejo {{ sugestao.preco_pouca_qtd | moeda }} / atacado {{ sugestao.preco_muita_qtd | moeda }}
         {% if sugestao.qtd_corte_atacado %}(corte ≥ {{ sugestao.qtd_corte_atacado }}){% endif %}
       </span>
+      {% else %}
+      <span class="selo-neutro ml-1">tabela</span>
+      {% endif %}
     </p>
+
+    {% if sugestao.faixas %}
+    <table class="tabela tabela-densa mt-2 w-auto">
+      <caption class="sr-only">Tabela de preço por quantidade</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="text-left">A partir de</th>
+          <th scope="col" class="text-right">Preço un.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in sugestao.faixas %}
+        <tr>
+          <td>{{ f.min_qtd }} un</td>
+          <td class="text-right">{{ f.preco | moeda }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {# O empurrãozinho: é a informação que faz o cliente levar mais. #}
+    {% if sugestao.proxima_faixa %}
+    <p class="text-gold-700">
+      Levando {{ sugestao.proxima_faixa.min_qtd }} un, cada uma sai por
+      <strong>{{ sugestao.proxima_faixa.preco | moeda }}</strong>.
+    </p>
+    {% endif %}
     {% if sugestao.preco_promocional %}
     <p class="text-gold-700">Promoção disponível: {{ sugestao.preco_promocional | moeda }}</p>
     {% endif %}

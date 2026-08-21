@@ -3,9 +3,23 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import PERFIS_SEM_CUSTO, EstoqueModo, RotuloAprox
+
+
+class FaixaPrecoCreate(BaseModel):
+    """Uma linha da tabela de atacado, como veio do formulário."""
+
+    min_qtd: int = Field(ge=1, le=1_000_000)
+    preco: Decimal = Field(ge=0, le=9_999_999)
+
+
+class FaixaPrecoRead(FaixaPrecoCreate):
+    # `from_attributes` é obrigatório: `produto_para_dict` faz
+    # `ProdutoRead.model_validate(produto)`, e sem isto a validação estoura no objeto
+    # ORM aninhado.
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VariacaoCreate(BaseModel):
@@ -70,6 +84,7 @@ class ProdutoCreate(BaseModel):
     publicar_catalogo: bool = False
     variacoes: list[VariacaoCreate] = []
     codigos_alt: list[CodigoAltCreate] = []
+    faixas: list[FaixaPrecoCreate] = []
 
     @field_validator("codigo", "descricao")
     @classmethod
@@ -96,6 +111,9 @@ class ProdutoUpdate(BaseModel):
     ativo: bool | None = None
     publicar_catalogo: bool | None = None
     codigos_alt: list[CodigoAltCreate] = []
+    # `None` é "não mexe" e lista vazia é "apagar a tabela" — os dois são pedidos
+    # legítimos, então a diferença tem que sobreviver até o service.
+    faixas: list[FaixaPrecoCreate] | None = None
 
     @field_validator("codigo")
     @classmethod
@@ -129,6 +147,7 @@ class ProdutoRead(BaseModel):
     publicar_catalogo: bool
     variacoes: list[VariacaoRead] = []
     codigos_alt: list[CodigoAltRead] = []
+    faixas: list[FaixaPrecoRead] = []
 
 
 def produto_para_dict(produto: Any, perfil: str) -> dict[str, Any]:
