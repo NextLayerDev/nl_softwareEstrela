@@ -1,11 +1,16 @@
-{# Fragmento: tabela de itens + totais. Trocado via HTMX ao adicionar/remover/descontar.
+{# Fragmento: tabela de itens + totais + observação. Trocado via HTMX a cada mudança.
 
    `oob_bloco` é flag SEPARADA da `oob` de propósito. As rotas de item/desconto trocam
    este bloco pelo hx-target (`outerHTML`), e o htmx remove do conteúdo qualquer nó
    marcado como OOB antes do swap principal — marcar o #bloco-itens ali apagaria a
-   tabela da tela. Só a colagem, que responde com `hx-swap="none"`, liga a flag. #}
-<div id="bloco-itens"{% if oob_bloco %} hx-swap-oob="true"{% endif %} class="card">
-  <h3 class="mb-3 text-sm font-semibold">Itens</h3>
+   tabela da tela. Só a colagem, que responde com `hx-swap="none"`, liga a flag.
+
+   NÃO tem `.card`: quem embrulha é o detalhe, para o lançamento de item e a tabela
+   aparecerem como um bloco só, como no omni. O formulário de lançamento fica FORA
+   deste fragmento de propósito — ele é trocado a cada item, e levar o formulário junto
+   apagaria a busca e o produto selecionado no meio do trabalho. #}
+{% from "_icones.html" import icone %}
+<div id="bloco-itens"{% if oob_bloco %} hx-swap-oob="true"{% endif %}>
   <div class="overflow-x-auto">
     <table class="tabela w-full">
       <thead>
@@ -60,27 +65,66 @@
           {% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ 8 if editavel else 7 }}" class="py-6 text-center text-gray-400">
-          Nenhum item.
+        <tr><td colspan="{{ 8 if editavel else 7 }}">
+          <div class="vazio">
+            <span class="vazio-icone" aria-hidden="true">{{ icone("carrinho") }}</span>
+            <p>Nenhum item ainda.</p>
+          </div>
         </td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
-  <div class="mt-4 flex flex-col items-end gap-2">
-    {% if editavel %}
-    <form class="flex items-end gap-2" method="post" action="/pedidos/{{ pedido.id }}/desconto"
-          hx-post="/pedidos/{{ pedido.id }}/desconto" hx-target="#bloco-itens" hx-swap="outerHTML">
-      <div>
-        <label class="label">Desconto total (R$)</label>
-        <input type="text" name="desconto" value="{{ pedido.desconto_total }}" class="input w-32" />
+  {# Totais no formato do omni: subtotal, desconto e total, um sobre o outro e
+     alinhados à direita. O desconto grava no `blur` — botão "Aplicar" era um clique a
+     mais para o mesmo efeito, e quem digitava e saía do campo achava que tinha salvo. #}
+  <div class="mt-4 flex justify-end">
+    <dl class="w-full max-w-xs space-y-1 text-sm">
+      <div class="flex items-center justify-between gap-3">
+        <dt class="text-gray-500">Subtotal dos itens</dt>
+        <dd>{{ (pedido.itens | sum(attribute="subtotal")) | moeda }}</dd>
       </div>
-      <button class="btn-secundario">Aplicar</button>
-    </form>
+      <div class="flex items-center justify-between gap-3">
+        <dt class="text-gray-500">
+          <label for="desconto-total">Desconto total (R$)</label>
+        </dt>
+        <dd>
+          {% if editavel %}
+          <input type="text" id="desconto-total" name="desconto" class="input h-8 w-28 text-right"
+                 {# pt-BR no campo: o `parse_decimal_br` lê os dois, mas devolver "10.00"
+                    para quem digitou "10,00" é o sistema corrigindo a pessoa à toa. #}
+                 value="{{ ("%.2f" % pedido.desconto_total) | replace(".", ",") }}"
+                 hx-post="/pedidos/{{ pedido.id }}/desconto"
+                 hx-trigger="blur changed" hx-target="#bloco-itens" hx-swap="outerHTML" />
+          {% else %}
+          {{ pedido.desconto_total | moeda }}
+          {% endif %}
+        </dd>
+      </div>
+      <div class="flex items-center justify-between gap-3 border-t border-marca-borda pt-1 text-lg font-bold">
+        <dt>Total</dt>
+        <dd>{{ pedido.total | moeda }}</dd>
+      </div>
+    </dl>
+  </div>
+
+  {# Observação junto dos itens, como no omni — e editável depois de confirmar: o
+     recado de entrega quase sempre chega DEPOIS que o pedido fechou. #}
+  <div class="mt-4">
+    <label class="label" for="observacao-pedido">Observação</label>
+    {% if pedido.status in ("entregue", "cancelado") %}
+      <p class="text-sm text-gray-500">{{ pedido.observacao or "—" }}</p>
+    {% else %}
+      <textarea id="observacao-pedido" name="observacao" rows="2" class="input w-full"
+                placeholder="Ex.: entregar após as 18h"
+                hx-post="/pedidos/{{ pedido.id }}/observacao"
+                hx-trigger="blur changed" hx-target="#bloco-itens" hx-swap="outerHTML"
+      >{{ pedido.observacao or "" }}</textarea>
     {% endif %}
-    <p class="text-lg font-bold">Total: {{ pedido.total | moeda }}</p>
   </div>
 </div>
-{# Atualiza as ações do pedido (habilita/desabilita Confirmar) sem recarregar. #}
-{% if oob %}{% include "pedidos/_acoes.html" %}{% endif %}
+{# Fora do #bloco-itens: trocados por OOB na mesma resposta. As ações porque o
+   "Confirmar" habilita ao entrar o primeiro item; o resumo porque uma planilha que só
+   atualiza na próxima navegação é uma planilha que mente. #}
+{% if oob %}{% include "pedidos/_acoes.html" %}{% include "pedidos/_resumo_planilha.html" %}{% endif %}

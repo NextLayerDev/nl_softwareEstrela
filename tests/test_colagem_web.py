@@ -186,9 +186,11 @@ def test_rotas_antigas_de_item_nao_marcam_o_bloco_como_oob(client_admin, produto
         f"{pedido_url}/desconto", data={"desconto": "1,00"}, headers={"HX-Request": "true"}
     )
     assert r.status_code == 200
-    assert 'id="bloco-itens" class=' in r.text
+    assert 'id="bloco-itens"' in r.text
     assert 'id="bloco-itens" hx-swap-oob' not in r.text
-    assert 'hx-swap-oob="true"' in r.text  # o _acoes.html continua vindo OOB
+    # As ações e o resumo continuam vindo OOB na mesma resposta.
+    assert 'id="acoes-pedido" hx-swap-oob="true"' in r.text
+    assert 'id="bloco-resumo" hx-swap-oob="true"' in r.text
 
 
 # --------------------------------------------------------------------- planilha do dia
@@ -382,3 +384,85 @@ def test_item_avulso_no_rascunho_aberto(client_admin, db, produto):
     assert r.status_code == 200
     assert "TAXA DE GRAVACAO" in r.text
     assert "R$ 25,00" in r.text  # 1×10 + 2×7,50
+
+
+# =================================================== detalhe do pedido (padrão omni)
+def _pedido_com_item(client_admin, db, produto):
+    var = _variacao_de(db, produto)
+    r = client_admin.post(
+        "/pedidos",
+        data={
+            "cliente_nome": "Maria",
+            "itens_json": json.dumps(
+                [{"tipo": "catalogo", "variacao_id": var.id, "qtd": 3, "preco_unit": "15.50"}]
+            ),
+        },
+        follow_redirects=False,
+    )
+    return r.headers["location"]
+
+
+def test_detalhe_mostra_o_selo_de_status_no_cabecalho(client_admin, db, produto):
+    """O status é a primeira coisa que se quer saber ao abrir um pedido."""
+    t = client_admin.get(_pedido_com_item(client_admin, db, produto)).text
+    cabecalho = t.split("<h1", 1)[1].split("</h1>", 1)[0]
+    assert 'id="status-pedido"' in cabecalho
+    assert "selo-rascunho" in cabecalho
+
+
+def test_detalhe_mostra_a_planilha_do_resumo_sempre(client_admin, db, produto):
+    """No omni ela fica visível o tempo todo, sem clicar em "gerar"."""
+    t = client_admin.get(_pedido_com_item(client_admin, db, produto)).text
+    assert 'id="bloco-resumo"' in t
+    assert "Resumo do pedido" in t
+    assert "SUB. TOTAL" in t  # o cabeçalho amarelo da planilha
+    # e os dados prontos para o <canvas>, em camelCase e centavos
+    assert '"precoCentavos":1550' in t
+    assert "resumo_pedido.js" in t
+
+
+def test_detalhe_traz_os_tres_totais_e_a_observacao(client_admin, db, produto):
+    t = client_admin.get(_pedido_com_item(client_admin, db, produto)).text
+    assert "Subtotal dos itens" in t
+    assert "Desconto total" in t
+    # o desconto grava no blur, sem botão "Aplicar"
+    assert 'hx-trigger="blur changed"' in t
+    assert 'id="observacao-pedido"' in t
+
+
+def test_detalhe_tem_as_tres_portas_de_adicionar_item(client_admin, db, produto):
+    """As mesmas três abas de /pedidos/novo, para os dois caminhos não divergirem."""
+    t = client_admin.get(_pedido_com_item(client_admin, db, produto)).text
+    assert "Do catálogo" in t and "Item avulso" in t and "Colar itens" in t
+    assert 'id="painel-colagem"' in t  # a colagem virou aba, não card solto
+
+
+def test_adicionar_item_atualiza_o_resumo_na_mesma_resposta(client_admin, db, produto):
+    """Uma planilha que só atualiza na próxima navegação é uma planilha que mente."""
+    url = _pedido_com_item(client_admin, db, produto)
+    pedido_id = url.rsplit("/", 1)[1]
+
+    r = client_admin.post(
+        f"/pedidos/{pedido_id}/itens-avulsos",
+        data={"nome": "FRETE", "qtd": "1", "preco_unit": "20,00"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert r.status_code == 200
+    assert 'id="bloco-resumo" hx-swap-oob="true"' in r.text
+    assert "FRETE" in r.text
+    assert '"totalCentavos":6650' in r.text  # 3×15,50 + 20,00
+
+
+def test_observacao_grava_pelo_blur(client_admin, db, produto):
+    url = _pedido_com_item(client_admin, db, produto)
+    pedido_id = url.rsplit("/", 1)[1]
+
+    r = client_admin.post(
+        f"/pedidos/{pedido_id}/observacao",
+        data={"observacao": "entregar após as 18h"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert r.status_code == 200
+    assert "entregar após as 18h" in client_admin.get(url).text

@@ -20,6 +20,8 @@ from app.schemas.pedido import (
     ItemAvulsoAdicionar,
     ItemCarrinho,
     PedidoCompletoCreate,
+    ResumoItem,
+    ResumoPedidoOut,
     SugestaoPreco,
 )
 from app.services.estoque_service import estoque_service
@@ -246,6 +248,56 @@ class PedidoService:
         db.refresh(pedido)
         pedido.desconto_total = Decimal(dados.desconto_total).quantize(CENT)
         self._recalcular_total(pedido)
+        db.flush()
+        return pedido
+
+    # ------------------------------------------------------------- resumo em imagem
+    def montar_resumo(self, pedido: Pedido) -> ResumoPedidoOut:
+        """Os dados da planilha amarela que o cliente recebe no WhatsApp.
+
+        Puro, sem `Session`: o `<canvas>` do navegador desenha a partir daqui e não
+        recalcula nada. Dinheiro sai em CENTAVOS inteiros de propósito — é o formato que
+        o JS usa do começo ao fim, e converter Decimal→float no meio do caminho é como
+        se perde centavo.
+        """
+        return ResumoPedidoOut(
+            titulo="Pedido",
+            cliente=pedido.nome_cliente,
+            data=pedido.criado_em.strftime("%d/%m/%Y") if pedido.criado_em else "",
+            numero=f"#{pedido.numero}" if pedido.numero else "RASCUNHO",
+            itens=[
+                ResumoItem(
+                    codigo=item.codigo_exibido or "",
+                    descricao=item.descricao_exibida,
+                    qtd=item.qtd,
+                    preco_centavos=self._centavos(item.preco_unit),
+                    subtotal_centavos=self._centavos(item.subtotal),
+                )
+                for item in pedido.itens
+            ],
+            desconto_centavos=self._centavos(pedido.desconto_total),
+            total_centavos=self._centavos(pedido.total),
+        )
+
+    @staticmethod
+    def _centavos(valor: Decimal | None) -> int:
+        return int((valor or Decimal("0")).quantize(CENT) * 100)
+
+    # ------------------------------------------------------------- observação
+    def definir_observacao(self, db: Session, pedido_id: int, texto: str) -> Pedido:
+        """Grava a observação. Editável até o pedido sair de circulação.
+
+        Diferente dos itens, que travam no rascunho: a observação é recado para quem
+        separa e para quem entrega ("cliente busca depois das 18h"), e essa informação
+        costuma chegar DEPOIS de o pedido estar confirmado. Travá-la junto com os itens
+        obrigaria a cancelar um pedido bom para anotar um detalhe de entrega.
+        """
+        pedido = pedido_repo.get(db, pedido_id)
+        if pedido is None:
+            raise NaoEncontradoError("Pedido não encontrado.")
+        if pedido.status in (StatusPedido.ENTREGUE, StatusPedido.CANCELADO):
+            raise RegraNegocioError("O pedido já foi finalizado.")
+        pedido.observacao = (texto or "").strip()[:2000] or None
         db.flush()
         return pedido
 

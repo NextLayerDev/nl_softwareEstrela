@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
 
 
 class PedidoCreate(BaseModel):
@@ -142,3 +143,41 @@ class SugestaoPreco(BaseModel):
     preco_muita_qtd: Decimal
     preco_promocional: Decimal | None
     qtd_corte_atacado: int | None
+
+
+class _ResumoBase(BaseModel):
+    """Sai em camelCase para o JS.
+
+    O `resumo_pedido.js` desenha o mesmo objeto que o carrinho de `/pedidos/novo` monta
+    no navegador, e lá as chaves nascem em camelCase. Traduzir aqui, no serializador, é
+    o que deixa o desenho ter UM contrato só em vez de dois dialetos.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class ResumoItem(_ResumoBase):
+    """Uma linha da planilha do resumo. Dinheiro em CENTAVOS inteiros."""
+
+    codigo: str = ""
+    descricao: str
+    qtd: int
+    preco_centavos: int
+    subtotal_centavos: int
+
+
+class ResumoPedidoOut(_ResumoBase):
+    """O resumo do pedido em imagem, pronto para o `<canvas>` desenhar.
+
+    O mesmo formato serve as duas telas: o carrinho de `/pedidos/novo` monta isto no
+    navegador, o detalhe recebe daqui. Centavos inteiros do começo ao fim — o desenho
+    não recalcula dinheiro, só formata.
+    """
+
+    titulo: str = "Pedido"
+    cliente: str
+    data: str
+    numero: str
+    itens: list[ResumoItem] = []
+    desconto_centavos: int = 0
+    total_centavos: int = 0

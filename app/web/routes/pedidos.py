@@ -39,6 +39,23 @@ def _to_decimal(valor: str | None) -> Decimal:
     return lido if lido is not None else Decimal("0")
 
 
+def _ctx_pedido(usuario: Usuario, pedido: Pedido, *, oob: bool = False, **extra) -> dict:
+    """Contexto dos fragmentos do pedido (itens, resumo, ações).
+
+    Existe para o resumo não ficar de fora de nenhuma resposta: o card da planilha é
+    trocado por OOB junto com a tabela, e antes disso era só lembrar de passar `resumo`
+    nos quatro lugares — o tipo de coisa que some no quinto.
+    """
+    return {
+        "user": usuario,
+        "pedido": pedido,
+        "resumo": pedido_controller.montar_resumo(pedido),
+        "editavel": pedido.status == StatusPedido.RASCUNHO,
+        "oob": oob,
+        **extra,
+    }
+
+
 # ===================================================================== LISTAR
 @router.get("/pedidos", response_class=HTMLResponse)
 def index_pedidos(
@@ -238,14 +255,7 @@ def colar_itens(
     """
     resultado = pedido_controller.colar_itens(db, pedido_id, texto, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {
-        "user": usuario,
-        "pedido": pedido,
-        "resultado": resultado,
-        "editavel": True,
-        "oob": True,
-        "oob_bloco": True,
-    }
+    contexto = _ctx_pedido(usuario, pedido, oob=True, resultado=resultado, oob_bloco=True)
     return templates.TemplateResponse(request, "pedidos/_colagem_resultado.html", contexto)
 
 
@@ -291,12 +301,7 @@ def detalhe_pedido(
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {
-        "user": usuario,
-        "titulo": f"Pedido #{pedido.numero or pedido.id}",
-        "pedido": pedido,
-        "editavel": pedido.status == StatusPedido.RASCUNHO,
-    }
+    contexto = _ctx_pedido(usuario, pedido, titulo=f"Pedido #{pedido.numero or pedido.id}")
     return templates.TemplateResponse(request, "pedidos/detalhe.html", contexto)
 
 
@@ -313,12 +318,9 @@ def fragmento_estado(
     de outro vendedor.
     """
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {
-        "user": usuario,
-        "pedido": pedido,
-        "editavel": pedido.status == StatusPedido.RASCUNHO,
-    }
-    return templates.TemplateResponse(request, "pedidos/_estado_oob.html", contexto)
+    return templates.TemplateResponse(
+        request, "pedidos/_estado_oob.html", _ctx_pedido(usuario, pedido, oob=True)
+    )
 
 
 # ===================================================================== SALDO (HTMX)
@@ -367,8 +369,9 @@ def adicionar_item(
     )
     pedido_controller.adicionar_item(db, pedido_id, dados, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
-    return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
+    return templates.TemplateResponse(
+        request, "pedidos/_itens.html", _ctx_pedido(usuario, pedido, oob=True)
+    )
 
 
 @router.post("/pedidos/{pedido_id}/itens-avulsos", response_class=HTMLResponse)
@@ -393,8 +396,9 @@ def adicionar_item_avulso(
     )
     pedido_controller.adicionar_item_avulso(db, pedido_id, dados, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
-    return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
+    return templates.TemplateResponse(
+        request, "pedidos/_itens.html", _ctx_pedido(usuario, pedido, oob=True)
+    )
 
 
 @router.delete("/pedidos/{pedido_id}/itens/{item_id}", response_class=HTMLResponse)
@@ -407,8 +411,29 @@ def remover_item(
 ):
     pedido_controller.remover_item(db, pedido_id, item_id, usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
-    return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
+    return templates.TemplateResponse(
+        request, "pedidos/_itens.html", _ctx_pedido(usuario, pedido, oob=True)
+    )
+
+
+@router.post("/pedidos/{pedido_id}/observacao", response_class=HTMLResponse)
+def definir_observacao(
+    request: Request,
+    pedido_id: int,
+    observacao: str = Form(""),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Grava a observação do pedido. Chamada no `blur` do campo, sem botão de salvar.
+
+    Devolve o bloco de itens porque é lá que o campo mora — e devolver o mesmo fragmento
+    de sempre mantém o contrato com o htmx igual ao das outras quatro rotas de item.
+    """
+    pedido_controller.definir_observacao(db, pedido_id, observacao, usuario)
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    return templates.TemplateResponse(
+        request, "pedidos/_itens.html", _ctx_pedido(usuario, pedido, oob=True)
+    )
 
 
 @router.post("/pedidos/{pedido_id}/desconto", response_class=HTMLResponse)
@@ -421,8 +446,9 @@ def aplicar_desconto(
 ):
     pedido_controller.aplicar_desconto_total(db, pedido_id, _to_decimal(desconto), usuario)
     pedido = pedido_controller.get(db, pedido_id, usuario)
-    contexto = {"user": usuario, "pedido": pedido, "editavel": True, "oob": True}
-    return templates.TemplateResponse(request, "pedidos/_itens.html", contexto)
+    return templates.TemplateResponse(
+        request, "pedidos/_itens.html", _ctx_pedido(usuario, pedido, oob=True)
+    )
 
 
 # ===================================================================== CICLO
