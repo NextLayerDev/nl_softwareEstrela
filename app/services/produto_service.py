@@ -4,8 +4,14 @@ from sqlalchemy.orm import Session
 
 from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
+from app.core.precos import normalizar_faixas, validar_faixas
 from app.models.enums import EstoqueModo, OrigemMov
-from app.models.produto import Produto, ProdutoCodigoAlt, ProdutoVariacao
+from app.models.produto import (
+    Produto,
+    ProdutoCodigoAlt,
+    ProdutoFaixaPreco,
+    ProdutoVariacao,
+)
 from app.repositories.produto_repo import produto_repo
 from app.schemas.produto import ProdutoCreate, ProdutoUpdate, VariacaoCreate
 from app.services.estoque_service import estoque_service
@@ -94,6 +100,7 @@ class ProdutoService:
             produto.codigos_alt.append(
                 ProdutoCodigoAlt(codigo_alt=c.codigo_alt, fornecedor_id=c.fornecedor_id)
             )
+        self._aplicar_faixas(produto, dados.faixas)
         produto_repo.add(db, produto)
         eventos.emitir(db, "produto.criado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
@@ -111,7 +118,7 @@ class ProdutoService:
         # Campos simples (codigo e codigos_alt são tratados à parte: o código
         # passa por validação de unicidade e codigos_alt é relationship de lista).
         for campo, valor in dados.model_dump(
-            exclude_unset=True, exclude={"codigo", "codigos_alt"}
+            exclude_unset=True, exclude={"codigo", "codigos_alt", "faixas"}
         ).items():
             setattr(produto, campo, valor)
         # Códigos alternativos: reconcilia add/remove por string (preserva os
@@ -126,9 +133,27 @@ class ProdutoService:
         for codigo_alt in desejados:
             if codigo_alt not in existentes:
                 produto.codigos_alt.append(ProdutoCodigoAlt(codigo_alt=codigo_alt))
+        # `None` é "o formulário não trouxe o editor" e lista vazia é "apague a tabela".
+        # Sem essa distinção, salvar de qualquer tela sem o editor zeraria as faixas em
+        # silêncio — o mesmo buraco que `preco_custo`/`preco_minimo` têm no controller.
+        if dados.faixas is not None:
+            self._aplicar_faixas(produto, dados.faixas)
         db.flush()
         eventos.emitir(db, "produto.atualizado", _dados_produto(produto), audiencia=eventos.TODOS)
         return produto
+
+    def _aplicar_faixas(self, produto: Produto, faixas) -> None:
+        """Reescreve a tabela de preço do produto por inteiro.
+
+        Reescrever em vez de reconciliar linha a linha porque são no máximo 10 linhas e
+        a ordem importa: trocar duas de lugar viraria uma dança de updates só para
+        respeitar a unicidade de (produto, min_qtd).
+        """
+        limpas = normalizar_faixas(faixas)
+        validar_faixas(limpas)
+        produto.faixas.clear()
+        for faixa in limpas:
+            produto.faixas.append(ProdutoFaixaPreco(min_qtd=faixa.min_qtd, preco=faixa.preco))
 
     def inativar(self, db: Session, produto_id: int) -> Produto:
         """Soft-delete: produtos nunca são removidos fisicamente (histórico/estoque)."""

@@ -19,6 +19,10 @@
         data-id="{{ v.id }}" data-codigo="{{ p.codigo }}" data-descricao="{{ p.descricao }}"
         data-cor="{{ v.cor or 'padrão' }}" data-img="{{ foto_url(v.imagem_url) if v.imagem_url else '' }}"
         data-preco-pouca="{{ p.preco_pouca_qtd }}" data-preco-muita="{{ p.preco_muita_qtd }}"
+        {# Tabela de atacado, quando o produto tem uma. É ela que manda no preço, então
+           vai junto para a prévia do carrinho acompanhar a quantidade sem ida ao
+           servidor. Pares com o preço em string — quem converte é o parseMoedaBR. #}
+        data-faixas="{{ p.faixas | faixas_json }}"
         data-qtd-corte="{{ p.qtd_corte_atacado or 0 }}"
         data-unidades-caixa="{{ p.unidades_por_caixa or 0 }}"
         {# O piso não é dado de custo: é o aviso que a tela mostra ao vendedor. Ainda

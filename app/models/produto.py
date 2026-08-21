@@ -3,7 +3,18 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, LargeBinary, Numeric, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,6 +93,16 @@ class Produto(Base):
     codigos_alt: Mapped[list[ProdutoCodigoAlt]] = relationship(
         back_populates="produto", cascade="all, delete-orphan"
     )
+    # `selectin` e não o lazy padrão: o `criar_completo` percorre até 100 itens e a
+    # colagem grava linha a linha DENTRO de um savepoint. Com carga preguiçosa por
+    # linha, cada item viraria um SELECT extra e a garantia de "3 consultas
+    # independente do volume" que a colagem documenta iria embora em silêncio.
+    faixas: Mapped[list[ProdutoFaixaPreco]] = relationship(
+        back_populates="produto",
+        cascade="all, delete-orphan",
+        order_by="ProdutoFaixaPreco.min_qtd",
+        lazy="selectin",
+    )
 
 
 class ProdutoVariacao(Base):
@@ -134,3 +155,27 @@ class ProdutoCodigoAlt(Base):
 
     produto: Mapped[Produto] = relationship(back_populates="codigos_alt")
     fornecedor: Mapped[Fornecedor | None] = relationship()
+
+
+class ProdutoFaixaPreco(Base):
+    """Uma linha da tabela de atacado: a partir de `min_qtd` un, cada uma sai por `preco`.
+
+    Tabela filha e não JSONB de propósito. O psycopg desserializa número JSON como
+    `float`, e `Decimal(8.0)` vira 8.000000000000000444… — dinheiro em ponto flutuante é
+    exatamente o que o CLAUDE.md §5 proíbe. De quebra, a unicidade de `min_qtd` passa a
+    valer no banco, e não só na validação do formulário.
+
+    A regra que usa isto mora em `app/core/precos.py`.
+    """
+
+    __tablename__ = "produto_faixas_preco"
+    __table_args__ = (UniqueConstraint("produto_id", "min_qtd", name="uq_faixa_produto_min_qtd"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    produto_id: Mapped[int] = mapped_column(
+        ForeignKey("produtos.id", ondelete="CASCADE"), index=True
+    )
+    min_qtd: Mapped[int] = mapped_column(Integer)
+    preco: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+
+    produto: Mapped[Produto] = relationship(back_populates="faixas")
