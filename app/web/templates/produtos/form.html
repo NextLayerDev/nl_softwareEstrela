@@ -29,6 +29,16 @@
         variacoes: [],
         codigos: {{ (produto.codigos_alt | map(attribute='codigo_alt') | list) | tojson if produto else '[]' }},
         faixas: {{ produto.faixas | faixas_json if produto else '[]' }},
+        especificacoes: {{ produto.especificacoes | especs_json if produto else '[]' }},
+        moverEspec(i, delta) {
+          const j = i + delta;
+          if (j < 0 || j >= this.especificacoes.length) return;
+          const [linha] = this.especificacoes.splice(i, 1);
+          this.especificacoes.splice(j, 0, linha);
+        },
+        temEspec(rotulo) {
+          return this.especificacoes.some((e) => (e[0] || '').toLowerCase() === rotulo.toLowerCase());
+        },
         get faixasOrdenadas() {
           return [...this.faixas].sort((a, b) => Number(a[0]) - Number(b[0]));
         },
@@ -229,6 +239,49 @@
       <button type="button" class="btn-secundario" x-show="!faixas.length"
               @click="gerarDoVarejoAtacado()">Gerar a partir de varejo/atacado</button>
     </div>
+  </div>
+
+  {# ------------------------------------------------------------- Ficha técnica #}
+  <div class="mt-6">
+    <h3 class="mb-2 font-semibold">Ficha técnica</h3>
+    <p class="mb-2 text-sm text-gray-500">
+      Medidas e material do produto. Aparecem no painel de preço do pedido — é como o
+      balcão responde "qual a altura?" sem sair do pedido que está montando.
+    </p>
+
+    {# SENTINELA, mesmo motivo das faixas: sem ele, salvar de um formulário sem o
+       editor apagaria a ficha inteira em silêncio. #}
+    <input type="hidden" name="tem_editor_especificacoes" value="1" />
+
+    <template x-for="(e, i) in especificacoes" :key="i">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <input class="input w-40" name="espec_rotulo" maxlength="40" placeholder="Altura"
+               :aria-label="`Rótulo da especificação ${i + 1}`" x-model="especificacoes[i][0]" />
+        <input class="input flex-1" name="espec_valor" maxlength="120" placeholder="50 cm"
+               :aria-label="`Valor da especificação ${i + 1}`" x-model="especificacoes[i][1]" />
+        <button type="button" class="btn-secundario !px-2" title="Mover para cima"
+                aria-label="Mover para cima" :disabled="i === 0"
+                @click="moverEspec(i, -1)">↑</button>
+        <button type="button" class="btn-secundario !px-2" title="Mover para baixo"
+                aria-label="Mover para baixo" :disabled="i === especificacoes.length - 1"
+                @click="moverEspec(i, 1)">↓</button>
+        <button type="button" class="btn-perigo text-xs"
+                @click="especificacoes.splice(i, 1)">Remover</button>
+      </div>
+    </template>
+
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <button type="button" class="btn-secundario" x-show="especificacoes.length < 20"
+              @click="especificacoes.push(['', ''])">+ Adicionar</button>
+      {# Atalhos para o que quase todo produto tem. Somem conforme são usados. #}
+      {% for sugestao in ["Altura", "Largura", "Profundidade", "Peso aproximado", "Material"] %}
+      <button type="button" class="btn-fantasma text-xs" x-show="!temEspec('{{ sugestao }}')"
+              @click="especificacoes.push(['{{ sugestao }}', ''])">+ {{ sugestao }}</button>
+      {% endfor %}
+    </div>
+    <p class="mt-1 text-xs text-gray-500" x-show="especificacoes.length >= 20" x-cloak>
+      Limite de 20 especificações.
+    </p>
   </div>
 
   <div class="mt-6 flex gap-2">
