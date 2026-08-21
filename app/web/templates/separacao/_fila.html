@@ -1,10 +1,13 @@
 {% from "_icones.html" import icone %}
+{% from "_ui.html" import selo_status %}
 {% for p in pedidos %}
 <tr>
   <td>{{ p.numero or p.id }}</td>
   <td>{{ p.nome_cliente }}</td>
-  <td>{{ p.itens | length }}</td>
-  <td><span class="selo-info">{{ p.status }}</span></td>
+  <td class="text-right">{{ p.itens | length }}</td>
+  {# `selo_status` em vez de um selo azul fixo com o enum cru: a fila mostrava
+     "separacao" em azul em TODA linha, sem distinguir o que já foi conferido. #}
+  <td>{{ selo_status(p.status) }}</td>
   <td>{{ p.criado_em.strftime("%d/%m %H:%M") if p.criado_em else "" }}</td>
   <td class="text-right">
     <a href="/separacao/{{ p.id }}" class="btn-primario">

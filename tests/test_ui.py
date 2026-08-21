@@ -61,3 +61,73 @@ def test_categoria_cliente_tem_aria_label(db) -> None:
     )
     assert 'role="img"' in html
     assert "Categoria: Ruim" in html
+
+
+# ------------------------------------------------- padrão único das telas de lista
+def test_fila_de_separacao_usa_o_selo_por_etapa() -> None:
+    """Regressão: a fila pintava TODA linha de azul, com o enum cru dentro.
+
+    `_fila.html` tinha `<span class="selo-info">{{ p.status }}</span>` fixo, então um
+    pedido já conferido aparecia igualzinho a um que ninguém tinha tocado — na tela
+    cujo trabalho é justamente distinguir os dois.
+    """
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    from app.core.templates import templates
+    from app.models.enums import StatusPedido
+
+    pedido = SimpleNamespace(
+        id=1,
+        numero=42,
+        nome_cliente="MARIA",
+        itens=[1, 2, 3],
+        status=StatusPedido.SEPARADO,
+        criado_em=datetime(2026, 8, 21, 14, 30),
+    )
+    html = templates.env.get_template("separacao/_fila.html").render(pedidos=[pedido])
+
+    assert "selo-separado" in html
+    assert "Separado" in html
+    assert "selo-info" not in html
+
+
+def test_listas_poem_os_filtros_fora_do_card() -> None:
+    """Mesmo desenho de /pedidos: lede, filtros soltos e a tabela dentro do card.
+
+    Antes cada tela punha a busca num lugar diferente — dentro do card em umas, fora
+    em outras — e era isso que fazia as telas parecerem de sistemas diferentes ENTRE SI.
+    """
+    for url, marcador in (
+        ("/produtos", "Buscar por código ou descrição"),
+        ("/estoque", "Buscar por código, descrição, cor ou localização"),
+        ("/clientes", "Buscar por nome, CNPJ/CPF ou telefone"),
+    ):
+        t = _admin().get(url).text
+        corpo = t.split("<main", 1)[1]
+        assert marcador in corpo, url
+        # a busca vem ANTES do primeiro card da tela
+        assert corpo.index(marcador) < corpo.index('class="card"'), url
+
+
+def test_migalhas_ficam_no_bloco_breadcrumbs() -> None:
+    """Dentro do `content` elas saíam ABAIXO do título, invertendo a hierarquia."""
+    for url in ("/financeiro", "/relatorios", "/relatorios/vendas"):
+        t = _admin().get(url).text
+        assert 'class="trilha"' in t, url
+        # a trilha pertence ao cabeçalho: vem antes do <main>
+        assert t.index('class="trilha"') < t.index("<main"), url
+
+
+def test_estados_vazios_usam_o_componente() -> None:
+    """`.vazio` em todo lugar — três telas improvisavam o seu."""
+    from app.core.templates import templates
+
+    for nome, ctx in (
+        ("financeiro/_linhas.html", {"contas": []}),
+        ("estoque/_cartoes_local.html", {"variacoes": [], "q": ""}),
+        ("separacao/_fila.html", {"pedidos": []}),
+    ):
+        html = templates.env.get_template(nome).render(**ctx)
+        assert 'class="vazio' in html, nome
+        assert "vazio-icone" in html, nome

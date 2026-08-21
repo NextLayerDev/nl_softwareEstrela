@@ -3,9 +3,9 @@
 {% from "_ui.html" import trilha %}
 {% block titulo %}Relatórios{% endblock %}
 {% block cabecalho %}Relatórios{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Relatórios", none)]) }}{% endblock %}
 
 {% block content %}
-{{ trilha([("Painel","/"), ("Relatórios", none)]) }}
 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
   <a href="/relatorios/vendas" class="card card-hover">
     <div class="flex items-center gap-3">
