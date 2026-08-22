@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     GITHUB_TOKEN_LEITURA: str = ""
     CI_CACHE_TTL_SEG: int = 300
 
+    # Webhook de saída para o catálogo externo (omni_respostaMax) — este sistema é o
+    # estoque-chefe, o catálogo lá é um espelho. Só produtos com publicar_catalogo=True
+    # entram na fila (app/services/catalogo_sync_service.py); o envio HTTP acontece fora
+    # do request, pelo job job_flush_sync_outbox (app/jobs.py). Vazio = sync desligada.
+    CATALOGO_WEBHOOK_URL: str = ""
+    CATALOGO_WEBHOOK_SECRET: str = ""
+    CATALOGO_WEBHOOK_TIMEOUT_SEG: float = 10.0
+
     # Hosts aceitos pelo TrustedHostMiddleware em produção (barra Host-header spoofing).
     # Em dev não é aplicado (o TestClient usa "testserver"). Aceita curingas (*.easypanel.host).
     # "*" = desliga a checagem (qualquer host). Por ora liberado; dá pra restringir depois
@@ -101,6 +109,11 @@ class Settings(BaseSettings):
         """Sem owner/repo, o card do CI nem tenta a rede (e a aba continua 100% local)."""
         return bool(self.GITHUB_OWNER and self.GITHUB_REPO)
 
+    @property
+    def catalogo_sync_habilitado(self) -> bool:
+        """Sem URL/segredo configurados, o job nem tenta a rede."""
+        return bool(self.CATALOGO_WEBHOOK_URL and self.CATALOGO_WEBHOOK_SECRET)
+
     @field_validator("GITHUB_OWNER", "GITHUB_REPO")
     @classmethod
     def _github_sem_barra(cls, v: str) -> str:
@@ -140,6 +153,8 @@ class Settings(BaseSettings):
             erros.append("JWT_SECRET fraco ou ausente (gere: openssl rand -hex 32).")
         if ":senha@" in self.DATABASE_URL:
             erros.append("DATABASE_URL usa a senha padrão 'senha'.")
+        if self.CATALOGO_WEBHOOK_URL and self.CATALOGO_WEBHOOK_SECRET in _SEGREDOS_FRACOS:
+            erros.append("CATALOGO_WEBHOOK_SECRET fraco ou ausente (gere: openssl rand -hex 32).")
         if erros:
             raise RuntimeError("Configuração insegura para produção: " + " ".join(erros))
         return self
