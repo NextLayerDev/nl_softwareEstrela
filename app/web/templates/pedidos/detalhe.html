@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icones.html" import icone %}
-{% from "_ui.html" import trilha %}
+{% from "_ui.html" import confirmar_modal, trilha %}
 {% block titulo %}Pedido #{{ pedido.numero or pedido.id }}{% endblock %}
 {# O selo fica ao lado do título, não escondido no card de Ações: é a primeira coisa
    que se quer saber ao abrir um pedido. O `_estado_oob` troca este mesmo id quando o
@@ -211,9 +211,12 @@
    Um card só, com o lançamento em cima e a tabela embaixo, como no omni. O formulário
    de lançamento fica fora do `_itens.html` porque aquele fragmento é trocado a cada
    item — levá-lo junto apagaria a busca e o produto selecionado no meio do trabalho. #}
-<div class="card">
+{# O `modal()` fica no CARD, não no fragmento: o `_itens.html` é trocado a cada item, e
+   o modal iria junto — sumindo no meio da confirmação. #}
+<div class="card" x-data="modal()" @keydown.escape.window="fechar()">
   <h3 class="mb-3 text-sm font-semibold">Itens</h3>
   {% include "pedidos/_itens.html" %}
+  {{ confirmar_modal() }}
 </div>
 
 </div>{# /coluna esquerda #}

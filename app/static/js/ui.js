@@ -34,6 +34,32 @@ document.addEventListener("alpine:init", () => {
       });
     },
 
+    /* Decide COMO a confirmação age.
+     *
+     * Sem `alvo`, é o caminho de sempre: o <form> do modal POSTa para `action` e o PRG
+     * do servidor faz o resto. É o que as telas de produtos, clientes e pedidos já usam,
+     * e não muda em nada.
+     *
+     * Com `alvo`, a ação é do htmx: ou o método não existe em <form> (DELETE), ou a
+     * resposta é um fragmento que precisa de `hx-target` — submeter o formulário
+     * navegaria a página inteira e jogaria a resposta fora.
+     *
+     * Chamar `htmx.ajax` daqui, e não pendurar `hx-delete` no botão, é de propósito: o
+     * htmx lê os atributos no momento em que o nó entra no DOM, e o botão do modal é
+     * criado antes de existir `dados`. Pendurar depois exigiria `htmx.process()` na mão
+     * a cada abertura — mais peça para dar errado do que uma chamada direta.
+     */
+    confirmar() {
+      const dados = this.dados || {};
+      if (!dados.alvo) return true;
+      window.htmx.ajax(dados.metodo || "post", dados.action, {
+        target: dados.alvo,
+        swap: dados.swap || "outerHTML",
+      });
+      this.fechar();
+      return false;
+    },
+
     fechar() {
       if (!this.aberto) return;
       this.aberto = false;

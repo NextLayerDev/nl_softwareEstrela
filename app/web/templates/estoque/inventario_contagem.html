@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icones.html" import icone %}
-{% from "_ui.html" import trilha %}
+{% from "_ui.html" import confirmar_botao, confirmar_modal, trilha %}
 {% block titulo %}Inventário #{{ inventario.id }}{% endblock %}
 {% block cabecalho %}Inventário #{{ inventario.id }}{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Estoque","/estoque"), ("Inventário","/inventario"), ("Contagem", none)]) }}{% endblock %}
@@ -11,10 +11,17 @@
 {% block acoes %}
 <a href="/inventario" class="btn-secundario"><span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar</a>
 {% if aberto and pode_aplicar %}
-<form method="post" action="/inventario/{{ inventario.id }}/aplicar"
-      onsubmit="return confirm('Aplicar o inventário?{% if _faltam %} {{ _faltam }} item(ns) sem contagem ficarão inalterados.{% endif %} Isso gera ajustes definitivos.');">
-  <button type="submit" class="btn-primario"><span class="nav-icone" aria-hidden="true">{{ icone("check") }}</span> Aplicar inventário</button>
-</form>
+{# Escopo próprio: o botão vive no bloco `acoes`, que o base.html renderiza fora do
+   `content` — não há ancestral com `modal()` para herdar. #}
+<span x-data="modal()" @keydown.escape.window="fechar()">
+  {{ confirmar_botao(
+       "/inventario/" ~ inventario.id ~ "/aplicar",
+       "Aplicar inventário", "Aplicar o inventário",
+       "Os saldos passam a valer o que foi contado, com ajuste registrado em cada variação.",
+       (_faltam ~ " item(ns) sem contagem ficam inalterados.") if _faltam else "Isso é definitivo.",
+       classe="btn-primario") }}
+  {{ confirmar_modal() }}
+</span>
 {% endif %}
 {% endblock %}
 
