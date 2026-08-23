@@ -169,3 +169,53 @@ def test_compre_junto_usa_o_mesmo_contrato_da_busca() -> None:
         "data-disponivel",
     }
     assert esperados <= set(re.findall(r"(data-[a-z-]+)=", macro))
+
+
+# ------------------------------------------------- confirmação: um mecanismo só
+def test_nenhum_template_usa_confirmacao_crua() -> None:
+    """Conviviam TRÊS mecanismos: a macro, `hx-confirm` e `window.confirm`.
+
+    Os dois crus não passam pelo modal do tema — saem com a cara do navegador, sem
+    título, sem detalhe e sem foco preso. Este teste é o que impede a volta deles.
+    """
+    from pathlib import Path
+
+    raiz = Path("app/web/templates")
+    ofensores = [
+        str(caminho.relative_to(raiz))
+        for caminho in raiz.rglob("*.html")
+        # O _ui.html é quem DEFINE o modal; a palavra aparece nos nomes das macros.
+        if caminho.name != "_ui.html"
+        and ("hx-confirm" in caminho.read_text() or "confirm(" in caminho.read_text())
+    ]
+    assert ofensores == [], f"confirmação crua em: {ofensores}"
+
+
+def test_macro_de_confirmacao_suporta_o_caminho_htmx() -> None:
+    """Sem `alvo` a macro segue no <form> POST; com `alvo`, vira htmx.
+
+    É o que permite confirmar um DELETE (que não existe em <form>) sem navegar a página
+    inteira e jogar o fragmento fora.
+    """
+    from pathlib import Path
+
+    from app.core.templates import templates
+
+    macro = templates.env.loader.get_source(templates.env, "_ui.html")[0]
+    assert "data-metodo" in macro and "data-alvo" in macro and "data-swap" in macro
+    # o formulário do modal decide entre os dois caminhos
+    assert "if (!confirmar())" in macro
+
+    ui_js = Path("app/static/js/ui.js").read_text()
+    assert "confirmar()" in ui_js
+    assert "window.htmx.ajax" in ui_js
+
+
+def test_remover_item_do_pedido_passa_pelo_modal() -> None:
+    """A remoção é um DELETE — o caso que obrigou a macro a aprender htmx."""
+    from app.core.templates import templates
+
+    fonte = templates.env.loader.get_source(templates.env, "pedidos/_itens.html")[0]
+    assert 'metodo="delete"' in fonte
+    assert 'alvo="#bloco-itens"' in fonte
+    assert "hx-delete" not in fonte

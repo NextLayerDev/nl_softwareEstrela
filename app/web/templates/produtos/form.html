@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icones.html" import icone %}
-{% from "_ui.html" import trilha %}
+{% from "_ui.html" import confirmar_modal, trilha %}
 {% block titulo %}{{ titulo }}{% endblock %}
 {% block cabecalho %}{{ titulo }}{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Produtos","/produtos"), (("Editar produto" if produto else "Novo produto"), none)]) }}{% endblock %}
@@ -399,6 +399,10 @@
     </form>
   </div>
 
+  {# `modal()` num wrapper próprio, aninhado: o x-data do card já carrega o estado do
+     formulário, e espalhar os dois no mesmo objeto quebraria o `this` do componente.
+     Fica FORA do #variacoes-thumbs para sobreviver aos swaps do HTMX. #}
+  <div x-data="modal()" @keydown.escape.window="fechar()">
   <div id="variacoes-thumbs" class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
     {% for variacao in produto.variacoes %}
       {% include "produtos/_thumb_variacao.html" %}
@@ -406,6 +410,8 @@
       <p class="text-sm text-gray-400">Este produto não tem variações cadastradas.</p>
     {% endfor %}
   </div>
+  {{ confirmar_modal() }}
+  </div>{# /escopo do modal #}
 </div>
 {% else %}
 <p class="mt-4 max-w-3xl text-sm text-gray-500">

@@ -10,6 +10,7 @@
    deste fragmento de propósito — ele é trocado a cada item, e levar o formulário junto
    apagaria a busca e o produto selecionado no meio do trabalho. #}
 {% from "_icones.html" import icone %}
+{% from "_ui.html" import confirmar_botao %}
 <div id="bloco-itens"{% if oob_bloco %} hx-swap-oob="true"{% endif %}>
   <div class="overflow-x-auto">
     <table class="tabela w-full">
@@ -57,10 +58,13 @@
           <td class="text-right">{{ item.subtotal | moeda }}</td>
           {% if editavel %}
           <td class="text-right">
-            <button class="btn-perigo text-xs"
-                    hx-delete="/pedidos/{{ pedido.id }}/itens/{{ item.id }}"
-                    hx-target="#bloco-itens" hx-swap="outerHTML"
-                    hx-confirm="Remover este item?">Remover</button>
+            {{ confirmar_botao(
+                 "/pedidos/" ~ pedido.id ~ "/itens/" ~ item.id,
+                 "Remover", "Remover item",
+                 "O item sai do pedido e o total é recalculado.",
+                 item.descricao_exibida,
+                 classe="btn-perigo text-xs",
+                 metodo="delete", alvo="#bloco-itens", swap="outerHTML") }}
           </td>
           {% endif %}
         </tr>

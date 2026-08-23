@@ -76,10 +76,20 @@
   confirmar_modal() uma vez. Cada botão-gatilho passa a ação/mensagem via data-* (evita
   quebra por aspas) e chama abrir({...dataset}).
 #}
-{% macro confirmar_botao(action, rotulo, titulo, mensagem, detalhe="", classe="btn-perigo") -%}
+{# Botão que pede confirmação. Exige um ancestral com `x-data="modal()"` e um
+   `confirmar_modal()` no mesmo escopo.
+
+   `alvo` (opcional) liga o caminho HTMX: sem ele o modal submete um <form> POST, como
+   sempre; com ele a confirmação vira `htmx.ajax(metodo, action, {target, swap})`. É o
+   que permite confirmar um DELETE ou uma ação que devolve fragmento sem navegar a
+   página inteira — e o que tirou o `hx-confirm` cru e o `window.confirm` do sistema. #}
+{% macro confirmar_botao(action, rotulo, titulo, mensagem, detalhe="", classe="btn-perigo",
+                         metodo="", alvo="", swap="") -%}
 <button type="button" class="{{ classe }}"
         data-action="{{ action }}" data-rotulo="{{ rotulo }}" data-titulo="{{ titulo }}"
         data-mensagem="{{ mensagem }}" data-detalhe="{{ detalhe }}"
+        {% if alvo %}data-metodo="{{ metodo or 'post' }}" data-alvo="{{ alvo }}"
+        data-swap="{{ swap or 'outerHTML' }}"{% endif %}
         @click="abrir({...$el.dataset}, $event)">{{ rotulo }}</button>
 {%- endmacro %}
 
@@ -91,7 +101,11 @@
       <h3 id="confirmar-titulo" class="mb-2 font-semibold" x-text="dados?.titulo"></h3>
       <p class="text-sm text-gray-600" x-text="dados?.mensagem"></p>
       <p class="mt-1 text-xs text-gray-500" x-show="dados?.detalhe" x-text="dados?.detalhe"></p>
-      <form method="post" :action="dados?.action" class="mt-4 flex justify-end gap-2">
+      {# `@submit` decide entre o POST do formulário e o htmx — ver `confirmar()` no
+         ui.js. O `<form>` continua sendo o caminho padrão, então nada muda para quem
+         não passa `alvo`. #}
+      <form method="post" :action="dados?.action" class="mt-4 flex justify-end gap-2"
+            @submit="if (!confirmar()) $event.preventDefault()">
         <button type="button" class="btn-secundario" @click="fechar()">Cancelar</button>
         <button type="submit" class="btn-perigo" x-text="dados?.rotulo || 'Confirmar'"></button>
       </form>

@@ -1,3 +1,4 @@
+{% from "_ui.html" import confirmar_botao %}
 <div id="var-thumb-{{ variacao.id }}" class="flex flex-col items-center gap-2 rounded-lg border border-marca-borda p-3{% if not variacao.ativo %} opacity-60{% endif %}">
   <div class="aspect-square w-full overflow-hidden rounded-lg bg-marca-fundo">
     {% if variacao.imagem_url %}
@@ -40,14 +41,20 @@
             class="btn-primario w-full px-2 py-1 text-xs">Reativar cor</button>
   {% else %}
     {% if variacao.imagem_url %}
-    <button hx-post="/produtos/variacao/{{ variacao.id }}/imagem/remover"
-            hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
-            hx-confirm="Remover apenas a foto desta cor?"
-            class="btn-perigo w-full px-2 py-1 text-xs">Remover foto</button>
+    {{ confirmar_botao(
+         "/produtos/variacao/" ~ variacao.id ~ "/imagem/remover",
+         "Remover foto", "Remover a foto",
+         "A cor continua cadastrada; só a imagem sai.",
+         variacao.cor or "padrão",
+         classe="btn-perigo w-full px-2 py-1 text-xs",
+         alvo="#var-thumb-" ~ variacao.id, swap="outerHTML") }}
     {% endif %}
-    <button hx-post="/produtos/variacao/{{ variacao.id }}/remover"
-            hx-target="#var-thumb-{{ variacao.id }}" hx-swap="outerHTML"
-            hx-confirm="Remover esta cor do produto? (Com saldo em estoque é bloqueado.)"
-            class="btn-perigo w-full px-2 py-1 text-xs">Remover cor</button>
+    {{ confirmar_botao(
+         "/produtos/variacao/" ~ variacao.id ~ "/remover",
+         "Remover cor", "Remover a cor",
+         "A cor sai do produto e deixa de aparecer em novos pedidos.",
+         "Com saldo em estoque, a remoção é bloqueada.",
+         classe="btn-perigo w-full px-2 py-1 text-xs",
+         alvo="#var-thumb-" ~ variacao.id, swap="outerHTML") }}
   {% endif %}
 </div>
