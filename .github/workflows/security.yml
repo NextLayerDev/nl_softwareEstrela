@@ -95,7 +95,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
@@ -115,7 +115,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Varrer app/ e scripts/
