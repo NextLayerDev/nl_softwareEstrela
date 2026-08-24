@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # setup-uv não publica tag móvel de major (v8 não existe como ref) — pinar exato.
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
@@ -112,7 +112,7 @@ jobs:
       S3_ACCESS_KEY: ""
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
@@ -263,7 +263,7 @@ jobs:
       S3_ACCESS_KEY: ""
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
