@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.4",
     "apscheduler>=3.11.2",
-    "boto3>=1.43.38",
+    "boto3>=1.43.51",
     "fastapi>=0.138.0",
     "gunicorn>=26.0.0",
     "httpx>=0.28.1",
