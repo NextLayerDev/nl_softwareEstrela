@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 # Chaves arbitrárias e fixas. Não reutilize entre jobs diferentes.
 LOCK_CI = 815_001
 LOCK_ATRASADOS = 815_002
+LOCK_SYNC_OUTBOX = 815_003
 
 
 def tenta_lock(db: Session, chave: int) -> bool:

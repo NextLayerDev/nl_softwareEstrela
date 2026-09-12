@@ -8,6 +8,7 @@ from app.core.estoque_alertas import abaixo_minimo
 from app.models.enums import EstoqueModo, OrigemMov, RotuloAprox, TipoMov
 from app.models.movimentacao import MovimentacaoEstoque
 from app.models.produto import ProdutoVariacao
+from app.services.catalogo_sync_service import catalogo_sync_service
 
 
 def _rotulo_variacao(variacao: ProdutoVariacao) -> str:
@@ -64,6 +65,8 @@ class EstoqueService:
         """
         if mov.origem == OrigemMov.IMPORTACAO:
             return
+        if variacao.produto is not None:
+            catalogo_sync_service.enfileirar_produto(db, variacao.produto)
         eventos.emitir(
             db,
             "estoque.movimentado",

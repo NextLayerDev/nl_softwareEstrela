@@ -16,6 +16,7 @@ from app.models.produto import (
 )
 from app.repositories.produto_repo import produto_repo
 from app.schemas.produto import ProdutoCreate, ProdutoUpdate, VariacaoCreate
+from app.services.catalogo_sync_service import catalogo_sync_service
 from app.services.estoque_service import estoque_service
 
 
@@ -111,10 +112,12 @@ class ProdutoService:
         self._aplicar_relacionados(db, produto, dados.relacionados)
         produto_repo.add(db, produto)
         eventos.emitir(db, "produto.criado", _dados_produto(produto), audiencia=eventos.TODOS)
+        catalogo_sync_service.enfileirar_produto(db, produto)
         return produto
 
     def atualizar(self, db: Session, produto_id: int, dados: ProdutoUpdate) -> Produto:
         produto = self.obter(db, produto_id)
+        publicava_antes = produto.publicar_catalogo
         # Código: valida unicidade excluindo o próprio produto (evita erro
         # genérico do Postgres e dá mensagem amigável, como na criação).
         if dados.codigo is not None:
@@ -159,6 +162,11 @@ class ProdutoService:
             self._aplicar_relacionados(db, produto, dados.relacionados)
         db.flush()
         eventos.emitir(db, "produto.atualizado", _dados_produto(produto), audiencia=eventos.TODOS)
+        # forcar=True só na transição True->False: manda 1 último snapshot
+        # (com publicar_catalogo=False) pro catálogo externo esconder o produto,
+        # em vez de simplesmente parar de sincronizar e deixá-lo visível e parado.
+        despublicou = publicava_antes and not produto.publicar_catalogo
+        catalogo_sync_service.enfileirar_produto(db, produto, forcar=despublicou)
         return produto
 
     def _aplicar_relacionados(self, db: Session, produto: Produto, ids) -> None:
@@ -229,6 +237,7 @@ class ProdutoService:
         produto.ativo = False
         db.flush()
         eventos.emitir(db, "produto.inativado", _dados_produto(produto), audiencia=eventos.TODOS)
+        catalogo_sync_service.enfileirar_produto(db, produto)
         return produto
 
     def reativar(self, db: Session, produto_id: int) -> Produto:
@@ -237,6 +246,7 @@ class ProdutoService:
         produto.ativo = True
         db.flush()
         eventos.emitir(db, "produto.reativado", _dados_produto(produto), audiencia=eventos.TODOS)
+        catalogo_sync_service.enfileirar_produto(db, produto)
         return produto
 
     def obter_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
@@ -250,6 +260,7 @@ class ProdutoService:
         variacao.cor = cor
         db.flush()
         eventos.emitir(db, "variacao.renomeada", _dados_variacao(variacao), audiencia=eventos.TODOS)
+        catalogo_sync_service.enfileirar_produto(db, variacao.produto)
         return variacao
 
     def adicionar_variacao(
@@ -286,6 +297,7 @@ class ProdutoService:
             estoque_service.entrada(
                 db, variacao, dados.estoque_fisico, usuario_id, origem=OrigemMov.MANUAL
             )
+        catalogo_sync_service.enfileirar_produto(db, produto)
         return variacao
 
     def remover_variacao(self, db: Session, variacao_id: int) -> tuple[ProdutoVariacao, str]:
@@ -298,6 +310,7 @@ class ProdutoService:
         Retorna (variacao, acao) onde acao é "inativada" ou "deletada".
         """
         variacao = self.obter_variacao(db, variacao_id)
+        produto = variacao.produto
         if variacao.estoque_fisico != 0 or variacao.estoque_reservado != 0:
             raise RegraNegocioError(
                 "Não é possível remover uma cor com saldo em estoque. "
@@ -312,6 +325,7 @@ class ProdutoService:
                 {**_dados_variacao(variacao), "acao": "inativada"},
                 audiencia=eventos.TODOS,
             )
+            catalogo_sync_service.enfileirar_produto(db, produto)
             return variacao, "inativada"
         # Limpa: hard-delete. Os bytes da foto vão junto com a linha (bytea no Postgres).
         # O payload é montado antes do delete: depois do flush a instância está expirada
@@ -320,6 +334,10 @@ class ProdutoService:
         db.delete(variacao)
         db.flush()
         eventos.emitir(db, "variacao.removida", dados_evento, audiencia=eventos.TODOS)
+        # db.delete() num filho não atualiza sozinho a coleção em memória do pai — sem
+        # isto, o snapshot do catálogo ainda listaria a variação recém-apagada.
+        db.expire(produto, ["variacoes"])
+        catalogo_sync_service.enfileirar_produto(db, produto)
         return variacao, "deletada"
 
     def reativar_variacao(self, db: Session, variacao_id: int) -> ProdutoVariacao:
@@ -337,6 +355,7 @@ class ProdutoService:
         variacao.ativo = True
         db.flush()
         eventos.emitir(db, "variacao.reativada", _dados_variacao(variacao), audiencia=eventos.TODOS)
+        catalogo_sync_service.enfileirar_produto(db, variacao.produto)
         return variacao
 
 
