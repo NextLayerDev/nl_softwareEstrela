@@ -11,14 +11,19 @@ from app.models.usuario import Usuario
 from app.repositories.pedido_repo import pedido_repo
 from app.schemas.colagem import LinhaResolvida, ResultadoColagem, ResultadoLote
 from app.schemas.pedido import (
+    ConsultaPlanilha,
     ItemAdicionar,
     ItemAvulsoAdicionar,
     PedidoCompletoCreate,
     PedidoCreate,
+    PedidoPlanilhaSalvar,
+    PlanilhaPedidoOut,
+    ResolucaoPlanilha,
     ResumoPedidoOut,
 )
 from app.services.colagem_service import colagem_service
 from app.services.pedido_service import pedido_service
+from app.services.planilha_service import planilha_service
 
 
 def _enum_ou_nada(enum_cls, valor: str):
@@ -102,6 +107,31 @@ class PedidoController:
         """Acrescenta em bloco os itens da planilha colada a um rascunho aberto."""
         self._carregar_para_usuario(db, pedido_id, usuario)
         return colagem_service.aplicar(db, pedido_id, texto, usuario.perfil, usuario.id)
+
+    # ----------------------------------------------------------- planilha editável
+    def resolver_planilha(
+        self, db: Session, consultas: list[ConsultaPlanilha], usuario: Usuario
+    ) -> list[ResolucaoPlanilha]:
+        """Responde as células CODIGO/QUANT. da planilha (sem gravar nada)."""
+        return planilha_service.resolver(db, consultas, usuario.perfil)
+
+    def criar_planilha(
+        self, db: Session, dados: PedidoPlanilhaSalvar, usuario: Usuario
+    ) -> tuple[Pedido, str | None]:
+        """Cria o pedido da planilha, já confirmado quando as regras deixam."""
+        return planilha_service.criar(db, dados, usuario.id, usuario.perfil)
+
+    def planilha_do_pedido(
+        self, db: Session, pedido_id: int, usuario: Usuario
+    ) -> PlanilhaPedidoOut:
+        return planilha_service.montar(self._carregar_para_usuario(db, pedido_id, usuario))
+
+    def salvar_planilha(
+        self, db: Session, pedido_id: int, dados: PedidoPlanilhaSalvar, usuario: Usuario
+    ) -> tuple[Pedido, str | None]:
+        """Grava a planilha editada num rascunho (e confirma, se pedido)."""
+        self._carregar_para_usuario(db, pedido_id, usuario)
+        return planilha_service.salvar_rascunho(db, pedido_id, dados, usuario.id, usuario.perfil)
 
     def adicionar_item(
         self, db: Session, pedido_id: int, dados: ItemAdicionar, usuario: Usuario

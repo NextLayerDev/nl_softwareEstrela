@@ -55,7 +55,13 @@ from app.schemas.colagem import (
     ResultadoLote,
     SugestaoProduto,
 )
-from app.schemas.pedido import ItemAdicionar, PedidoCreate
+from app.schemas.pedido import (
+    ConsultaPlanilha,
+    ItemAdicionar,
+    OpcaoPlanilha,
+    PedidoCreate,
+    ResolucaoPlanilha,
+)
 from app.services.pedido_service import pedido_service
 
 logger = logging.getLogger(__name__)
@@ -303,6 +309,84 @@ class ColagemService:
                 )
             )
         return resolvidas
+
+    def resolver_codigos(
+        self, db: Session, consultas: list[ConsultaPlanilha], perfil: str
+    ) -> list[ResolucaoPlanilha]:
+        """Casa os códigos digitados na planilha editável, um por célula.
+
+        Mesma escada do `_casar` (código exato, alternativo e normalizado). A descrição
+        entra só para escolher a COR de um código com várias ("GARRAFA PRETA"); casar
+        pela descrição quando o código não existe fica de fora — quem digitou um código
+        não quer um produto parecido no lugar, e a busca por descrição tem a sua própria
+        célula. Produto de várias cores sem cor legível volta como `duvida`.
+        """
+        linhas = [
+            LinhaColada(
+                numero=i + 1,
+                codigo=c.codigo.strip(),
+                descricao=c.descricao.strip(),
+                qtd=c.qtd,
+                preco_unit=None,
+                bruto=c.codigo,
+            )
+            for i, c in enumerate(consultas)
+        ]
+        # Código que não existe não chega ao `_casar`: lá ele cairia na descrição por
+        # trigrama e voltaria com um produto "parecido" que ninguém pediu.
+        indice = self._indexar(produto_repo.catalogo_por_codigos(db, [ln.codigo for ln in linhas]))
+        existe = [
+            bool(ln.codigo) and any(self._por_codigo(indice, ln.codigo)[::2]) for ln in linhas
+        ]
+        casos = iter(
+            self._casar(db, [ln for ln, ok in zip(linhas, existe, strict=True) if ok], perfil)
+        )
+
+        saida: list[ResolucaoPlanilha] = []
+        for ok in existe:
+            if not ok:
+                saida.append(ResolucaoPlanilha(situacao="nada", motivo="código não encontrado"))
+                continue
+            caso = next(casos)
+            if caso.variacao is not None and caso.dados is not None:
+                produto = caso.variacao.produto
+                preco = caso.dados.preco_unit or Decimal("0")
+                saida.append(
+                    ResolucaoPlanilha(
+                        situacao="ok",
+                        variacao_id=caso.variacao.id,
+                        codigo=produto.codigo,
+                        descricao=produto.descricao,
+                        cor=caso.variacao.cor,
+                        preco_centavos=int(preco.quantize(Decimal("0.01")) * 100),
+                    )
+                )
+                continue
+            pendencia = caso.pendencia
+            if pendencia is not None and pendencia.sugestoes:
+                saida.append(
+                    ResolucaoPlanilha(
+                        situacao="duvida",
+                        motivo=pendencia.motivo,
+                        opcoes=[
+                            OpcaoPlanilha(
+                                variacao_id=s.variacao_id,
+                                codigo=s.codigo,
+                                descricao=s.descricao,
+                                cor=s.cor,
+                            )
+                            for s in pendencia.sugestoes
+                        ],
+                    )
+                )
+                continue
+            saida.append(
+                ResolucaoPlanilha(
+                    situacao="nada",
+                    motivo=pendencia.motivo if pendencia is not None else "código não encontrado",
+                )
+            )
+        return saida
 
     # ------------------------------------------------------------- gravação
     def _gravar(

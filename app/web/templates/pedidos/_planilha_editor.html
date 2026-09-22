@@ -1,0 +1,244 @@
+{# A planilha do pedido, editável célula a célula — o mesmo desenho do "Resumo do pedido".
+
+   Só a marcação: quem inclui põe o `x-data="PedidoPlanilha.editor(...)"` no elemento de
+   fora (a página /pedidos/planilha em branco, ou o pedido aberto na lista em modo
+   planilha). Rascunho e pedido novo editam; pedido fechado aparece só para leitura.
+
+   A lista ancorada (busca de descrição, cores do código, clientes) mora FORA da área que
+   rola na horizontal: dentro dela, o overflow cortaria a lista na borda da folha. #}
+{% from "_icones.html" import icone %}
+<div class="relative space-y-3" @keydown.escape="fecharLista()" @click.outside="fecharLista()"
+     :data-planilha-sujo="sujo ? '1' : ''"
+     @planilha-fechar-bloqueado="erro = 'Salve ou descarte as alterações antes de fechar esta planilha.'">
+  <div x-ref="rolagem" class="overflow-x-auto rounded-md border border-marca-borda bg-white p-3">
+    <div style="min-width: 46rem">
+      {# Tira de topo: data | cliente | nº #}
+      <table class="planilha mb-2" aria-label="Cabeçalho do pedido">
+        <colgroup>
+          <col style="width: 4%" /><col style="width: 24%" /><col style="width: 48%" /><col style="width: 24%" />
+        </colgroup>
+        <tbody>
+          <tr>
+            <td class="!border-0"></td>
+            <td><span class="planilha-texto" x-text="data"></span></td>
+            <td :class="{ 'planilha-editavel': editavel && !clienteVinculado }">
+              <template x-if="editavel && !clienteVinculado">
+                <input type="text" class="planilha-celula" data-c="cliente" autocomplete="off"
+                       aria-label="Cliente" placeholder="NOME DO CLIENTE (opcional)" maxlength="160"
+                       x-model="cliente" @input="buscarCliente($el)"
+                       @keydown.enter.prevent="fecharLista(); focar(0, 'codigo')"
+                       x-init="modo === 'criar' && $nextTick(() => $el.focus())" />
+              </template>
+              <template x-if="!editavel || clienteVinculado">
+                <span class="planilha-texto" x-text="cliente || 'CONSUMIDOR'"
+                      :title="clienteVinculado ? 'Cliente do cadastro' : ''"></span>
+              </template>
+            </td>
+            <td><span class="planilha-texto" :class="numero.startsWith('#') && 'font-bold'" x-text="numero"></span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      {# Itens #}
+      <table class="planilha" aria-label="Itens do pedido">
+        <colgroup>
+          <col style="width: 4%" /><col style="width: 13.4%" /><col style="width: 34.6%" />
+          <col style="width: 11.5%" /><col style="width: 17.3%" /><col style="width: 19.2%" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" class="planilha-margem !bg-gray-100"><span class="sr-only">Linha</span></th>
+            <th scope="col" class="text-left">CODIGO</th>
+            <th scope="col" class="text-left">DESCRICAO</th>
+            <th scope="col" class="text-right">QUANT.</th>
+            <th scope="col" class="text-right">V. UNIT.</th>
+            <th scope="col" class="text-right">SUB. TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(l, i) in (editavel ? linhas : preenchidas)" :key="l.chave">
+            <tr class="group" :data-chave="l.chave">
+              {# Margem estilo Excel: nº da linha + se é do catálogo; lixeira no hover. #}
+              <td class="planilha-margem">
+                <template x-if="l.consultando">
+                  <span class="text-gold-600">…</span>
+                </template>
+                <template x-if="!l.consultando">
+                  <span class="inline-flex items-center gap-1" :class="editavel && 'group-hover:hidden group-focus-within:hidden'">
+                    <span x-text="(editavel && i === linhas.length - 1 && !(l.codigo || l.descricao)) ? '' : i + 1"></span>
+                    <span x-show="l.situacao" class="inline-block h-1.5 w-1.5 rounded-full"
+                          :class="l.situacao === 'catalogo' ? 'bg-ok' : (l.situacao === 'duvida' ? 'bg-aviso' : 'bg-gray-400')"
+                          :title="l.situacao === 'catalogo' ? 'Produto do catálogo' : (l.situacao === 'duvida' ? 'Escolha a cor' : 'Item avulso (fora do catálogo)')"></span>
+                  </span>
+                </template>
+                <button type="button" tabindex="-1" x-show="editavel" x-cloak
+                        class="mx-auto hidden h-4 w-4 text-gray-500 hover:text-critico group-hover:block group-focus-within:block"
+                        title="Apagar linha (Ctrl+Backspace)" :aria-label="'Apagar linha ' + (i + 1)"
+                        @click="apagar(l.chave)">{{ icone("lixeira") }}</button>
+              </td>
+
+              <template x-if="editavel">
+                <td class="planilha-editavel" :class="erroEm(l, 'codigo') && 'planilha-erro'"
+                    :title="mostrarErros ? (erros(l).codigo || '') : ''">
+                  <input type="text" class="planilha-celula font-mono" data-c="codigo" :data-l="i"
+                         autocomplete="off" spellcheck="false" maxlength="60"
+                         :aria-label="'Código da linha ' + (i + 1)" :placeholder="i === linhas.length - 1 ? 'código' : ''"
+                         x-model="l.codigo" @input="mudouCodigo(l)" @blur="consultarCodigo(l)"
+                         @focus="l.situacao === 'duvida' && l.opcoes.length && abrirLista('cores', l, $el)"
+                         @keydown="teclar($event, i, 'codigo')" @paste="colar($event, i, 'codigo')" />
+                </td>
+              </template>
+              <template x-if="editavel">
+                <td class="planilha-editavel" :class="erroEm(l, 'descricao') && 'planilha-erro'"
+                    :title="mostrarErros ? (erros(l).descricao || '') : ''">
+                  <input type="text" class="planilha-celula" data-c="descricao" :data-l="i"
+                         autocomplete="off" maxlength="200"
+                         :aria-label="'Descrição da linha ' + (i + 1)" :placeholder="i === linhas.length - 1 ? 'descrição ou busca…' : ''"
+                         x-model="l.descricao" @input="mudouDescricao(l, $el)"
+                         @keydown="teclar($event, i, 'descricao')" @paste="colar($event, i, 'descricao')" />
+                </td>
+              </template>
+              <template x-if="editavel">
+                <td class="planilha-editavel" :class="erroEm(l, 'qtd') && 'planilha-erro'"
+                    :title="mostrarErros ? (erros(l).qtd || '') : ''">
+                  <input type="text" class="planilha-celula text-right" data-c="qtd" :data-l="i"
+                         inputmode="numeric" autocomplete="off" maxlength="6"
+                         :aria-label="'Quantidade da linha ' + (i + 1)" :placeholder="i === linhas.length - 1 ? '0' : ''"
+                         x-model="l.qtd" @input="mudouQtd(l)" @blur="saiuQtd(l)"
+                         @keydown="teclar($event, i, 'qtd')" @paste="colar($event, i, 'qtd')" />
+                </td>
+              </template>
+              <template x-if="editavel">
+                <td class="planilha-editavel" :class="erroEm(l, 'preco') && 'planilha-erro'"
+                    :title="mostrarErros ? (erros(l).preco || '') : ''">
+                  <input type="text" class="planilha-celula text-right" data-c="preco" :data-l="i"
+                         inputmode="decimal" autocomplete="off" maxlength="14"
+                         :aria-label="'Valor unitário da linha ' + (i + 1)" :placeholder="i === linhas.length - 1 ? '0,00' : ''"
+                         x-model="l.preco" @input="mudouPreco(l)" @blur="saiuPreco(l)"
+                         @keydown="teclar($event, i, 'preco')" @paste="colar($event, i, 'preco')" />
+                </td>
+              </template>
+
+              <template x-if="!editavel">
+                <td><span class="planilha-texto font-mono" x-text="l.codigo || '—'"></span></td>
+              </template>
+              <template x-if="!editavel">
+                <td><span class="planilha-texto" x-text="l.descricao"></span></td>
+              </template>
+              <template x-if="!editavel">
+                <td><span class="planilha-texto text-right" x-text="l.qtd"></span></td>
+              </template>
+              <template x-if="!editavel">
+                <td><span class="planilha-texto text-right" x-text="precoTexto(l)"></span></td>
+              </template>
+
+              <td><span class="planilha-texto text-right" x-text="subtotalTexto(l)"></span></td>
+            </tr>
+          </template>
+          <template x-if="descontoCentavos > 0">
+            <tr>
+              <td class="!border-0"></td>
+              <td></td><td></td><td></td>
+              <td><span class="planilha-texto text-right">DESCONTO</span></td>
+              <td><span class="planilha-texto text-right" x-text="'− ' + moeda(descontoCentavos)"></span></td>
+            </tr>
+          </template>
+          <tr>
+            <td class="!border-0"></td>
+            <td class="planilha-amarelo"></td>
+            <td class="planilha-amarelo"></td>
+            <td class="planilha-amarelo"></td>
+            <td class="planilha-amarelo"><span class="planilha-texto text-right">TOTAL</span></td>
+            <td class="planilha-amarelo"><span class="planilha-texto text-right" x-text="moeda(totalCentavos)"></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Lista ancorada na célula (busca de descrição, cores do código, clientes). #}
+  <div x-show="lista" x-cloak x-ref="lista" class="planilha-lista"
+       :style="lista && `top: ${lista.top + 2}px; left: ${lista.left}px; width: ${lista.largura}px`">
+    <template x-if="lista && lista.tipo === 'cores'">
+      <div>
+        <p class="border-b border-marca-borda px-2 py-1.5 text-xs text-gray-500">
+          Este código tem mais de uma cor — escolha qual:
+        </p>
+        <template x-for="op in (linhas.find((x) => x.chave === lista.chave) || { opcoes: [] }).opcoes" :key="op.variacao_id">
+          <button type="button"
+                  class="flex w-full items-center gap-3 border-b border-marca-borda px-2 py-2 text-left hover:bg-gold-50 focus-visible:bg-gold-50 focus-visible:outline-none"
+                  @click="escolherCor(linhas.find((x) => x.chave === lista.chave), op)">
+            <span class="font-mono" x-text="op.codigo"></span>
+            <span class="min-w-0 flex-1 truncate" x-text="op.descricao"></span>
+            <span class="font-semibold" x-text="op.cor || 'padrão'"></span>
+          </button>
+        </template>
+      </div>
+    </template>
+    <template x-if="lista && lista.tipo !== 'cores'">
+      <div>
+        <p x-show="buscando && !listaHtml" class="px-2 py-3 text-sm text-gray-400">Buscando…</p>
+        <div x-html="listaHtml"></div>
+      </div>
+    </template>
+  </div>
+
+  {# Recados e barra de ações #}
+  <div x-show="erro" x-cloak class="alerta alerta-erro" role="alert" x-text="erro"></div>
+  <div x-show="aviso" x-cloak class="alerta alerta-erro" role="status" x-text="aviso"></div>
+  <template x-if="criado">
+    <div class="alerta alerta-ok flex flex-wrap items-center gap-3" role="status">
+      <span x-text="criado.numero ? `Pedido #${criado.numero} criado e confirmado.` : 'Pedido criado.'"></span>
+      <a class="btn-secundario !py-1" :href="`/pedidos/${criado.id}`">Abrir pedido</a>
+      <a class="btn-secundario !py-1" :href="`/pedidos/${criado.id}/cupom`" target="_blank">Cupom</a>
+      <span class="text-sm">A planilha já está em branco para o próximo.</span>
+    </div>
+  </template>
+
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" class="btn-secundario" :disabled="!preenchidas.length"
+              title="Copia a planilha como imagem, para mandar no WhatsApp" @click="imagem('copiar')">
+        <span class="nav-icone" aria-hidden="true">{{ icone("etiqueta") }}</span> Copiar imagem
+      </button>
+      <button type="button" class="btn-secundario !px-2" :disabled="!preenchidas.length"
+              title="Baixar PNG" aria-label="Baixar a planilha em PNG" @click="imagem('baixar')">
+        <span class="nav-icone" aria-hidden="true">{{ icone("upload") }}</span>
+      </button>
+      {% if planilha is defined and planilha %}
+        {# Aberto na lista: os atalhos que a linha comum da lista tem. #}
+        <a href="/pedidos/{{ planilha.pedido_id }}/cupom" target="_blank" class="btn-fantasma"
+           title="Cupom (80mm)" aria-label="Cupom do pedido">
+          <span class="nav-icone" aria-hidden="true">{{ icone("imprimir") }}</span>
+        </a>
+        <a href="/pedidos/{{ planilha.pedido_id }}" class="btn-secundario">Abrir</a>
+      {% endif %}
+      <span x-show="recado" x-cloak class="text-xs text-gray-500" x-text="recado"></span>
+      <span x-show="editavel && !recado" class="hidden text-xs text-gray-400 xl:inline">
+        Enter desce · Tab avança · Ctrl+⌫ apaga a linha · cole direto do Excel
+      </span>
+    </div>
+
+    <template x-if="editavel && modo === 'criar'">
+      <div class="flex items-center gap-2">
+        <a href="/pedidos" class="btn-fantasma">Cancelar</a>
+        <button type="button" class="btn-primario" :disabled="salvando || consultando" @click="salvar(true)">
+          <span x-text="salvando ? 'Salvando…' : 'Salvar pedido'"></span>
+        </button>
+      </div>
+    </template>
+    <template x-if="editavel && modo === 'editar'">
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" class="btn-fantasma" x-show="sujo" @click="descartar()" :disabled="salvando">
+          Descartar alterações
+        </button>
+        <button type="button" class="btn-secundario" :disabled="salvando || consultando || !sujo" @click="salvar(false)">
+          <span x-text="salvando === 'salvar' ? 'Salvando…' : 'Salvar'"></span>
+        </button>
+        <button type="button" class="btn-primario" :disabled="salvando || consultando" @click="salvar(true)">
+          <span x-text="salvando === 'confirmar' ? 'Confirmando…' : 'Salvar e confirmar'"></span>
+        </button>
+      </div>
+    </template>
+  </div>
+</div>

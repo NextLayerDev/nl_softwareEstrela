@@ -61,6 +61,9 @@
 
   function atualizar(el) {
     if (!window.htmx) return;
+    // Planilha com alteração não salva dentro do elemento: refazer agora apagaria o que
+    // a pessoa está digitando (ver pedido_planilha.js). A próxima atualização alcança.
+    if (el.dataset.rtPausado) return;
     if (el.dataset.rtTrigger !== undefined) {
       // O próprio elemento já sabe buscar (com hx-include, filtros etc.).
       window.htmx.trigger(el, "rt-refresh");

@@ -9,6 +9,9 @@
           :aria-expanded="colagemAberta ? 'true' : 'false'">
     <span class="nav-icone" aria-hidden="true">{{ icone("carrinho") }}</span> Colar planilha
   </button>
+  <a href="/pedidos/planilha" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("planilha") }}</span> Criar por planilha
+  </a>
   <a href="/pedidos/novo" class="btn-primario">
     <span class="nav-icone" aria-hidden="true">{{ icone("mais") }}</span> Novo pedido
   </a>
@@ -36,19 +39,45 @@
    a lista re-buscada pelo realtime voltar já filtrada. O `data-rt-get` do tbody é
    reescrito junto, senão a primeira mudança de status em outro terminal traria de volta
    tudo o que o filtro tinha tirado. #}
+{# Modo de ver a lista: "lista" (a tabela de sempre) ou "planilha" (a mesma lista no
+   desenho amarelo do resumo, com cada pedido abrindo a planilha de itens). Vai na URL
+   (?visao=) para sobreviver ao recarregar, e o último escolhido fica lembrado neste
+   navegador para a próxima visita sem ?visao=. #}
+{% if not visao_na_url %}
+<script>
+  try {
+    if (localStorage.getItem("pedidos:visao") === "planilha") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("visao", "planilha");
+      window.location.replace(url);
+    }
+  } catch (_) { /* storage bloqueado: fica na lista */ }
+</script>
+{% endif %}
 <div class="mb-4 flex flex-wrap items-center gap-3"
      x-data="{
        status: '{{ filtro_status }}',
        origem: '{{ filtro_origem }}',
-       aplicar() {
+       visao: '{{ visao }}',
+       busca() {
          const q = new URLSearchParams();
          if (this.status) q.set('status', this.status);
          if (this.origem) q.set('origem', this.origem);
-         const busca = q.toString();
-         const corpo = document.getElementById('tbody-pedidos');
+         if (this.visao === 'planilha') q.set('visao', 'planilha');
+         return q.toString();
+       },
+       aplicar() {
+         const busca = this.busca();
+         const alvo = this.visao === 'planilha' ? 'lista-planilha' : 'tbody-pedidos';
+         const corpo = document.getElementById(alvo);
          corpo.setAttribute('data-rt-get', '/pedidos/lista' + (busca ? '?' + busca : ''));
-         htmx.ajax('GET', '/pedidos/lista' + (busca ? '?' + busca : ''), { target: '#tbody-pedidos' });
+         htmx.ajax('GET', '/pedidos/lista' + (busca ? '?' + busca : ''), { target: '#' + alvo });
          history.replaceState(null, '', '/pedidos' + (busca ? '?' + busca : ''));
+       },
+       trocarVisao(v) {
+         try { localStorage.setItem('pedidos:visao', v); } catch (_) {}
+         this.visao = v;
+         window.location.href = '/pedidos?' + this.busca() + (v === 'lista' ? (this.busca() ? '&' : '') + 'visao=lista' : '');
        }
      }">
   <label class="sr-only" for="filtro-status">Status</label>
@@ -73,8 +102,38 @@
 
   <button type="button" class="btn-secundario" x-show="status || origem" x-cloak
           @click="status = ''; origem = ''; aplicar()">Limpar filtros</button>
+
+  <div class="ml-auto inline-flex rounded-md border border-marca-borda bg-white p-0.5"
+       role="radiogroup" aria-label="Modo de visualização">
+    <button type="button" role="radio" aria-checked="{{ 'true' if visao == 'lista' else 'false' }}"
+            class="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium
+                   {{ 'bg-gold-500 text-white' if visao == 'lista' else 'text-gray-500 hover:text-gray-800' }}"
+            @click="trocarVisao('lista')">
+      <span class="nav-icone" aria-hidden="true">{{ icone("lista") }}</span> Lista
+    </button>
+    <button type="button" role="radio" aria-checked="{{ 'true' if visao == 'planilha' else 'false' }}"
+            class="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium
+                   {{ 'bg-gold-500 text-white' if visao == 'planilha' else 'text-gray-500 hover:text-gray-800' }}"
+            @click="trocarVisao('planilha')">
+      <span class="nav-icone" aria-hidden="true">{{ icone("planilha") }}</span> Planilha
+    </button>
+  </div>
 </div>
 
+{% if visao == "planilha" %}
+<p class="mb-2 text-sm text-gray-500">
+  Clique num pedido para abrir a planilha dele. Rascunho dá para editar ali mesmo.
+</p>
+<div class="card overflow-x-auto !p-3">
+  {# Mesma inscrição do realtime da lista; pausa sozinho enquanto houver planilha com
+     alteração não salva (data-rt-pausado, ver pedido_planilha.js). #}
+  <div id="lista-planilha"
+       data-rt="pedido.confirmado,pedido.cancelado,pedido.faturado,pedido.status_alterado,separacao.concluida"
+       data-rt-get="/pedidos/lista?visao=planilha{% if filtro_status %}&amp;status={{ filtro_status }}{% endif %}{% if filtro_origem %}&amp;origem={{ filtro_origem }}{% endif %}">
+    {% include "pedidos/_tabela_planilha.html" %}
+  </div>
+</div>
+{% else %}
 <div class="card">
   <div class="overflow-x-auto">
     <table class="tabela tabela-densa w-full" aria-label="Lista de pedidos">
@@ -101,4 +160,23 @@
     </table>
   </div>
 </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if visao == "planilha" %}
+<script src="/static/js/orcamento.js?v={{ asset_version }}"></script>
+<script src="/static/js/resumo_pedido.js?v={{ asset_version }}"></script>
+<script src="/static/js/pedido_planilha.js?v={{ asset_version }}"></script>
+<script>
+  // Um pedido regravado troca só o próprio <tbody>: o TOTAL GERAL é refeito aqui.
+  document.body.addEventListener("htmx:afterSwap", () => window.PedidoPlanilha.recalcularTotalGeral());
+  {% if abrir %}
+  window.addEventListener("load", () => {
+    const alvo = document.getElementById("pp-{{ abrir }}");
+    if (alvo) alvo.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+  {% endif %}
+</script>
+{% endif %}
 {% endblock %}

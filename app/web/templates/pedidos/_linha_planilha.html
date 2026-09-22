@@ -1,0 +1,55 @@
+{# Um pedido na lista em modo planilha: a linha da folha + a planilha de itens, que abre
+   logo abaixo ao clicar (carregada na primeira abertura).
+
+   É um <tbody> por pedido para poder ser trocado sozinho depois de salvar a planilha
+   (GET /pedidos/{id}/linha-planilha), sem refazer a lista inteira — o que fecharia as
+   outras planilhas abertas. `aberto` vem do servidor nessa troca. #}
+{% from "_ui.html" import selo_status %}
+{% set origens = {"local": "BALCÃO", "catalogo": "CATÁLOGO", "whatsapp": "WHATSAPP"} %}
+{% set origem = p.origem.value if p.origem.value is defined else p.origem %}
+{% set status = p.status.value if p.status.value is defined else p.status %}
+<tbody id="pp-{{ p.id }}"
+       data-total-centavos="{{ (p.total * 100) | int }}" data-itens="{{ p.itens | length }}"
+       data-cancelado="{{ '1' if status == 'cancelado' else '' }}"
+       x-data="{ aberto: {{ 'true' if aberto else 'false' }},
+                 alternar() {
+                   {# Planilha com alteração não salva não fecha: some o que foi digitado.
+                      Em vez de perguntar, a própria planilha diz o que fazer. #}
+                   const sujo = this.$root.querySelector('[data-planilha-sujo=&quot;1&quot;]');
+                   if (this.aberto && sujo) {
+                     sujo.dispatchEvent(new CustomEvent('planilha-fechar-bloqueado'));
+                     return;
+                   }
+                   this.aberto = !this.aberto;
+                   {# A planilha é buscada na primeira abertura (evento próprio, e não
+                      `intersect`, que não dispara com a aba em segundo plano). #}
+                   if (this.aberto) this.$nextTick(() => htmx.trigger(this.$refs.carga, 'planilha-abrir'));
+                 } }"
+       @planilha-salva="htmx.ajax('GET', '/pedidos/{{ p.id }}/linha-planilha?aberto=1&aviso=' + encodeURIComponent($event.detail.aviso || ''), { target: '#pp-{{ p.id }}', swap: 'outerHTML' })">
+  <tr class="cursor-pointer hover:bg-[#FFF9C4]" :class="aberto && 'bg-[#FFFBE0]'"
+      @click="alternar()" :aria-expanded="aberto ? 'true' : 'false'">
+    <td>
+      <span class="planilha-texto inline-flex items-center gap-1">
+        <span class="inline-block w-3 text-gray-500" x-text="aberto ? '▾' : '▸'" aria-hidden="true"></span>
+        <span class="font-mono {{ 'font-bold' if p.numero }}">{{ p.numero or "—" }}</span>
+      </span>
+    </td>
+    <td><span class="planilha-texto">{{ p.criado_em.strftime("%d/%m/%Y") if p.criado_em else "" }}</span></td>
+    <td><span class="planilha-texto truncate" title="{{ p.nome_cliente }}">{{ p.nome_cliente }}</span></td>
+    <td><span class="planilha-texto">{{ origens.get(origem, origem | upper) }}</span></td>
+    <td><span class="planilha-texto truncate">{{ p.vendedor.nome }}</span></td>
+    <td><span class="planilha-texto text-right">{{ p.itens | length }}</span></td>
+    <td class="px-1">{{ selo_status(p.status) }}</td>
+    <td>
+      <span class="planilha-texto text-right {{ 'line-through text-gray-500' if status == 'cancelado' }}">{{ p.total | moeda }}</span>
+    </td>
+  </tr>
+  <tr x-show="aberto" x-cloak>
+    <td colspan="8" class="bg-gray-50 !p-3">
+      <div x-ref="carga" hx-get="/pedidos/{{ p.id }}/planilha{% if aviso %}?aviso={{ aviso | urlencode }}{% endif %}"
+           hx-trigger="{{ 'load, ' if aberto }}planilha-abrir once" hx-swap="innerHTML">
+        <p class="py-4 text-sm text-gray-500">Carregando a planilha do pedido…</p>
+      </div>
+    </td>
+  </tr>
+</tbody>

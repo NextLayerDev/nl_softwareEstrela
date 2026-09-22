@@ -193,3 +193,101 @@ class ResumoPedidoOut(_ResumoBase):
     itens: list[ResumoItem] = []
     desconto_centavos: int = 0
     total_centavos: int = 0
+
+
+# ============================================================= planilha editável
+class LinhaPlanilha(BaseModel):
+    """Uma linha da planilha editável (criar pedido ou editar rascunho).
+
+    `variacao_id` vem quando o vendedor escolheu o produto (pelo código ou pela busca);
+    sem ele, o servidor ainda tenta casar pelo código antes de gravar como avulso.
+    `item_id` + `identidade_mudou=False` é a linha que já existia no rascunho e só teve
+    quantidade ou valor mexidos: ela é atualizada no lugar, sem perder caixas/desconto.
+    """
+
+    item_id: int | None = None
+    identidade_mudou: bool = True
+    variacao_id: int | None = None
+    codigo: str = Field(default="", max_length=60)
+    descricao: str = Field(default="", max_length=200)
+    qtd: int = Field(ge=1, le=100_000)
+    preco_unit: Decimal = Field(ge=0, le=9_999_999)
+
+
+class PedidoPlanilhaSalvar(BaseModel):
+    """A planilha inteira. Cliente é opcional (sem ele, vira CONSUMIDOR)."""
+
+    cliente_id: int | None = None
+    cliente_nome: str | None = Field(default=None, max_length=160)
+    itens: list[LinhaPlanilha] = Field(min_length=1, max_length=100)
+    confirmar: bool = False
+
+
+class ConsultaPlanilha(BaseModel):
+    """O que a célula CODIGO (ou a troca de quantidade) pergunta ao servidor."""
+
+    codigo: str = Field(default="", max_length=60)
+    # Texto da célula DESCRICAO: é dele que sai a COR quando o código tem várias
+    # ("GARRAFA PRETA"), a mesma leitura que a colagem da planilha do dia faz.
+    descricao: str = Field(default="", max_length=200)
+    variacao_id: int | None = None
+    qtd: int = Field(default=1, ge=1, le=100_000)
+
+
+class OpcaoPlanilha(BaseModel):
+    variacao_id: int
+    codigo: str
+    descricao: str
+    cor: str | None = None
+
+
+class ResolucaoPlanilha(BaseModel):
+    """Resposta por linha consultada.
+
+    - `ok`: casou com UMA variação — já vem com o preço da faixa para a quantidade.
+    - `duvida`: o código é de um produto com várias cores; `opcoes` vira a lista de escolha.
+    - `nada`: não casou; a linha segue como item avulso (`motivo` explica).
+    """
+
+    situacao: Literal["ok", "duvida", "nada"]
+    variacao_id: int | None = None
+    codigo: str = ""
+    descricao: str = ""
+    cor: str | None = None
+    preco_centavos: int | None = None
+    motivo: str = ""
+    opcoes: list[OpcaoPlanilha] = []
+
+
+class ItemPlanilhaOut(_ResumoBase):
+    """Linha do rascunho carregada na planilha. Dinheiro em centavos, como o resumo."""
+
+    item_id: int
+    variacao_id: int | None = None
+    codigo: str = ""
+    descricao: str
+    cor: str | None = None
+    qtd: int
+    preco_centavos: int
+    desconto_centavos: int = 0
+
+
+class PlanilhaPedidoOut(_ResumoBase):
+    """Estado inicial do editor de planilha de um pedido existente."""
+
+    pedido_id: int
+    numero: str
+    status: str
+    editavel: bool
+    data: str
+    cliente: str
+    cliente_vinculado: bool = False
+    desconto_centavos: int = 0
+    itens: list[ItemPlanilhaOut] = []
+
+
+class PlanilhaSalvaOut(BaseModel):
+    ok: bool = True
+    pedido_id: int
+    numero: int | None = None
+    aviso: str | None = None

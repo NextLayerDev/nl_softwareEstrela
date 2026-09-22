@@ -1,0 +1,7 @@
+{# A planilha de UM pedido, aberta dentro da lista em modo planilha. Rascunho edita
+   (Salvar / Salvar e confirmar); o resto aparece só para leitura. O estado inicial vai
+   em JSON no próprio x-data (o Jinja escapa as aspas; o navegador desfaz no atributo). `aviso` é o
+   recado de uma confirmação que não passou, trazido pela troca do bloco. #}
+<div x-data='PedidoPlanilha.editor({{ planilha.model_dump_json(by_alias=True) }}, {{ (aviso or "") | tojson }})'>
+  {% include "pedidos/_planilha_editor.html" %}
+</div>

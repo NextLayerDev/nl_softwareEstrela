@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Body, Depends, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.controllers.pedido_controller import pedido_controller
-from app.core.errors import NaoEncontradoError, RegraNegocioError
+from app.core.errors import DominioError, NaoEncontradoError, RegraNegocioError
 from app.core.numeros_br import parse_decimal_br
 from app.core.templates import templates
 from app.deps.auth import require_role
@@ -20,10 +20,13 @@ from app.models.usuario import Usuario
 from app.repositories.cliente_repo import cliente_repo
 from app.repositories.estoque_repo import estoque_repo
 from app.schemas.pedido import (
+    ConsultaPlanilha,
     ItemAdicionar,
     ItemAvulsoAdicionar,
     PedidoCompletoCreate,
     PedidoCreate,
+    PedidoPlanilhaSalvar,
+    PlanilhaSalvaOut,
 )
 from app.services.empresa_service import empresa_service
 from app.services.pedido_service import pedido_service
@@ -56,12 +59,21 @@ def _ctx_pedido(usuario: Usuario, pedido: Pedido, *, oob: bool = False, **extra)
     }
 
 
+_VISOES = ("lista", "planilha")
+
+
+def _visao(valor: str) -> str:
+    return valor if valor in _VISOES else "lista"
+
+
 # ===================================================================== LISTAR
 @router.get("/pedidos", response_class=HTMLResponse)
 def index_pedidos(
     request: Request,
     status: str = "",
     origem: str = "",
+    visao: str = "",
+    abrir: int | None = None,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
@@ -79,6 +91,12 @@ def index_pedidos(
         "pedidos": pedidos,
         "filtro_status": status,
         "filtro_origem": origem,
+        # Lista comum ou "planilha": a mesma lista no desenho amarelo, com cada linha
+        # abrindo a planilha de itens do pedido. Vazio = a tela decide pelo último modo
+        # escolhido neste navegador (localStorage).
+        "visao": _visao(visao),
+        "visao_na_url": visao in _VISOES,
+        "abrir": abrir,
     }
     return templates.TemplateResponse(request, "pedidos/index.html", contexto)
 
@@ -91,14 +109,15 @@ def fragmento_lista(
     request: Request,
     status: str = "",
     origem: str = "",
+    visao: str = "",
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_CRIA)),
 ):
     """Só as linhas. Serve os dois gatilhos: os filtros da tela e o realtime."""
     pedidos = pedido_controller.listar(db, usuario, status, origem)
-    return templates.TemplateResponse(
-        request, "pedidos/_linhas.html", {"user": usuario, "pedidos": pedidos}
-    )
+    planilha = _visao(visao) == "planilha"
+    modelo = "pedidos/_tabela_planilha.html" if planilha else "pedidos/_linhas.html"
+    return templates.TemplateResponse(request, modelo, {"user": usuario, "pedidos": pedidos})
 
 
 # ===================================================================== NOVO
@@ -314,6 +333,137 @@ def compre_junto(
 
 
 # ===================================================================== DETALHE
+# ===================================================================== PLANILHA
+# A planilha amarela do resumo, editável célula a célula. Antes de /pedidos/{pedido_id}
+# pelo mesmo motivo das outras rotas fixas: o path casa por ordem.
+#
+# As rotas de escrita falam JSON (o estado mora no Alpine da planilha) e respondem 200
+# com {"ok": false, "erro": ...} quando uma regra barra — a tela mostra a mensagem na
+# própria planilha, sem perder o que foi digitado.
+def _erro_json(mensagem: str) -> JSONResponse:
+    return JSONResponse({"ok": False, "erro": mensagem})
+
+
+def _ler(modelo, payload: object):
+    try:
+        return modelo.model_validate(payload)
+    except ValidationError as exc:
+        primeiro = exc.errors()[0] if exc.errors() else {}
+        onde = " › ".join(str(p) for p in primeiro.get("loc", ()) if not isinstance(p, int))
+        raise RegraNegocioError(
+            "Confira a planilha" + (f" ({onde})" if onde else "") + "."
+        ) from exc
+
+
+@router.get("/pedidos/planilha", response_class=HTMLResponse)
+def nova_planilha(
+    request: Request,
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    contexto = {"user": usuario, "titulo": "Pedido por planilha"}
+    return templates.TemplateResponse(request, "pedidos/planilha.html", contexto)
+
+
+@router.post("/pedidos/planilha/resolver")
+def resolver_planilha(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Célula CODIGO (e troca de quantidade): o que o catálogo tem para cada linha."""
+    try:
+        consultas = [_ler(ConsultaPlanilha, c) for c in (payload.get("linhas") or [])][:100]
+    except DominioError as exc:
+        return _erro_json(exc.mensagem)
+    resolvidas = pedido_controller.resolver_planilha(db, consultas, usuario)
+    return JSONResponse({"ok": True, "linhas": [r.model_dump(mode="json") for r in resolvidas]})
+
+
+@router.post("/pedidos/planilha")
+def criar_por_planilha(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Cria o pedido da planilha e já confirma (número + reserva de estoque).
+
+    Uma regra que barre a gravação desfaz tudo (o `get_db` faz rollback no erro);
+    uma que barre só a confirmação deixa o pedido como rascunho e volta como aviso.
+    """
+    try:
+        dados = _ler(PedidoPlanilhaSalvar, payload)
+        # SAVEPOINT: uma regra que barre no meio desfaz só esta gravação — o `get_db`
+        # commitaria o que ficou pela metade, já que a resposta aqui é 200.
+        with db.begin_nested():
+            pedido, aviso = pedido_controller.criar_planilha(db, dados, usuario)
+    except DominioError as exc:
+        return _erro_json(exc.mensagem)
+    return JSONResponse(
+        PlanilhaSalvaOut(pedido_id=pedido.id, numero=pedido.numero, aviso=aviso).model_dump(
+            mode="json"
+        )
+    )
+
+
+@router.get("/pedidos/{pedido_id}/planilha", response_class=HTMLResponse)
+def fragmento_planilha(
+    pedido_id: int,
+    request: Request,
+    aviso: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """A planilha de UM pedido, aberta dentro da lista em modo planilha."""
+    planilha = pedido_controller.planilha_do_pedido(db, pedido_id, usuario)
+    return templates.TemplateResponse(
+        request,
+        "pedidos/_planilha_pedido.html",
+        {"user": usuario, "planilha": planilha, "aviso": aviso[:300]},
+    )
+
+
+@router.get("/pedidos/{pedido_id}/linha-planilha", response_class=HTMLResponse)
+def fragmento_linha_planilha(
+    pedido_id: int,
+    request: Request,
+    aberto: bool = False,
+    aviso: str = "",
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Um pedido da lista em modo planilha (linha + planilha), trocado sozinho depois de
+    salvar — refazer a lista inteira fecharia as outras planilhas abertas."""
+    pedido = pedido_controller.get(db, pedido_id, usuario)
+    return templates.TemplateResponse(
+        request,
+        "pedidos/_linha_planilha.html",
+        {"user": usuario, "p": pedido, "aberto": aberto, "aviso": aviso[:300]},
+    )
+
+
+@router.post("/pedidos/{pedido_id}/planilha")
+def salvar_planilha(
+    pedido_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Grava a planilha editada no rascunho; com `confirmar`, confirma em seguida."""
+    try:
+        dados = _ler(PedidoPlanilhaSalvar, payload)
+        # SAVEPOINT: uma regra que barre no meio desfaz só esta gravação — o `get_db`
+        # commitaria o que ficou pela metade, já que a resposta aqui é 200.
+        with db.begin_nested():
+            pedido, aviso = pedido_controller.salvar_planilha(db, pedido_id, dados, usuario)
+    except DominioError as exc:
+        return _erro_json(exc.mensagem)
+    return JSONResponse(
+        PlanilhaSalvaOut(pedido_id=pedido.id, numero=pedido.numero, aviso=aviso).model_dump(
+            mode="json"
+        )
+    )
+
+
 @router.get("/pedidos/{pedido_id}", response_class=HTMLResponse)
 def detalhe_pedido(
     request: Request,
