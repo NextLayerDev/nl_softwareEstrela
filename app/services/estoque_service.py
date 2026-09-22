@@ -201,6 +201,35 @@ class EstoqueService:
             db, variacao, TipoMov.ESTORNO, qtd, usuario_id, OrigemMov.PEDIDO, ref_id=pedido_id
         )
 
+    # ------------------------------------------------------ desfazer a baixa
+    def devolver_baixa(
+        self,
+        db: Session,
+        variacao: ProdutoVariacao,
+        qtd: int,
+        usuario_id: int,
+        pedido_id: int,
+    ) -> MovimentacaoEstoque:
+        """Desfaz a baixa do faturamento (pedido faturado/entregue que voltou atrás):
+        a mercadoria volta ao físico. Não mexe no modo da variação — diferente da
+        `entrada`, isto não é mercadoria nova, é a mesma que tinha saído."""
+        if qtd <= 0:
+            raise RegraNegocioError("A quantidade devolvida deve ser maior que zero.")
+        antes = abaixo_minimo(variacao)
+        variacao.estoque_fisico += qtd
+        mov = self._registrar(
+            db,
+            variacao,
+            TipoMov.ENTRADA,
+            qtd,
+            usuario_id,
+            OrigemMov.PEDIDO,
+            ref_id=pedido_id,
+            motivo="Pedido voltou de faturado/entregue",
+        )
+        self._alertar_se_cruzou_minimo(db, variacao, antes)
+        return mov
+
     # ----------------------------------------------------------------- ajuste
     def ajustar(
         self,

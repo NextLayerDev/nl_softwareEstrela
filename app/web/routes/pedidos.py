@@ -101,6 +101,7 @@ def index_pedidos(
         # que num balcão compartilhado passava a escolha de um vendedor para o próximo.
         "visao": visao if visao in _VISOES else _visao_preferida(usuario),
         "abrir": abrir,
+        "vendedores": pedido_controller.vendedores(db),
     }
     return templates.TemplateResponse(request, "pedidos/index.html", contexto)
 
@@ -121,7 +122,10 @@ def fragmento_lista(
     pedidos = pedido_controller.listar(db, usuario, status, origem)
     planilha = _visao(visao) == "planilha"
     modelo = "pedidos/_tabela_planilha.html" if planilha else "pedidos/_linhas.html"
-    return templates.TemplateResponse(request, modelo, {"user": usuario, "pedidos": pedidos})
+    contexto = {"user": usuario, "pedidos": pedidos}
+    if planilha:
+        contexto["vendedores"] = pedido_controller.vendedores(db)
+    return templates.TemplateResponse(request, modelo, contexto)
 
 
 # ===================================================================== NOVO
@@ -441,8 +445,33 @@ def fragmento_linha_planilha(
     return templates.TemplateResponse(
         request,
         "pedidos/_linha_planilha.html",
-        {"user": usuario, "p": pedido, "aberto": aberto, "aviso": aviso[:300]},
+        {
+            "user": usuario,
+            "p": pedido,
+            "aberto": aberto,
+            "aviso": aviso[:300],
+            "vendedores": pedido_controller.vendedores(db),
+        },
     )
+
+
+@router.post("/pedidos/{pedido_id}/celula")
+def editar_celula(
+    pedido_id: int,
+    campo: str = Form(...),
+    valor: str = Form(""),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_role(*_CRIA)),
+):
+    """Uma célula da lista em planilha. JSON, 200 com {"ok": false, "erro"} na recusa —
+    e dentro de SAVEPOINT, porque o get_db commitaria o que uma regra barrou no meio
+    (ex.: a troca de status reservou metade dos itens e o sétimo não tinha saldo)."""
+    try:
+        with db.begin_nested():
+            pedido_controller.editar_celula(db, pedido_id, campo, valor, usuario)
+    except DominioError as exc:
+        return JSONResponse({"ok": False, "erro": exc.mensagem})
+    return JSONResponse({"ok": True})
 
 
 @router.post("/pedidos/{pedido_id}/planilha")

@@ -15,6 +15,7 @@ from app.models.enums import StatusConta, StatusPedido, e_admin
 from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import Produto, ProdutoVariacao
 from app.repositories.cliente_repo import cliente_repo
+from app.repositories.conta_repo import conta_repo
 from app.repositories.pedido_repo import pedido_repo
 from app.schemas.pedido import (
     ItemAdicionar,
@@ -671,6 +672,85 @@ class PedidoService:
         if pedido.status != StatusPedido.FATURADO:
             raise RegraNegocioError("Apenas pedidos faturados podem ser marcados como entregues.")
         pedido.status = StatusPedido.ENTREGUE
+        db.flush()
+        eventos.emitir(
+            db,
+            "pedido.status_alterado",
+            self._dados_pedido(pedido),
+            audiencia=eventos.TODOS,
+            vendedor_id=pedido.vendedor_id,
+        )
+        return pedido
+
+    # ------------------------------------------------------- status livre
+    # Onde o estoque do pedido está em cada status. A troca livre de status (célula
+    # STATUS da lista em planilha) move o estoque entre esses estágios pelos mesmos
+    # métodos do fluxo normal — sempre com movimentação registrada.
+    _LIVRE = frozenset({StatusPedido.RASCUNHO, StatusPedido.CANCELADO})
+    _RESERVADO = frozenset({StatusPedido.CONFIRMADO, StatusPedido.SEPARACAO, StatusPedido.SEPARADO})
+    _BAIXADO = frozenset({StatusPedido.FATURADO, StatusPedido.ENTREGUE})
+
+    def _estagio(self, status: StatusPedido) -> str:
+        if status in self._RESERVADO:
+            return "reservado"
+        if status in self._BAIXADO:
+            return "baixado"
+        return "livre"
+
+    def alterar_status_livre(
+        self, db: Session, pedido_id: int, novo: StatusPedido, usuario_id: int
+    ) -> Pedido:
+        """Qualquer status para qualquer status, com estoque e financeiro acompanhando.
+
+        - livre → reservado: reserva (e numera, se ainda não tem número);
+        - reservado → baixado: baixa + contas a receber (o faturamento de sempre);
+        - livre → baixado: reserva e baixa;
+        - baixado → reservado/livre: devolve o físico, re-reserva se for o caso, e apaga
+          as contas a receber do pedido — recusa se alguma já foi paga;
+        - reservado → livre: estorna a reserva.
+        Dentro do mesmo estágio (ex.: faturado ↔ entregue) nada se move.
+        """
+        pedido = pedido_repo.get_completo(db, pedido_id)
+        if pedido is None:
+            raise NaoEncontradoError("Pedido não encontrado.")
+        de, para = self._estagio(pedido.status), self._estagio(novo)
+        if pedido.status == novo:
+            return pedido
+        if de == "livre" and para != "livre" and not pedido.itens:
+            raise RegraNegocioError("Pedido sem itens não pode sair do rascunho.")
+
+        itens = self._itens_com_estoque(db, pedido)
+
+        if de == "baixado" and para != "baixado":
+            contas = conta_repo.do_pedido(db, pedido.id)
+            if any(c.status == StatusConta.PAGO for c in contas):
+                raise RegraNegocioError(
+                    "O pedido tem conta a receber já paga — estorne no Financeiro antes."
+                )
+            for conta in contas:
+                conta_repo.remover(db, conta)
+            for variacao, qtd in itens:
+                estoque_service.devolver_baixa(db, variacao, qtd, usuario_id, pedido.id)
+                if para == "reservado":
+                    estoque_service.reservar(db, variacao, qtd, usuario_id, pedido.id)
+            pedido.faturado_em = None
+        elif de == "reservado" and para == "livre":
+            for variacao, qtd in itens:
+                estoque_service.estornar(db, variacao, qtd, usuario_id, pedido.id)
+        elif de == "livre" and para != "livre":
+            for variacao, qtd in itens:
+                estoque_service.reservar(db, variacao, qtd, usuario_id, pedido.id)
+
+        if de != "baixado" and para == "baixado":
+            for variacao, qtd in itens:
+                estoque_service.baixar(db, variacao, qtd, usuario_id, pedido.id)
+            pedido.faturado_em = datetime.now(UTC)
+
+        if para != "livre" and pedido.numero is None:
+            pedido.numero = pedido_repo.proximo_numero(db)
+        pedido.status = novo
+        if de != "baixado" and para == "baixado":
+            self._gerar_contas_receber(db, pedido)
         db.flush()
         eventos.emitir(
             db,

@@ -65,9 +65,13 @@ class Pedido(Base):
     # ser None-unsafe no instante em que alguém vende para um cliente não cadastrado.
     @property
     def nome_cliente(self) -> str:
+        # O nome digitado no próprio pedido (planilha, edição na lista) vale primeiro:
+        # com cliente vinculado ele fica nulo, e aí vale o cadastro.
+        if self.cliente_nome:
+            return self.cliente_nome
         if self.cliente is not None:
             return self.cliente.nome
-        return self.cliente_nome or "CONSUMIDOR"
+        return "CONSUMIDOR"
 
     @property
     def telefone_cliente(self) -> str | None:

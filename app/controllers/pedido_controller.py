@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.errors import NaoEncontradoError
-from app.models.enums import OrigemPedido, StatusPedido
+from app.models.enums import OrigemPedido, Perfil, StatusPedido
 from app.models.pedido import Pedido, PedidoItem
 from app.models.usuario import Usuario
 from app.repositories.pedido_repo import pedido_repo
@@ -24,6 +24,7 @@ from app.schemas.pedido import (
 from app.services.colagem_service import colagem_service
 from app.services.pedido_service import pedido_service
 from app.services.planilha_service import planilha_service
+from app.services.usuario_service import usuario_service
 
 
 def _enum_ou_nada(enum_cls, valor: str):
@@ -132,6 +133,20 @@ class PedidoController:
         """Grava a planilha editada num rascunho (e confirma, se pedido)."""
         self._carregar_para_usuario(db, pedido_id, usuario)
         return planilha_service.salvar_rascunho(db, pedido_id, dados, usuario.id, usuario.perfil)
+
+    def vendedores(self, db: Session) -> list[Usuario]:
+        """Opções da célula VENDEDOR: quem está ativo — sem o `dev`, que é usuário de
+        manutenção e não vende."""
+        return [u for u in usuario_service.listar(db) if u.ativo and u.perfil != Perfil.DEV]
+
+    def editar_celula(
+        self, db: Session, pedido_id: int, campo: str, valor: str, usuario: Usuario
+    ) -> Pedido:
+        """Uma célula da lista em planilha (Nº, DATA, CLIENTE, ORIGEM, VENDEDOR, STATUS)."""
+        self._carregar_para_usuario(db, pedido_id, usuario)
+        return planilha_service.editar_celula(
+            db, pedido_id, campo, valor, usuario.id, usuario.perfil
+        )
 
     def adicionar_item(
         self, db: Session, pedido_id: int, dados: ItemAdicionar, usuario: Usuario

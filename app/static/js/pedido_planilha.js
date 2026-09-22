@@ -751,5 +751,59 @@
     };
   }
 
-  window.PedidoPlanilha = { editor, recalcularTotalGeral };
+  /* Célula da lista em modo planilha (Nº, DATA, CLIENTE, ORIGEM, VENDEDOR, STATUS):
+   * vira campo no clique, grava em POST /pedidos/{id}/celula e, dando certo, refaz o
+   * <tbody> daquele pedido do servidor — status, total e selo voltam já recalculados
+   * (a troca de status mexe em estoque e financeiro lá dentro). */
+  function celula(cfg) {
+    return {
+      tipo: cfg.tipo,
+      valor: cfg.valor,
+      original: cfg.valor,
+      editando: false,
+      salvando: false,
+      erro: "",
+      abrir() {
+        if (this.salvando || this.editando) return;
+        this.erro = "";
+        this.valor = this.original;
+        this.editando = true;
+      },
+      cancelar() {
+        this.editando = false;
+        this.valor = this.original;
+      },
+      async salvar() {
+        if (!this.editando) return;
+        this.editando = false;
+        const valor = String(this.valor ?? "").trim();
+        if (valor === String(this.original)) return;
+        this.salvando = true;
+        try {
+          const resp = await fetch(`/pedidos/${cfg.pedidoId}/celula`, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            body: new URLSearchParams({ campo: cfg.campo, valor }),
+          });
+          const dados = await resp.json();
+          if (!dados.ok) throw new Error(dados.erro || "Não consegui salvar.");
+          const bloco = document.getElementById(`pp-${cfg.pedidoId}`);
+          const aberto = bloco && window.Alpine ? Alpine.$data(bloco).aberto : false;
+          window.htmx.ajax("GET", `/pedidos/${cfg.pedidoId}/linha-planilha?aberto=${aberto ? 1 : 0}`, {
+            target: `#pp-${cfg.pedidoId}`,
+            swap: "outerHTML",
+          });
+        } catch (e) {
+          this.valor = this.original;
+          this.erro = e && e.message && !e.message.startsWith("HTTP") ? e.message : "Não consegui salvar.";
+          setTimeout(() => { this.erro = ""; }, 4000);
+        } finally {
+          this.salvando = false;
+        }
+      },
+    };
+  }
+
+  window.PedidoPlanilha = { editor, recalcularTotalGeral, celula };
 })();

@@ -70,9 +70,9 @@ def test_pedidos_abre_na_visao_preferida(cliente, db, usuario_vendedor) -> None:
     assert 'id="tabela-planilha"' not in cliente.get("/pedidos").text
     usuario_vendedor.pedidos_em_planilha = True
     db.flush()
-    assert "Clique num pedido para abrir a planilha dele" in cliente.get("/pedidos").text
+    assert "Clique numa célula para editar" in cliente.get("/pedidos").text
     # ?visao= na URL continua mandando
-    assert "Clique num pedido para abrir" not in cliente.get("/pedidos?visao=lista").text
+    assert "Clique numa célula para editar" not in cliente.get("/pedidos?visao=lista").text
 
 
 def test_entrar_por_barra_vai_para_pedidos_mas_painel_continua_acessivel(
