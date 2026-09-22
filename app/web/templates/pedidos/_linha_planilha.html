@@ -1,5 +1,6 @@
 {# Um pedido na lista em modo planilha: a linha da folha + a planilha de itens, que abre
-   logo abaixo ao clicar (carregada na primeira abertura).
+   logo abaixo (carregada na primeira abertura). As células Nº, DATA, CLIENTE, ORIGEM,
+   VENDEDOR e STATUS editam com um clique (Nº, VENDEDOR e STATUS só para admin).
 
    É um <tbody> por pedido para poder ser trocado sozinho depois de salvar a planilha
    (GET /pedidos/{id}/linha-planilha), sem refazer a lista inteira — o que fecharia as
@@ -8,6 +9,46 @@
 {% set origens = {"local": "BALCÃO", "catalogo": "CATÁLOGO", "whatsapp": "WHATSAPP"} %}
 {% set origem = p.origem.value if p.origem.value is defined else p.origem %}
 {% set status = p.status.value if p.status.value is defined else p.status %}
+{% set admin = e_admin(user.perfil) %}
+{% set status_opcoes = [("rascunho","RASCUNHO"),("confirmado","CONFIRMADO"),("separacao","EM SEPARAÇÃO"),
+                        ("separado","SEPARADO"),("faturado","FATURADO"),("entregue","ENTREGUE"),
+                        ("cancelado","CANCELADO")] %}
+{% set vendedores_opcoes = [] %}
+{% for v in (vendedores or []) %}{% set _ = vendedores_opcoes.append((v.id, v.nome)) %}{% endfor %}
+{% if p.vendedor and p.vendedor_id not in (vendedores_opcoes | map("first") | list) %}
+  {% set _ = vendedores_opcoes.append((p.vendedor_id, p.vendedor.nome)) %}
+{% endif %}
+
+{#- Célula que vira campo no clique (PedidoPlanilha.celula em pedido_planilha.js):
+    texto/número/data digitáveis, select para o que tem opções fechadas. Enter ou sair
+    grava; Esc desiste. Gravou → o <tbody> do pedido é refeito do servidor. -#}
+{% macro celula(p, campo, valor, tipo, classe="", rotulo=none, td=False, opcoes=none, rotulo_html=False, classe_td="") -%}
+{%- set conteudo -%}
+<span class="relative block {{ 'w-full' if not td }}"
+      x-data='PedidoPlanilha.celula({{ {"pedidoId": p.id, "campo": campo, "valor": (valor | string), "tipo": tipo} | tojson }})'
+      @click.stop="abrir()" :class="salvando && 'opacity-50'"
+      title="{{ 'Clique para trocar o status (estoque e financeiro acompanham)' if campo == 'status' else 'Clique para editar' }}">
+  <span x-show="!editando" class="planilha-texto cursor-text {{ classe }}">{% if rotulo_html %}{{ rotulo }}{% else %}{{ rotulo if rotulo is not none else valor }}{% endif %}</span>
+  <template x-if="editando">
+    {% if tipo == "select" %}
+    <select class="planilha-celula !py-1 outline outline-2 outline-black bg-[#FFF9C4]" x-model="valor"
+            x-init="$nextTick(() => $el.focus())" @change="salvar()" @blur="cancelar()"
+            @keydown.escape.prevent="cancelar()">
+      {% for v, r in opcoes %}<option value="{{ v }}">{{ r }}</option>{% endfor %}
+    </select>
+    {% else %}
+    <input class="planilha-celula !py-1 outline outline-2 outline-black bg-[#FFF9C4] {{ 'text-right' if tipo == 'numero' }}"
+           type="{{ 'date' if tipo == 'data' else 'text' }}" {% if tipo == "numero" %}inputmode="numeric"{% endif %}
+           x-model="valor" x-init="$nextTick(() => { $el.focus(); $el.select && $el.select(); })"
+           @input="tipo === 'numero' && (valor = valor.replace(/\D/g, ''))"
+           @keydown.enter.prevent="salvar()" @keydown.escape.prevent="cancelar()" @blur="salvar()" />
+    {% endif %}
+  </template>
+  <span x-show="erro" x-cloak class="block px-2 pb-1 text-xs font-normal text-critico" x-text="erro"></span>
+</span>
+{%- endset -%}
+{%- if td -%}<td class="{{ classe_td }}">{{ conteudo }}</td>{%- else -%}{{ conteudo }}{%- endif -%}
+{%- endmacro %}
 <tbody id="pp-{{ p.id }}"
        data-total-centavos="{{ (p.total * 100) | int }}" data-itens="{{ p.itens | length }}"
        data-cancelado="{{ '1' if status == 'cancelado' else '' }}"
@@ -26,20 +67,40 @@
                    if (this.aberto) this.$nextTick(() => htmx.trigger(this.$refs.carga, 'planilha-abrir'));
                  } }"
        @planilha-salva="htmx.ajax('GET', '/pedidos/{{ p.id }}/linha-planilha?aberto=1&aviso=' + encodeURIComponent($event.detail.aviso || ''), { target: '#pp-{{ p.id }}', swap: 'outerHTML' })">
+  {# Clique numa célula editável edita (o macro para a propagação); no resto da linha —
+     a seta, ITENS, TOTAL — abre/fecha a planilha do pedido. #}
   <tr class="cursor-pointer hover:bg-[#FFF9C4]" :class="aberto && 'bg-[#FFFBE0]'"
       @click="alternar()" :aria-expanded="aberto ? 'true' : 'false'">
     <td>
-      <span class="planilha-texto inline-flex items-center gap-1">
-        <span class="inline-block w-3 text-gray-500" x-text="aberto ? '▾' : '▸'" aria-hidden="true"></span>
-        <span class="font-mono {{ 'font-bold' if p.numero }}">{{ p.numero or "—" }}</span>
+      <span class="inline-flex w-full items-center">
+        <span class="inline-block w-5 shrink-0 pl-2 text-gray-500" x-text="aberto ? '▾' : '▸'" aria-hidden="true"></span>
+        {% if p.numero and admin %}
+          {{ celula(p, "numero", p.numero, "numero", "font-mono font-bold") }}
+        {% else %}
+          <span class="planilha-texto font-mono {{ 'font-bold' if p.numero }}"
+                {% if not p.numero %}title="Rascunho ganha número ao ser confirmado"{% endif %}>{{ p.numero or "—" }}</span>
+        {% endif %}
       </span>
     </td>
-    <td><span class="planilha-texto">{{ p.criado_em.strftime("%d/%m/%Y") if p.criado_em else "" }}</span></td>
-    <td><span class="planilha-texto truncate" title="{{ p.nome_cliente }}">{{ p.nome_cliente }}</span></td>
-    <td><span class="planilha-texto">{{ origens.get(origem, origem | upper) }}</span></td>
-    <td><span class="planilha-texto truncate">{{ p.vendedor.nome }}</span></td>
+    {{ celula(p, "data", p.criado_em.strftime("%Y-%m-%d") if p.criado_em else "", "data", "",
+              p.criado_em.strftime("%d/%m/%Y") if p.criado_em else "", td=True) }}
+    {{ celula(p, "cliente", p.cliente_nome or (p.cliente.nome if p.cliente else ""), "texto", "truncate",
+              p.nome_cliente, td=True) }}
+    {{ celula(p, "origem", origem, "select", "", origens.get(origem, origem | upper), td=True,
+              opcoes=origens.items() | list) }}
+    {% if admin %}
+      {{ celula(p, "vendedor", p.vendedor_id, "select", "truncate", p.vendedor.nome, td=True,
+                opcoes=vendedores_opcoes) }}
+    {% else %}
+      <td><span class="planilha-texto truncate">{{ p.vendedor.nome }}</span></td>
+    {% endif %}
     <td><span class="planilha-texto text-right">{{ p.itens | length }}</span></td>
-    <td class="px-1">{{ selo_status(p.status) }}</td>
+    {% if admin %}
+      {{ celula(p, "status", status, "select", "", selo_status(p.status), td=True,
+                opcoes=status_opcoes, rotulo_html=True, classe_td="px-1") }}
+    {% else %}
+      <td class="px-1">{{ selo_status(p.status) }}</td>
+    {% endif %}
     <td>
       <span class="planilha-texto text-right {{ 'line-through text-gray-500' if status == 'cancelado' }}">{{ p.total | moeda }}</span>
     </td>

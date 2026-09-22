@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.conta_receber import ContaReceber
@@ -81,6 +81,21 @@ class PedidoRepository:
     def proximo_numero(self, db: Session) -> int:
         """Numeração sem buracos via sequence dedicada do Postgres."""
         return int(db.scalar(select(func.nextval("pedido_numero_seq"))))
+
+    def numero_em_uso(self, db: Session, numero: int, exceto_id: int) -> bool:
+        stmt = select(Pedido.id).where(Pedido.numero == numero, Pedido.id != exceto_id)
+        return db.scalar(stmt) is not None
+
+    def acompanhar_sequencia(self, db: Session, numero: int) -> None:
+        """Número digitado à mão acima da sequence: ela pula para ele, senão a próxima
+        confirmação tentaria o mesmo número e bateria no unique."""
+        db.execute(
+            text(
+                "SELECT setval('pedido_numero_seq', GREATEST(:n, "
+                "(SELECT last_value FROM pedido_numero_seq)))"
+            ),
+            {"n": numero},
+        )
 
     def add(self, db: Session, pedido: Pedido) -> Pedido:
         db.add(pedido)

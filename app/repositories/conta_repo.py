@@ -59,6 +59,14 @@ class ContaReceberRepository:
         contas = list(db.scalars(stmt).unique())
         return [c for c in contas if c.baixado_em and c.baixado_em.date() == dia]
 
+    def do_pedido(self, db: Session, pedido_id: int) -> list[ContaReceber]:
+        stmt = select(ContaReceber).where(ContaReceber.pedido_id == pedido_id)
+        return list(db.scalars(stmt))
+
+    def remover(self, db: Session, conta: ContaReceber) -> None:
+        db.delete(conta)
+        db.flush()
+
     def add(self, db: Session, conta: ContaReceber) -> ContaReceber:
         db.add(conta)
         db.flush()

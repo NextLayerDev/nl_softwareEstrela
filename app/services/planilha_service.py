@@ -21,15 +21,22 @@ NÃO faz commit — o `get_db` fecha a transação.
 
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.errors import DominioError, NaoEncontradoError, RegraNegocioError
+from app.core.errors import (
+    DominioError,
+    NaoEncontradoError,
+    PermissaoNegadaError,
+    RegraNegocioError,
+)
 from app.models.cliente import Cliente
-from app.models.enums import StatusPedido
+from app.models.enums import OrigemPedido, Perfil, StatusPedido, e_admin
 from app.models.pedido import Pedido, PedidoItem
 from app.models.produto import ProdutoVariacao
+from app.models.usuario import Usuario
 from app.repositories.pedido_repo import pedido_repo
 from app.schemas.pedido import (
     ConsultaPlanilha,
@@ -303,6 +310,65 @@ class PlanilhaService:
 
         aviso = self._confirmar_ou_avisar(db, pedido, usuario_id) if dados.confirmar else None
         return pedido, aviso
+
+    # ------------------------------------------------------------- célula da lista
+    # Colunas da lista em planilha que viram campo no clique. Nº, VENDEDOR e STATUS
+    # ficam com o admin: numeração, comissão e estoque.
+    CAMPOS_ADMIN = frozenset({"numero", "vendedor", "status"})
+
+    def editar_celula(
+        self, db: Session, pedido_id: int, campo: str, valor: str, usuario_id: int, perfil: str
+    ) -> Pedido:
+        if campo in self.CAMPOS_ADMIN and not e_admin(perfil):
+            raise PermissaoNegadaError("Só o administrador altera número, vendedor e status.")
+        valor = (valor or "").strip()
+
+        if campo == "status":
+            try:
+                novo = StatusPedido(valor)
+            except ValueError as exc:
+                raise RegraNegocioError("Status inválido.") from exc
+            return pedido_service.alterar_status_livre(db, pedido_id, novo, usuario_id)
+
+        pedido = pedido_repo.get(db, pedido_id)
+        if pedido is None:
+            raise NaoEncontradoError("Pedido não encontrado.")
+
+        if campo == "numero":
+            if pedido.numero is None:
+                raise RegraNegocioError("Rascunho ganha número ao ser confirmado.")
+            if not valor.isdigit() or not 1 <= int(valor) <= 9_999_999:
+                raise RegraNegocioError("Número inválido.")
+            numero = int(valor)
+            if pedido_repo.numero_em_uso(db, numero, pedido.id):
+                raise RegraNegocioError(f"Já existe o pedido #{numero}.")
+            pedido.numero = numero
+            pedido_repo.acompanhar_sequencia(db, numero)
+        elif campo == "data":
+            try:
+                dia = date.fromisoformat(valor)
+            except ValueError as exc:
+                raise RegraNegocioError("Data inválida.") from exc
+            # Meio-dia no fuso do servidor: o dia não "escorrega" na conversão.
+            pedido.criado_em = datetime.combine(dia, time(12, 0)).astimezone()
+        elif campo == "cliente":
+            # Com cadastro vinculado, o nome digitado vale por cima dele (nome_cliente).
+            pedido.cliente_nome = valor[:160] or None
+        elif campo == "origem":
+            try:
+                pedido.origem = OrigemPedido(valor)
+            except ValueError as exc:
+                raise RegraNegocioError("Origem inválida.") from exc
+        elif campo == "vendedor":
+            vendedor = db.get(Usuario, int(valor)) if valor.isdigit() else None
+            if vendedor is None or not vendedor.ativo or vendedor.perfil == Perfil.DEV:
+                raise RegraNegocioError("Vendedor inválido.")
+            pedido.vendedor_id = vendedor.id
+        else:
+            raise RegraNegocioError("Esta coluna não é editável.")
+        db.flush()
+        db.refresh(pedido)
+        return pedido
 
 
 planilha_service = PlanilhaService()
