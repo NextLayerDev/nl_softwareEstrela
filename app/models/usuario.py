@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -21,3 +21,9 @@ class Usuario(Base):
     # JWT já emitidos (o token carrega o "tv" e get_current_user compara). Ver app/deps/auth.py.
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Preferências da própria pessoa (tela "Meu perfil"). Admin nasce com as duas ligadas
+    # (ver usuario_service.criar e a migration f56a3eb45b15).
+    pedidos_em_planilha: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
+    abrir_em_pedidos: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

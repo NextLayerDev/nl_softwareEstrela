@@ -198,6 +198,7 @@ def _registrar_routers() -> None:
         "catalogo",
         "clientes",
         "usuarios",
+        "perfil",
         "pedidos",
         "orcamento",
         "separacao",

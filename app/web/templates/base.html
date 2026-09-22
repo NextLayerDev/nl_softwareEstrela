@@ -122,7 +122,7 @@
           </span>
         </div>
         <div class="ml-1 hidden items-center gap-3 border-l border-marca-borda pl-3 text-sm sm:flex">
-          <span class="text-gold-700">{{ user.nome }} <span class="text-gray-400">({{ user.perfil }})</span></span>
+          <a href="/perfil" class="text-gold-700 hover:underline" title="Meu perfil e preferências">{{ user.nome }} <span class="text-gray-400">({{ user.perfil }})</span></a>
           <a href="/logout" class="btn-secundario !py-1.5">
             <span class="nav-icone" aria-hidden="true">{{ icone("sair") }}</span> Sair
           </a>

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -117,9 +118,20 @@ def dashboard(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require_role(*_PERFIS)),
 ):
+    # "Abrir direto em Pedidos": quem ENTRA no sistema por "/" (atalho do terminal, PWA,
+    # endereço digitado) vai para os pedidos. Quem clica em "Painel" dentro do sistema
+    # chega com Referer da própria app e vê o painel normalmente.
+    if usuario.abrir_em_pedidos and not _veio_de_dentro(request):
+        return RedirectResponse(url="/pedidos", status_code=303)
     return templates.TemplateResponse(
         request, "dashboard.html", _montar_contexto(request, db, usuario)
     )
+
+
+def _veio_de_dentro(request: Request) -> bool:
+    """A navegação partiu de uma página do próprio sistema (Referer com o mesmo host)."""
+    referer = request.headers.get("referer", "")
+    return bool(referer) and urlparse(referer).netloc == request.url.netloc
 
 
 @router.get("/painel/cartoes", response_class=HTMLResponse)

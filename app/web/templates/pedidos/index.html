@@ -41,19 +41,8 @@
    tudo o que o filtro tinha tirado. #}
 {# Modo de ver a lista: "lista" (a tabela de sempre) ou "planilha" (a mesma lista no
    desenho amarelo do resumo, com cada pedido abrindo a planilha de itens). Vai na URL
-   (?visao=) para sobreviver ao recarregar, e o último escolhido fica lembrado neste
-   navegador para a próxima visita sem ?visao=. #}
-{% if not visao_na_url %}
-<script>
-  try {
-    if (localStorage.getItem("pedidos:visao") === "planilha") {
-      const url = new URL(window.location.href);
-      url.searchParams.set("visao", "planilha");
-      window.location.replace(url);
-    }
-  } catch (_) { /* storage bloqueado: fica na lista */ }
-</script>
-{% endif %}
+   (?visao=) para sobreviver ao recarregar; sem ?visao=, vale a preferência do usuário
+   ("Meu perfil"), que o alternador abaixo também grava. #}
 <div class="mb-4 flex flex-wrap items-center gap-3"
      x-data="{
        status: '{{ filtro_status }}',
@@ -74,8 +63,14 @@
          htmx.ajax('GET', '/pedidos/lista' + (busca ? '?' + busca : ''), { target: '#' + alvo });
          history.replaceState(null, '', '/pedidos' + (busca ? '?' + busca : ''));
        },
-       trocarVisao(v) {
-         try { localStorage.setItem('pedidos:visao', v); } catch (_) {}
+       async trocarVisao(v) {
+         // Trocar aqui também é escolher: vira a preferência do usuário (a mesma do
+         // "Meu perfil"). Espera gravar antes de navegar — a página nova já lê dela.
+         try {
+           await fetch('/perfil/preferencias', { method: 'POST', credentials: 'same-origin',
+             headers: { Accept: 'application/json' },
+             body: new URLSearchParams({ campo: 'pedidos_em_planilha', valor: v === 'planilha' ? 'true' : 'false' }) });
+         } catch (_) { /* sem rede: só não lembra; a URL abaixo ainda troca o modo */ }
          this.visao = v;
          window.location.href = '/pedidos?' + this.busca() + (v === 'lista' ? (this.busca() ? '&' : '') + 'visao=lista' : '');
        }

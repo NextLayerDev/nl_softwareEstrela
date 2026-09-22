@@ -27,7 +27,10 @@ def test_login_tem_aviso_caps_lock_e_meta_ios() -> None:
 def test_tabelas_tem_scope_col() -> None:
     """Acessibilidade: cabeçalhos de tabela com scope."""
     for url in ("/clientes", "/produtos", "/", "/usuarios"):
-        t = _admin().get(url).text
+        # Referer da própria app: o admin do seed abre direto em Pedidos ao ENTRAR por
+        # "/" (preferência "Abrir direto em Pedidos"); clicando em "Painel" de dentro do
+        # sistema ele vê o painel — que é a tabela que este teste confere.
+        t = _admin().get(url, headers={"referer": "http://testserver/pedidos"}).text
         assert 'scope="col"' in t, url
 
 
