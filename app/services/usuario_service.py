@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from app.core import eventos
 from app.core.errors import NaoEncontradoError, RegraNegocioError
 from app.core.security import hash_senha, senha_fraca
+from app.models.enums import Perfil
 from app.models.usuario import Usuario
 from app.repositories.usuario_repo import usuario_repo
-from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+from app.schemas.usuario import PreferenciasUpdate, UsuarioCreate, UsuarioUpdate
 
 
 def _dados_usuario(usuario: Usuario) -> dict:
@@ -41,6 +42,10 @@ class UsuarioService:
             senha_hash=hash_senha(dados.senha),
             perfil=str(dados.perfil),
             ativo=dados.ativo,
+            # Admin nasce abrindo direto nos pedidos, em planilha (pedido da operação);
+            # cada um desliga no "Meu perfil".
+            pedidos_em_planilha=dados.perfil == Perfil.ADMIN,
+            abrir_em_pedidos=dados.perfil == Perfil.ADMIN,
         )
         usuario_repo.add(db, usuario)
         eventos.emitir(db, "usuario.criado", _dados_usuario(usuario), audiencia=eventos.ADMIN_AUD)
@@ -96,6 +101,17 @@ class UsuarioService:
         usuario.token_version += 1
         usuario_repo.flush(db)
         self._invalidar_sessao(db, usuario)
+        return usuario
+
+    def salvar_preferencias(
+        self, db: Session, usuario_id: int, dados: PreferenciasUpdate
+    ) -> Usuario:
+        """Grava as preferências da própria pessoa. Não mexe na sessão: preferência
+        não é permissão, então não há token a invalidar."""
+        usuario = self.obter(db, usuario_id)
+        for campo, valor in dados.model_dump(exclude_none=True).items():
+            setattr(usuario, campo, valor)
+        usuario_repo.flush(db)
         return usuario
 
 

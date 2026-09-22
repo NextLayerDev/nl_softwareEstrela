@@ -21,6 +21,11 @@ router = APIRouter()
 logger = logging.getLogger("estrela.auth")
 
 
+def destino_inicial(usuario: Usuario) -> str:
+    """Para onde a pessoa vai ao entrar: Pedidos, se ela escolheu no "Meu perfil"."""
+    return "/pedidos" if usuario.abrir_em_pedidos else "/"
+
+
 def _ip_cliente(request: Request) -> str:
     """IP real do cliente. Atrás do Caddy (proxy confiável), vem no X-Forwarded-For."""
     encaminhado = request.headers.get("x-forwarded-for")
@@ -37,7 +42,7 @@ def tela_login(request: Request, usuario: Usuario | None = Depends(get_optional_
     logado caía num formulário para digitar de novo o que o cookie já sabe.
     """
     if usuario is not None:
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url=destino_inicial(usuario), status_code=303)
     return templates.TemplateResponse(request, "login.html", {})
 
 
@@ -79,7 +84,7 @@ def fazer_login(
     logger.info("Login OK: %s perfil=%s (IP %s)", usuario.email, usuario.perfil, ip)
 
     token = criar_token(usuario.id, usuario.perfil, extra={"tv": usuario.token_version})
-    resposta = RedirectResponse(url="/", status_code=303)
+    resposta = RedirectResponse(url=destino_inicial(usuario), status_code=303)
     resposta.set_cookie(
         key=COOKIE_NOME,
         value=token,

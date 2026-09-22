@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import RegraNegocioError
 from app.models.enums import Perfil
 from app.models.usuario import Usuario
-from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+from app.schemas.usuario import PreferenciasUpdate, UsuarioCreate, UsuarioUpdate
 from app.services.usuario_service import usuario_service
 
 
@@ -36,6 +37,16 @@ class UsuarioController:
 
     def resetar_senha(self, db: Session, usuario_id: int, nova_senha: str) -> Usuario:
         return usuario_service.resetar_senha(db, usuario_id, nova_senha)
+
+    def salvar_preferencias(self, db: Session, usuario: Usuario, campo: str, valor: str) -> Usuario:
+        """Uma chave do "Meu perfil" (ou o alternador Lista | Planilha) por vez.
+
+        Sempre sobre o PRÓPRIO usuário logado — não há id na rota para trocar.
+        """
+        if campo not in PreferenciasUpdate.model_fields:
+            raise RegraNegocioError("Preferência desconhecida.")
+        dados = PreferenciasUpdate(**{campo: valor in ("on", "true", "1")})
+        return usuario_service.salvar_preferencias(db, usuario.id, dados)
 
 
 usuario_controller = UsuarioController()

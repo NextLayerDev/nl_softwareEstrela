@@ -39,6 +39,13 @@ class UsuarioUpdate(BaseModel):
     ativo: bool | None = None
 
 
+class PreferenciasUpdate(BaseModel):
+    """Preferências da própria pessoa ("Meu perfil"). Só o que veio é gravado."""
+
+    pedidos_em_planilha: bool | None = None
+    abrir_em_pedidos: bool | None = None
+
+
 class UsuarioRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

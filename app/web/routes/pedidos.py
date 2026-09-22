@@ -66,6 +66,10 @@ def _visao(valor: str) -> str:
     return valor if valor in _VISOES else "lista"
 
 
+def _visao_preferida(usuario: Usuario) -> str:
+    return "planilha" if usuario.pedidos_em_planilha else "lista"
+
+
 # ===================================================================== LISTAR
 @router.get("/pedidos", response_class=HTMLResponse)
 def index_pedidos(
@@ -92,10 +96,10 @@ def index_pedidos(
         "filtro_status": status,
         "filtro_origem": origem,
         # Lista comum ou "planilha": a mesma lista no desenho amarelo, com cada linha
-        # abrindo a planilha de itens do pedido. Vazio = a tela decide pelo último modo
-        # escolhido neste navegador (localStorage).
-        "visao": _visao(visao),
-        "visao_na_url": visao in _VISOES,
+        # abrindo a planilha de itens do pedido. ?visao= na URL manda; sem ele, vale a
+        # preferência do usuário ("Meu perfil") — não mais o localStorage do terminal,
+        # que num balcão compartilhado passava a escolha de um vendedor para o próximo.
+        "visao": visao if visao in _VISOES else _visao_preferida(usuario),
         "abrir": abrir,
     }
     return templates.TemplateResponse(request, "pedidos/index.html", contexto)

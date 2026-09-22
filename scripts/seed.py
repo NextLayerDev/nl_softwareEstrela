@@ -63,6 +63,9 @@ def seed() -> None:
                         email=email,
                         senha_hash=hash_senha("estrela123"),
                         perfil=perfil.value,
+                        # Mesma regra do usuario_service.criar: admin abre nos pedidos.
+                        pedidos_em_planilha=perfil == Perfil.ADMIN,
+                        abrir_em_pedidos=perfil == Perfil.ADMIN,
                     )
                 )
 

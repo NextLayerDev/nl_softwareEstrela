@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
+{% block titulo %}Meu perfil{% endblock %}
+{% block cabecalho %}Meu perfil{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Meu perfil", none)]) }}{% endblock %}
+
+{% block content %}
+{# Preferências da própria pessoa. Cada chave grava na hora (POST /perfil/preferencias)
+   — sem botão "Salvar" para esquecer de clicar. Valem em qualquer terminal em que ela
+   entrar, porque ficam no usuário, não no navegador. #}
+{% set perfis = {"admin": "Administrador", "vendedor": "Vendedor", "dev": "Dev"} %}
+<div class="max-w-2xl space-y-4">
+  <div class="card">
+    <p class="text-lg font-semibold">{{ user.nome }}</p>
+    <p class="text-sm text-gray-500">{{ user.email }} · {{ perfis.get(user.perfil, user.perfil) }}</p>
+  </div>
+
+  <div class="card"
+       x-data="{
+         prefs: { abrir_em_pedidos: {{ 'true' if user.abrir_em_pedidos else 'false' }},
+                  pedidos_em_planilha: {{ 'true' if user.pedidos_em_planilha else 'false' }} },
+         recado: '', erro: false, salvando: false,
+         async trocar(campo) {
+           const valor = this.prefs[campo];
+           this.salvando = true;
+           try {
+             const corpo = new URLSearchParams({ campo, valor: valor ? 'true' : 'false' });
+             const resp = await fetch('/perfil/preferencias', { method: 'POST', body: corpo,
+               headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+             const dados = await resp.json();
+             if (!dados.ok) throw new Error(dados.erro || 'erro');
+             this.erro = false; this.recado = 'Preferência salva.';
+           } catch (_) {
+             this.prefs[campo] = !valor;
+             this.erro = true; this.recado = 'Não consegui salvar. Tente de novo.';
+           } finally {
+             this.salvando = false;
+             setTimeout(() => { this.recado = ''; }, 2500);
+           }
+         } }">
+    <div class="mb-3 flex items-center justify-between gap-2">
+      <div>
+        <h3 class="text-sm font-semibold">Preferências</h3>
+        <p class="text-sm text-gray-500">Valem só para você, em qualquer terminal em que entrar.</p>
+      </div>
+      <span x-show="recado" x-cloak class="text-xs" :class="erro ? 'text-critico' : 'text-ok'"
+            role="status" x-text="recado"></span>
+    </div>
+
+    <div class="divide-y divide-marca-borda rounded-md border border-marca-borda">
+      <label class="flex cursor-pointer items-start justify-between gap-4 p-4">
+        <span>
+          <span class="block text-sm font-medium">Abrir direto em Pedidos</span>
+          <span class="block text-sm text-gray-500">Ao entrar no sistema, vai para a tela de pedidos em vez do Painel.</span>
+        </span>
+        <input type="checkbox" class="mt-1 h-5 w-5 shrink-0 accent-gold-500" name="abrir_em_pedidos"
+               x-model="prefs.abrir_em_pedidos" :disabled="salvando" @change="trocar('abrir_em_pedidos')" />
+      </label>
+      <label class="flex cursor-pointer items-start justify-between gap-4 p-4">
+        <span>
+          <span class="block text-sm font-medium">Pedidos em planilha</span>
+          <span class="block text-sm text-gray-500">A lista de pedidos abre no modo planilha (a folha amarela), com cada pedido abrindo os itens logo abaixo.</span>
+        </span>
+        <input type="checkbox" class="mt-1 h-5 w-5 shrink-0 accent-gold-500" name="pedidos_em_planilha"
+               x-model="prefs.pedidos_em_planilha" :disabled="salvando" @change="trocar('pedidos_em_planilha')" />
+      </label>
+    </div>
+  </div>
+</div>
+{% endblock %}
