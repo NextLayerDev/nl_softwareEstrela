@@ -9,6 +9,12 @@
   {% include "pedidos/_status.html" %}{% endblock %}
 {% block breadcrumbs %}{{ trilha([("Painel","/"), ("Pedidos","/pedidos"), ("#" ~ (pedido.numero or pedido.id), none)]) }}{% endblock %}
 {% block acoes %}
+  {% if editavel %}
+  {# Rascunho: a mesma edição célula a célula da lista em modo planilha. #}
+  <a href="/pedidos?visao=planilha&amp;abrir={{ pedido.id }}" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("planilha") }}</span> Editar em planilha
+  </a>
+  {% endif %}
   <a href="/pedidos/{{ pedido.id }}/imprimir" target="_blank" class="btn-secundario">
     <span class="nav-icone" aria-hidden="true">{{ icone("imprimir") }}</span> Imprimir
   </a>

@@ -14,6 +14,8 @@ _ASSETS = (
     _STATIC_DIR / "js" / "realtime.js",
     _STATIC_DIR / "js" / "pedido_novo.js",
     _STATIC_DIR / "js" / "resumo_pedido.js",
+    _STATIC_DIR / "js" / "orcamento.js",
+    _STATIC_DIR / "js" / "pedido_planilha.js",
 )
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))

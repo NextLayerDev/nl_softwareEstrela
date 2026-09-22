@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% from "_ui.html" import trilha %}
+{% block titulo %}Pedido por planilha{% endblock %}
+{% block cabecalho %}Pedido por planilha{% endblock %}
+{% block breadcrumbs %}{{ trilha([("Painel","/"), ("Pedidos","/pedidos"), ("Por planilha", none)]) }}{% endblock %}
+
+{% block acoes %}
+  <a href="/pedidos" class="btn-secundario">
+    <span class="nav-icone" aria-hidden="true">{{ icone("voltar") }}</span> Voltar
+  </a>
+{% endblock %}
+
+{% block content %}
+{# O pedido inteiro digitado na planilha amarela — a mesma que o cliente recebe no
+   WhatsApp. Ao salvar, o pedido nasce CONFIRMADO (número + reserva de estoque), como a
+   colagem da planilha do dia: planilha é venda fechada. #}
+<p class="mb-4 text-sm text-gray-500">
+  Digite o código para puxar o produto do catálogo, ou escreva a descrição para buscar.
+  Dá para colar linhas direto do Excel. Ao salvar, o pedido já entra confirmado.
+</p>
+
+<div x-data="PedidoPlanilha.editor({})"
+     @beforeunload.window="if (sujo) { $event.preventDefault(); $event.returnValue = ''; }">
+  {% include "pedidos/_planilha_editor.html" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{# orcamento.js primeiro: é dele que saem parseMoedaBR/formatarBRL. Sem `defer`, então
+   rodam antes do Alpine iniciar a planilha. #}
+<script src="/static/js/orcamento.js?v={{ asset_version }}"></script>
+<script src="/static/js/resumo_pedido.js?v={{ asset_version }}"></script>
+<script src="/static/js/pedido_planilha.js?v={{ asset_version }}"></script>
+{% endblock %}

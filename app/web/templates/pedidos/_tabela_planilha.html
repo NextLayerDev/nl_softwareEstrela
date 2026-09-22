@@ -1,0 +1,44 @@
+{# A lista de pedidos no modo planilha: uma folha só, no desenho amarelo do resumo, com
+   TOTAL GERAL no rodapé (cancelado não soma). Fragmento: a página inclui, e o realtime
+   e os filtros re-buscam em /pedidos/lista?visao=planilha. #}
+{% from "_icones.html" import icone %}
+{% if pedidos %}
+{% set total_geral = pedidos | rejectattr("status.value", "equalto", "cancelado") | sum(attribute="total") %}
+<table id="tabela-planilha" class="planilha" style="min-width: 52rem" aria-label="Pedidos em planilha">
+  <colgroup>
+    <col style="width: 8%" /><col style="width: 10%" /><col style="width: 28%" /><col style="width: 10%" />
+    <col style="width: 12%" /><col style="width: 6%" /><col style="width: 12%" /><col style="width: 14%" />
+  </colgroup>
+  <thead>
+    <tr>
+      <th scope="col" class="text-left">Nº</th>
+      <th scope="col" class="text-left">DATA</th>
+      <th scope="col" class="text-left">CLIENTE</th>
+      <th scope="col" class="text-left">ORIGEM</th>
+      <th scope="col" class="text-left">VENDEDOR</th>
+      <th scope="col" class="text-right">ITENS</th>
+      <th scope="col" class="text-left">STATUS</th>
+      <th scope="col" class="text-right">TOTAL</th>
+    </tr>
+  </thead>
+  {% for p in pedidos %}
+    {% with aberto = (abrir == p.id) %}{% include "pedidos/_linha_planilha.html" %}{% endwith %}
+  {% endfor %}
+  <tfoot>
+    <tr>
+      <td class="planilha-amarelo" colspan="5"></td>
+      <td class="planilha-amarelo"><span id="planilha-itens-geral" class="planilha-texto text-right">{{ pedidos | map(attribute="itens") | map("length") | sum }}</span></td>
+      <td class="planilha-amarelo"><span class="planilha-texto">TOTAL GERAL</span></td>
+      <td class="planilha-amarelo"><span id="planilha-total-geral" class="planilha-texto text-right">{{ total_geral | moeda }}</span></td>
+    </tr>
+  </tfoot>
+</table>
+{% else %}
+<div class="vazio">
+  <span class="vazio-icone" aria-hidden="true">{{ icone("carrinho") }}</span>
+  <p>Nenhum pedido por aqui.</p>
+  <a href="/pedidos/planilha" class="btn-primario mt-1">
+    <span class="nav-icone" aria-hidden="true">{{ icone("planilha") }}</span> Criar por planilha
+  </a>
+</div>
+{% endif %}
